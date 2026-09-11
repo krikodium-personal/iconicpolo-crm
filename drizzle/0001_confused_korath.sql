@@ -1,0 +1,1 @@
+ALTER TABLE `products` ADD `ff_price` integer;

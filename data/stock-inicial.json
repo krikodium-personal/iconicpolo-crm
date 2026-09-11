@@ -1,0 +1,351 @@
+{
+  "source": "Planilla de inventario provista el 2026-09-10",
+  "reason": "Stock inicial inventario 2026-09-10",
+  "notes": [
+    "Las cantidades se cargan como movimientos de ingreso inmutables, agrupadas por SKU del CRM.",
+    "Filas con el mismo SKU se suman (sobrecinchas guarda pampa y botas 1016B5).",
+    "Los SKU duplicados de la fuente se mapean a los identificadores únicos del catálogo.",
+    "Las filas sin SKU o con un SKU inexistente no se cargan."
+  ],
+  "rows": [
+    {
+      "sku": "1003CNDJMG",
+      "name": "Cincha neoprene desmontable 2 tiradores JMG",
+      "quantity": 19,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 62
+    },
+    {
+      "sku": "1003CNJMG",
+      "name": "Cincha neoprene 2 tiradores JMG",
+      "quantity": 3,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 62
+    },
+    {
+      "sku": "1003CNDJMG",
+      "crmSku": "1003CNDJMG-CUERO",
+      "name": "Cincha neoprene tiradores de cuero JMG",
+      "quantity": 5,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 62
+    },
+    {
+      "sku": "1008RLLN",
+      "name": "Riendillas negro",
+      "quantity": 4,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 38
+    },
+    {
+      "sku": "1008RLLM",
+      "name": "Riendillas marron",
+      "quantity": 3,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 38
+    },
+    {
+      "sku": null,
+      "name": "Riendas por par negro sueltas",
+      "quantity": 10,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 52
+    },
+    {
+      "sku": null,
+      "name": "Riendas por par marron sueltas",
+      "quantity": 2,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 52
+    },
+    {
+      "sku": "1005EN",
+      "name": "Estriberas negro",
+      "quantity": 4,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 45
+    },
+    {
+      "sku": "1005EM",
+      "name": "Estriberas marron",
+      "quantity": 9,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 45
+    },
+    {
+      "sku": "1011CBN",
+      "name": "Cabezada negro",
+      "quantity": 1,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 135
+    },
+    {
+      "sku": "1011CBM",
+      "name": "Cabezada marron",
+      "quantity": 6,
+      "supplier": "MARTIN",
+      "comment": "Hay 1 sin pretal y sin riendillas que está en mal estado",
+      "cost": 135
+    },
+    {
+      "sku": "1012PN",
+      "name": "Pretal negro",
+      "quantity": 3,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 40
+    },
+    {
+      "sku": "1012PM",
+      "name": "Pretal marron",
+      "quantity": 6,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 40
+    },
+    {
+      "sku": "1004SCN",
+      "name": "Sobrecincha negro",
+      "quantity": 12,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 17
+    },
+    {
+      "sku": "1004SCGP",
+      "name": "Sobrecinchas guarda pampa",
+      "quantity": 0,
+      "supplier": "MARTIN",
+      "comment": "Azul eléctrico",
+      "cost": 17
+    },
+    {
+      "sku": "1004SCGP",
+      "name": "Sobrecinchas guarda pampa",
+      "quantity": 2,
+      "supplier": "MARTIN",
+      "comment": "Azul marino",
+      "cost": 17
+    },
+    {
+      "sku": "1004SCGP",
+      "name": "Sobrecinchas guarda pampa",
+      "quantity": 3,
+      "supplier": "MARTIN",
+      "comment": "Negro",
+      "cost": 17
+    },
+    {
+      "sku": "1016B5",
+      "name": "Botas Polo Argentino TC Premium negro",
+      "quantity": 2,
+      "supplier": "CASTILLO",
+      "comment": "1-T42",
+      "cost": 500
+    },
+    {
+      "sku": "1016B5",
+      "name": "Botas Polo Argentino TC Premium negro",
+      "quantity": 2,
+      "supplier": "GIRIBET",
+      "comment": "1-T42, 1-T43",
+      "cost": 500
+    },
+    {
+      "sku": "1016B3",
+      "name": "Botas estandard triple cuero negro",
+      "quantity": 0,
+      "supplier": "25 DE MAYO",
+      "comment": "T 42",
+      "cost": 295
+    },
+    {
+      "sku": "1021BN",
+      "name": "Botero negro",
+      "quantity": 2,
+      "supplier": "GABI",
+      "comment": "",
+      "cost": 15
+    },
+    {
+      "sku": "1016BTX",
+      "name": "Botas texanas",
+      "quantity": 0,
+      "supplier": "GIRIBET",
+      "comment": "Negras",
+      "cost": 500
+    },
+    {
+      "sku": "1010EP",
+      "name": "Estribos",
+      "quantity": 1,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 80
+    },
+    {
+      "sku": "1017REVVN",
+      "name": "Rodilleras estandard doble velcro negro",
+      "quantity": 1,
+      "supplier": "ROBERTO",
+      "comment": "",
+      "cost": 70
+    },
+    {
+      "sku": "1017REVHN",
+      "name": "Rodilleras estandard velcro y hebilla negro",
+      "quantity": 0,
+      "supplier": "ROBERTO",
+      "comment": "",
+      "cost": 70
+    },
+    {
+      "sku": "1017RPVHN",
+      "name": "Rodilleras premium velcro y hebilla negro",
+      "quantity": 0,
+      "supplier": "JB",
+      "comment": "",
+      "cost": 150
+    },
+    {
+      "sku": "1017RPVHM",
+      "name": "Rodilleras premium velcro y hebilla marron",
+      "quantity": 0,
+      "supplier": "JB",
+      "comment": "",
+      "cost": 150
+    },
+    {
+      "sku": "1017RPVVN",
+      "name": "Rodilleras premium doble velcro negro",
+      "quantity": 1,
+      "supplier": "JB",
+      "comment": "",
+      "cost": 150
+    },
+    {
+      "sku": "1017RPVVM",
+      "name": "Rodilleras premium doble velcro marron",
+      "quantity": 1,
+      "supplier": "JB",
+      "comment": "",
+      "cost": 150
+    },
+    {
+      "sku": "1020BMN",
+      "name": "Bolson monturero negro",
+      "quantity": 19,
+      "supplier": "GABI",
+      "comment": "",
+      "cost": 28
+    },
+    {
+      "sku": "1026PT",
+      "name": "Protectores",
+      "quantity": 4,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 90
+    },
+    {
+      "sku": "1015CHS",
+      "crmSku": "1015CH5",
+      "name": "Casco Homologado modelo lock in softshell",
+      "quantity": 0,
+      "supplier": "MARTIN",
+      "comment": "GRIS 58 cm",
+      "cost": 330
+    },
+    {
+      "sku": "1001BCM",
+      "name": "Montura bauti cuero forrado marron",
+      "quantity": 0,
+      "supplier": "GABI",
+      "comment": "Asiento perforado, 19\"",
+      "cost": 260
+    },
+    {
+      "sku": "1001BDN",
+      "name": "Montura bauti descarne negro",
+      "quantity": 1,
+      "supplier": "GABI",
+      "comment": "Asiento perforado, 19\"",
+      "cost": 250
+    },
+    {
+      "sku": "1001ADN",
+      "name": "Montura americana descarne negro",
+      "quantity": 3,
+      "supplier": "GABI",
+      "comment": "1 con asiento liso, 19\". Faldones de cuero forrado toda de descarne",
+      "cost": 260
+    },
+    {
+      "sku": "1001ACN",
+      "name": "Montura americana cuero forrado negro",
+      "quantity": 1,
+      "supplier": "GABI",
+      "comment": "Asiento perforado de 20\"",
+      "cost": 260
+    },
+    {
+      "sku": "1001ACM",
+      "name": "Montura americana cuero forrado marron",
+      "quantity": 1,
+      "supplier": "GABI",
+      "comment": "Modelo nuevo sin faldin, 19\"",
+      "cost": 260
+    },
+    {
+      "sku": "1001BCN",
+      "name": "Montura bauti cuero forrado negro",
+      "quantity": 1,
+      "supplier": "GABI",
+      "comment": "",
+      "cost": 260
+    },
+    {
+      "sku": "1001BCM",
+      "crmSku": "1001BCM-COMB",
+      "name": "Montura bauti de cuero forrado con asiento de descarne perforado",
+      "quantity": 1,
+      "supplier": "GABI",
+      "comment": "",
+      "cost": 200
+    },
+    {
+      "sku": "1019TCR",
+      "name": "Taquera de cordura con ruedas (50 tacos)",
+      "quantity": 0,
+      "supplier": "JB",
+      "comment": "",
+      "cost": 190
+    },
+    {
+      "sku": "1024RC",
+      "name": "Red para cascos",
+      "quantity": 7,
+      "supplier": "MMM",
+      "comment": "",
+      "cost": 5
+    },
+    {
+      "sku": "1025FC",
+      "name": "Funda para cascos",
+      "quantity": 3,
+      "supplier": "MARTIN",
+      "comment": "",
+      "cost": 9
+    }
+  ]
+}

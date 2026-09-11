@@ -1,0 +1,773 @@
+{
+  "currency": "USD",
+  "source": "Capturas provistas el 2026-09-09",
+  "notes": [
+    "Los importes están expresados en unidades de USD.",
+    "Los SKU con sufijos -COMB o -CUERO eran duplicados en la fuente.",
+    "cost:null, price:null y ffPrice:null indican valores pendientes de definición.",
+    "Funda para cascos (1025FC) se agregó desde el inventario del 2026-09-10; la planilla no tenía precio de lista ni F&F."
+  ],
+  "products": [
+    {
+      "name": "Montura americana cuero forrado negro",
+      "sku": "1001ACN",
+      "category": "monturas",
+      "cost": 260,
+      "price": 440,
+      "ffPrice": 380,
+      "sourceSku": "1001ACN",
+      "stock": 1
+    },
+    {
+      "name": "Montura americana cuero forrado marron",
+      "sku": "1001ACM",
+      "category": "monturas",
+      "cost": 260,
+      "price": 440,
+      "ffPrice": 380,
+      "sourceSku": "1001ACM",
+      "stock": 1
+    },
+    {
+      "name": "Montura americana descarne negro",
+      "sku": "1001ADN",
+      "category": "monturas",
+      "cost": 260,
+      "price": 440,
+      "ffPrice": 380,
+      "sourceSku": "1001ADN",
+      "stock": 3
+    },
+    {
+      "name": "Montura americana descarne marron",
+      "sku": "1001ADM",
+      "category": "monturas",
+      "cost": 260,
+      "price": 440,
+      "ffPrice": 380,
+      "sourceSku": "1001ADM",
+      "stock": 0
+    },
+    {
+      "name": "Montura americana suela negro",
+      "sku": "1001ASN",
+      "category": "monturas",
+      "cost": 260,
+      "price": 440,
+      "ffPrice": 380,
+      "sourceSku": "1001ASN",
+      "stock": 0
+    },
+    {
+      "name": "Montura americana suela marron",
+      "sku": "1001ASM",
+      "category": "monturas",
+      "cost": 260,
+      "price": 440,
+      "ffPrice": 380,
+      "sourceSku": "1001ASM",
+      "stock": 0
+    },
+    {
+      "name": "Montura bauti cuero forrado negro",
+      "sku": "1001BCN",
+      "category": "monturas",
+      "cost": 260,
+      "price": 440,
+      "ffPrice": 380,
+      "sourceSku": "1001BCN",
+      "stock": 1
+    },
+    {
+      "name": "Montura bauti cuero forrado marron",
+      "sku": "1001BCM",
+      "category": "monturas",
+      "cost": 260,
+      "price": 440,
+      "ffPrice": 380,
+      "sourceSku": "1001BCM",
+      "stock": 0
+    },
+    {
+      "name": "Montura bauti descarne negro",
+      "sku": "1001BDN",
+      "category": "monturas",
+      "cost": 260,
+      "price": 440,
+      "ffPrice": 380,
+      "sourceSku": "1001BDN",
+      "stock": 1
+    },
+    {
+      "name": "Montura bauti descarne marron",
+      "sku": "1001BDM",
+      "category": "monturas",
+      "cost": 260,
+      "price": 440,
+      "ffPrice": 380,
+      "sourceSku": "1001BDM",
+      "stock": 0
+    },
+    {
+      "name": "Montura bauti suela negro",
+      "sku": "1001BSN",
+      "category": "monturas",
+      "cost": 260,
+      "price": 440,
+      "ffPrice": 380,
+      "sourceSku": "1001BSN",
+      "stock": 0
+    },
+    {
+      "name": "Montura bauti suela marron",
+      "sku": "1001BSM",
+      "category": "monturas",
+      "cost": 260,
+      "price": 440,
+      "ffPrice": 380,
+      "sourceSku": "1001BSM",
+      "stock": 0
+    },
+    {
+      "name": "Montura americana combinada",
+      "sku": "1001ACM-COMB",
+      "category": "monturas",
+      "cost": 260,
+      "price": 440,
+      "ffPrice": 380,
+      "sourceSku": "1001ACM",
+      "stock": 0
+    },
+    {
+      "name": "Montura bauti combinada",
+      "sku": "1001BCM-COMB",
+      "category": "monturas",
+      "cost": 260,
+      "price": 440,
+      "ffPrice": 380,
+      "sourceSku": "1001BCM",
+      "stock": 1
+    },
+    {
+      "name": "Cincha standard",
+      "sku": "1003CSG",
+      "category": "accesorios",
+      "cost": 45,
+      "price": 75,
+      "ffPrice": 65,
+      "sourceSku": "1003CSG",
+      "stock": 0
+    },
+    {
+      "name": "Cincha neoprene 2 tiradores JMG",
+      "sku": "1003CNJMG",
+      "category": "accesorios",
+      "cost": 62,
+      "price": 100,
+      "ffPrice": 80,
+      "sourceSku": "1003CNJMG",
+      "stock": 3
+    },
+    {
+      "name": "Cincha neoprene desmontable 2 tiradores JMG",
+      "sku": "1003CNDJMG",
+      "category": "accesorios",
+      "cost": 62,
+      "price": 100,
+      "ffPrice": 80,
+      "sourceSku": "1003CNDJMG",
+      "stock": 19
+    },
+    {
+      "name": "Cincha neoprene tiradores de cuero JMG",
+      "sku": "1003CNDJMG-CUERO",
+      "category": "accesorios",
+      "cost": 62,
+      "price": 100,
+      "ffPrice": 80,
+      "sourceSku": "1003CNDJMG",
+      "stock": 5
+    },
+    {
+      "name": "Sobrecincha negro",
+      "sku": "1004SCN",
+      "category": "accesorios",
+      "cost": 17,
+      "price": 40,
+      "ffPrice": 30,
+      "sourceSku": "1004SCN",
+      "stock": 12
+    },
+    {
+      "name": "Sobrecinchas guarda pampa",
+      "sku": "1004SCGP",
+      "category": "accesorios",
+      "cost": 17,
+      "price": 40,
+      "ffPrice": 30,
+      "sourceSku": "1004SCGP",
+      "stock": 5
+    },
+    {
+      "name": "Estriberas negro",
+      "sku": "1005EN",
+      "category": "accesorios",
+      "cost": 45,
+      "price": 100,
+      "ffPrice": 80,
+      "sourceSku": "1005EN",
+      "stock": 4
+    },
+    {
+      "name": "Estriberas marron",
+      "sku": "1005EM",
+      "category": "accesorios",
+      "cost": 45,
+      "price": 100,
+      "ffPrice": 80,
+      "sourceSku": "1005EM",
+      "stock": 9
+    },
+    {
+      "name": "Cierra bocas",
+      "sku": "1006CB",
+      "category": "cabezadas",
+      "cost": 20,
+      "price": 35,
+      "ffPrice": 30,
+      "sourceSku": "1006CB",
+      "stock": 0
+    },
+    {
+      "name": "Riendas por par negro",
+      "sku": "1007RN",
+      "category": "cabezadas",
+      "cost": 25,
+      "price": 45,
+      "ffPrice": 35,
+      "sourceSku": "1007RN",
+      "stock": 0
+    },
+    {
+      "name": "Riendas por par marron",
+      "sku": "1007RM",
+      "category": "cabezadas",
+      "cost": 25,
+      "price": 45,
+      "ffPrice": 35,
+      "sourceSku": "1007RM",
+      "stock": 0
+    },
+    {
+      "name": "Riendillas negro",
+      "sku": "1008RLLN",
+      "category": "cabezadas",
+      "cost": 38,
+      "price": 70,
+      "ffPrice": 50,
+      "sourceSku": "1008RLLN",
+      "stock": 4
+    },
+    {
+      "name": "Riendillas marron",
+      "sku": "1008RLLM",
+      "category": "cabezadas",
+      "cost": 38,
+      "price": 70,
+      "ffPrice": 50,
+      "sourceSku": "1008RLLM",
+      "stock": 3
+    },
+    {
+      "name": "Hocquieras",
+      "sku": "1009H",
+      "category": "accesorios",
+      "cost": 22,
+      "price": 35,
+      "ffPrice": 30,
+      "sourceSku": "1009H",
+      "stock": 0
+    },
+    {
+      "name": "Estribos",
+      "sku": "1010EP",
+      "category": "accesorios",
+      "cost": 80,
+      "price": 130,
+      "ffPrice": 110,
+      "sourceSku": "1010EP",
+      "stock": 1
+    },
+    {
+      "name": "Cabezada negro",
+      "sku": "1011CBN",
+      "category": "cabezadas",
+      "cost": 135,
+      "price": 200,
+      "ffPrice": 175,
+      "sourceSku": "1011CBN",
+      "stock": 1
+    },
+    {
+      "name": "Cabezada marron",
+      "sku": "1011CBM",
+      "category": "cabezadas",
+      "cost": 135,
+      "price": 200,
+      "ffPrice": 175,
+      "sourceSku": "1011CBM",
+      "stock": 6
+    },
+    {
+      "name": "Pretal negro",
+      "sku": "1012PN",
+      "category": "accesorios",
+      "cost": 40,
+      "price": 70,
+      "ffPrice": 50,
+      "sourceSku": "1012PN",
+      "stock": 3
+    },
+    {
+      "name": "Pretal marron",
+      "sku": "1012PM",
+      "category": "accesorios",
+      "cost": 40,
+      "price": 70,
+      "ffPrice": 50,
+      "sourceSku": "1012PM",
+      "stock": 6
+    },
+    {
+      "name": "Pelham",
+      "sku": "1013P",
+      "category": "cabezadas",
+      "cost": 80,
+      "price": 130,
+      "ffPrice": 100,
+      "sourceSku": "1013P",
+      "stock": 0
+    },
+    {
+      "name": "Casco No Homologado modelo argentino en softshell",
+      "sku": "1014CNH2",
+      "category": "cascos",
+      "cost": 120,
+      "price": 220,
+      "ffPrice": 180,
+      "sourceSku": "1014CNH2",
+      "stock": 0
+    },
+    {
+      "name": "Casco No Homologado modelo argentino en cuero o sublimado",
+      "sku": "1014CNH3",
+      "category": "cascos",
+      "cost": 120,
+      "price": 230,
+      "ffPrice": 190,
+      "sourceSku": "1014CNH3",
+      "stock": 0
+    },
+    {
+      "name": "Casco No Homologado modelo lock en softshell",
+      "sku": "1014CNH5",
+      "category": "cascos",
+      "cost": 120,
+      "price": 240,
+      "ffPrice": 190,
+      "sourceSku": "1014CNH5",
+      "stock": 0
+    },
+    {
+      "name": "Casco No Homologado modelo lock en cuero o sublimado",
+      "sku": "1014CNH6",
+      "category": "cascos",
+      "cost": 130,
+      "price": 250,
+      "ffPrice": 200,
+      "sourceSku": "1014CNH6",
+      "stock": 0
+    },
+    {
+      "name": "Casco Homologado modelo argentino en softshell",
+      "sku": "1015CH2",
+      "category": "cascos",
+      "cost": 315,
+      "price": 480,
+      "ffPrice": 360,
+      "sourceSku": "1015CH2",
+      "stock": 0
+    },
+    {
+      "name": "Casco Homologado modelo argentino en cuero o sublimado",
+      "sku": "1015CH3",
+      "category": "cascos",
+      "cost": 330,
+      "price": 490,
+      "ffPrice": 400,
+      "sourceSku": "1015CH3",
+      "stock": 0
+    },
+    {
+      "name": "Casco Homologado modelo lock en softshell",
+      "sku": "1015CH5",
+      "category": "cascos",
+      "cost": 360,
+      "price": 500,
+      "ffPrice": 400,
+      "sourceSku": "1015CH5",
+      "stock": 0
+    },
+    {
+      "name": "Casco Homologado modelo lock en cuero o sublimado",
+      "sku": "1015CH6",
+      "category": "cascos",
+      "cost": 360,
+      "price": 510,
+      "ffPrice": 450,
+      "sourceSku": "1015CH6",
+      "stock": 0
+    },
+    {
+      "name": "Botas estandard doble cuero negro",
+      "sku": "1016B1",
+      "category": "botas",
+      "cost": 280,
+      "price": 550,
+      "ffPrice": 500,
+      "sourceSku": "1016B1",
+      "stock": 0
+    },
+    {
+      "name": "Botas estandard doble cuero marron",
+      "sku": "1016B2",
+      "category": "botas",
+      "cost": 280,
+      "price": 550,
+      "ffPrice": 500,
+      "sourceSku": "1016B2",
+      "stock": 0
+    },
+    {
+      "name": "Botas estandard triple cuero negro",
+      "sku": "1016B3",
+      "category": "botas",
+      "cost": 287,
+      "price": 600,
+      "ffPrice": 550,
+      "sourceSku": "1016B3",
+      "stock": 0
+    },
+    {
+      "name": "Botas estandard triple cuero marron",
+      "sku": "1016B4",
+      "category": "botas",
+      "cost": 287,
+      "price": 600,
+      "ffPrice": 550,
+      "sourceSku": "1016B4",
+      "stock": 0
+    },
+    {
+      "name": "Botas Polo Argentino TC Premium negro",
+      "sku": "1016B5",
+      "category": "botas",
+      "cost": 500,
+      "price": 750,
+      "ffPrice": 650,
+      "sourceSku": "1016B5",
+      "stock": 4
+    },
+    {
+      "name": "Botas Polo Argentino DC Premium marron",
+      "sku": "1016B6",
+      "category": "botas",
+      "cost": 500,
+      "price": 750,
+      "ffPrice": 650,
+      "sourceSku": "1016B6",
+      "stock": 0
+    },
+    {
+      "name": "Botas Polo Argentino DC Premium negro",
+      "sku": "1016B7",
+      "category": "botas",
+      "cost": 500,
+      "price": 800,
+      "ffPrice": 700,
+      "sourceSku": "1016B7",
+      "stock": 0
+    },
+    {
+      "name": "Botas Polo Argentino TC Premium marron",
+      "sku": "1016B8",
+      "category": "botas",
+      "cost": 500,
+      "price": 800,
+      "ffPrice": 700,
+      "sourceSku": "1016B8",
+      "stock": 0
+    },
+    {
+      "name": "Botas Texas",
+      "sku": "1016BTX",
+      "category": "botas",
+      "cost": 500,
+      "price": 800,
+      "ffPrice": 700,
+      "sourceSku": "1016BTX",
+      "stock": 0
+    },
+    {
+      "name": "Rodilleras estandard velcro y hebilla negro",
+      "sku": "1017REVHN",
+      "category": "rodilleras",
+      "cost": 70,
+      "price": 150,
+      "ffPrice": 120,
+      "sourceSku": "1017REVHN",
+      "stock": 0,
+      "attributes": {
+        "Modelo": "Estandard",
+        "Tipo": "Velcro y hebilla",
+        "Color": "Negro"
+      }
+    },
+    {
+      "name": "Rodilleras estandard doble velcro negro",
+      "sku": "1017REVVN",
+      "category": "rodilleras",
+      "cost": 70,
+      "price": 150,
+      "ffPrice": 120,
+      "sourceSku": "1017REVVN",
+      "stock": 1,
+      "attributes": {
+        "Modelo": "Estandard",
+        "Tipo": "Doble velcro",
+        "Color": "Negro"
+      }
+    },
+    {
+      "name": "Rodilleras estandard velcro y hebilla marron",
+      "sku": "1017REVHM",
+      "category": "rodilleras",
+      "cost": 70,
+      "price": 150,
+      "ffPrice": 120,
+      "sourceSku": "1017REVHM",
+      "stock": 0,
+      "attributes": {
+        "Modelo": "Estandard",
+        "Tipo": "Velcro y hebilla",
+        "Color": "Marron"
+      }
+    },
+    {
+      "name": "Rodilleras estandard doble velcro marron",
+      "sku": "1017REVVM",
+      "category": "rodilleras",
+      "cost": 70,
+      "price": 150,
+      "ffPrice": 120,
+      "sourceSku": "1017REVVM",
+      "stock": 0,
+      "attributes": {
+        "Modelo": "Estandard",
+        "Tipo": "Doble velcro",
+        "Color": "Marron"
+      }
+    },
+    {
+      "name": "Rodilleras premium velcro y hebilla negro",
+      "sku": "1017RPVHN",
+      "category": "rodilleras",
+      "cost": 150,
+      "price": 220,
+      "ffPrice": 200,
+      "sourceSku": "1017RPVHN",
+      "stock": 0,
+      "attributes": {
+        "Modelo": "Premium",
+        "Tipo": "Velcro y hebilla",
+        "Color": "Negro"
+      }
+    },
+    {
+      "name": "Rodilleras premium doble velcro negro",
+      "sku": "1017RPVVN",
+      "category": "rodilleras",
+      "cost": 150,
+      "price": 220,
+      "ffPrice": 200,
+      "sourceSku": "1017RPVVN",
+      "stock": 1,
+      "attributes": {
+        "Modelo": "Premium",
+        "Tipo": "Doble velcro",
+        "Color": "Negro"
+      }
+    },
+    {
+      "name": "Rodilleras premium velcro y hebilla marron",
+      "sku": "1017RPVHM",
+      "category": "rodilleras",
+      "cost": 150,
+      "price": 220,
+      "ffPrice": 200,
+      "sourceSku": "1017RPVHM",
+      "stock": 0,
+      "attributes": {
+        "Modelo": "Premium",
+        "Tipo": "Velcro y hebilla",
+        "Color": "Marron"
+      }
+    },
+    {
+      "name": "Rodilleras premium doble velcro marron",
+      "sku": "1017RPVVM",
+      "category": "rodilleras",
+      "cost": 150,
+      "price": 220,
+      "ffPrice": 200,
+      "sourceSku": "1017RPVVM",
+      "stock": 1,
+      "attributes": {
+        "Modelo": "Premium",
+        "Tipo": "Doble velcro",
+        "Color": "Marron"
+      }
+    },
+    {
+      "name": "Tacos estandard",
+      "sku": "1018TE",
+      "category": "tacos",
+      "cost": 80,
+      "price": 100,
+      "ffPrice": 90,
+      "sourceSku": "1018TE",
+      "stock": 0
+    },
+    {
+      "name": "Tacos personalizados",
+      "sku": "1018TP",
+      "category": "tacos",
+      "cost": 80,
+      "price": 120,
+      "ffPrice": 110,
+      "sourceSku": "1018TP",
+      "stock": 0
+    },
+    {
+      "name": "Taquera de cordura y cuero chica (15 tacos)",
+      "sku": "1019TCC",
+      "category": "tacos",
+      "cost": null,
+      "price": 180,
+      "ffPrice": null,
+      "sourceSku": "1019TCC",
+      "stock": 0
+    },
+    {
+      "name": "Taquera de cordura y cuero mediana (25 tacos)",
+      "sku": "1019TCM",
+      "category": "tacos",
+      "cost": null,
+      "price": 200,
+      "ffPrice": null,
+      "sourceSku": "1019TCM",
+      "stock": 0
+    },
+    {
+      "name": "Taquera de cordura y cuero grande (50 tacos)",
+      "sku": "1019TCG",
+      "category": "tacos",
+      "cost": null,
+      "price": 300,
+      "ffPrice": null,
+      "sourceSku": "1019TCG",
+      "stock": 0
+    },
+    {
+      "name": "Taquera de cordura con ruedas (50 tacos)",
+      "sku": "1019TCR",
+      "category": "tacos",
+      "cost": 190,
+      "price": 300,
+      "ffPrice": 270,
+      "sourceSku": "1019TCR",
+      "stock": 0
+    },
+    {
+      "name": "Bolson monturero negro",
+      "sku": "1020BMN",
+      "category": "accesorios",
+      "cost": 28,
+      "price": 50,
+      "ffPrice": 40,
+      "sourceSku": "1020BMN",
+      "stock": 19
+    },
+    {
+      "name": "Botero negro",
+      "sku": "1021BN",
+      "category": "accesorios",
+      "cost": 20,
+      "price": 35,
+      "ffPrice": 30,
+      "sourceSku": "1021BN",
+      "stock": 2
+    },
+    {
+      "name": "Almohadillas interior cascos homologados",
+      "sku": "1023AL",
+      "category": "accesorios",
+      "cost": 5,
+      "price": 10,
+      "ffPrice": null,
+      "sourceSku": "1023AL",
+      "stock": 0
+    },
+    {
+      "name": "Red para cascos",
+      "sku": "1024RC",
+      "category": "accesorios",
+      "cost": 5,
+      "price": 10,
+      "ffPrice": null,
+      "sourceSku": "1024RC",
+      "stock": 7
+    },
+    {
+      "name": "Funda para cascos",
+      "sku": "1025FC",
+      "category": "accesorios",
+      "cost": 9,
+      "price": null,
+      "ffPrice": null,
+      "supplier": "MARTIN",
+      "sourceSku": "1025FC",
+      "stock": 3
+    },
+    {
+      "name": "Tensabotas",
+      "sku": "1025TB",
+      "category": "accesorios",
+      "cost": 30,
+      "price": 60,
+      "ffPrice": null,
+      "sourceSku": "1025TB",
+      "stock": 0
+    },
+    {
+      "name": "Protectores",
+      "sku": "1026PT",
+      "category": "accesorios",
+      "cost": 90,
+      "price": 140,
+      "ffPrice": null,
+      "sourceSku": "1026PT",
+      "stock": 4
+    }
+  ]
+}

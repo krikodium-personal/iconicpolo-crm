@@ -1,0 +1,19 @@
+'use client';
+
+import { useEffect } from 'react';
+
+export function WebApp() {
+  useEffect(() => {
+    const standalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      ('standalone' in navigator &&
+        Boolean(
+          (navigator as Navigator & { standalone?: boolean }).standalone,
+        ));
+    document.documentElement.classList.toggle('webapp-standalone', standalone);
+    if ('serviceWorker' in navigator) {
+      void navigator.serviceWorker.register('/sw.js');
+    }
+  }, []);
+  return null;
+}
