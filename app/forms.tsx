@@ -2,7 +2,15 @@
 /* eslint-disable react/react-compiler -- Compiler analysis crashes on dynamic order snapshots (Invariant phi predecessor); React Compiler is not enabled. */
 import Image from 'next/image';
 import { useState, type ReactNode } from 'react';
-import type { Contact, Product, Order, Data, Option, Item } from '@/lib/types';
+import type {
+  Contact,
+  Product,
+  Order,
+  Data,
+  Option,
+  Item,
+  Movement,
+} from '@/lib/types';
 import {
   decimal,
   parseDecimal,
@@ -14,6 +22,22 @@ import {
   friendsPrice,
 } from '@/lib/money';
 import { closedFields, findVariantProduct, skuFields } from '@/lib/variants';
+import {
+  configuredKindOf,
+  defaultConfig,
+  extraTotals,
+  isConfiguredCategory,
+  isConfiguredProduct,
+  parseConfig,
+  STOCK_PLACES,
+  stockKey,
+  stockForConfig,
+  stockAtPlace,
+  stockPlaceLabel,
+  summarizeConfig,
+  type ProductConfig,
+} from '@/lib/configure';
+import { Configurator } from './configure-form';
 import {
   Field,
   Pick,
@@ -465,7 +489,11 @@ export function ProductForm({
   const [f, set] = useState({
     name: record?.name || '',
     sku: record?.sku || '',
-    category: record?.category || data.categories[0]?.id || '',
+    category:
+      record?.category ||
+      data.categories.find((c) => c.id !== 'monturas' && c.id !== 'cascos')
+        ?.id ||
+      '',
     supplier_id: record?.supplier_id || '',
     cost: decimal(record?.cost || 0),
     price: decimal(record?.price || 0),
@@ -558,7 +586,13 @@ export function ProductForm({
             onChange={(e) => set({ ...f, name: e.target.value })}
           />
         </Field>
-        <Field label="SKU único *">
+        <Field
+          label={
+            f.category === 'monturas' || f.category === 'cascos'
+              ? 'Código interno *'
+              : 'SKU único *'
+          }
+        >
           <input
             required
             value={f.sku}
@@ -570,12 +604,20 @@ export function ProductForm({
             label="Categoría"
             value={f.category}
             onChange={(v) => set({ ...f, category: v, attributes: {} })}
-            options={data.categories.map((c) => ({
-              value: c.id,
-              label: c.name,
-            }))}
+            options={data.categories
+              .filter((c) => !isConfiguredCategory(c.id))
+              .map((c) => ({
+                value: c.id,
+                label: c.name,
+              }))}
           />
         </Field>
+        {isConfiguredCategory(f.category) ? (
+          <p className="hint" style={{ gridColumn: '1 / -1' }}>
+            Monturas, cascos, rodilleras y botas se configuran desde las cards
+            de Productos.
+          </p>
+        ) : null}
         <Field
           label="Proveedor"
           pending={!f.supplier_id}
@@ -845,7 +887,10 @@ export function ProductForm({
             .map((m) => (
               <div key={m.id} className="history-line">
                 <div>
-                  {m.reason}
+                  {m.reason || (m.quantity > 0 ? 'Stock' : 'Devolución')}
+                  {m.location ? (
+                    <small>{stockPlaceLabel(m.location)}</small>
+                  ) : null}
                   <small>
                     {new Date(m.created_at).toLocaleString('es-AR')}
                   </small>
@@ -947,7 +992,14 @@ export function ProductDetail({
       <section className="form-section">
         <h3>Identificación</h3>
         <div className="pdp-facts">
-          <Fact label="SKU" value={record.sku} />
+          <Fact
+            label={isConfiguredProduct(record) ? 'Tipo' : 'SKU'}
+            value={
+              isConfiguredProduct(record)
+                ? 'Configurable por pedido'
+                : record.sku
+            }
+          />
           <Fact label="Categoría" value={category?.name || record.category} />
           <Fact
             label="Proveedor"
@@ -1068,18 +1120,42 @@ export function ProductDetail({
       </section>
       <section className="form-section">
         <h3>Movimientos de stock · {record.stock} disponibles</h3>
-        {movements.map((m) => (
-          <div key={m.id} className="history-line">
-            <div>
-              {m.reason}
-              <small>{new Date(m.created_at).toLocaleString('es-AR')}</small>
+        {isConfiguredProduct(record) ? (
+          <p className="hint">
+            El stock se guarda por combinación. Ingresá unidades eligiendo las
+            mismas variantes que en un pedido, sin cliente.
+          </p>
+        ) : null}
+        {movements.map((m) => {
+          const kind = configuredKindOf(record);
+          const detail =
+            kind && m.config && Object.keys(m.config).length
+              ? summarizeConfig(kind, m.config as ProductConfig)
+              : '';
+          return (
+            <div key={m.id} className="history-line">
+              <div>
+                {m.reason || (m.quantity > 0 ? 'Stock' : 'Devolución')}
+                {m.location || m.supplier_id ? (
+                  <small>
+                    {[
+                      m.location ? stockPlaceLabel(m.location) : '',
+                      data.contacts.find((c) => c.id === m.supplier_id)?.name,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </small>
+                ) : null}
+                {detail ? <small>{detail}</small> : null}
+                <small>{new Date(m.created_at).toLocaleString('es-AR')}</small>
+              </div>
+              <strong className={m.quantity > 0 ? 'positive' : 'negative'}>
+                {m.quantity > 0 ? '+' : ''}
+                {m.quantity}
+              </strong>
             </div>
-            <strong className={m.quantity > 0 ? 'positive' : 'negative'}>
-              {m.quantity > 0 ? '+' : ''}
-              {m.quantity}
-            </strong>
-          </div>
-        ))}
+          );
+        })}
         {!movements.length && (
           <p className="hint">Sin movimientos registrados.</p>
         )}
@@ -1097,6 +1173,7 @@ type DraftItem = {
   manual_price: string;
   option_ids: string[];
   attributes: Record<string, string>;
+  config?: ProductConfig;
   snapshot?: Item;
 };
 function productFieldValues(
@@ -1139,6 +1216,7 @@ export function OrderForm({
       manual_price: '0.00',
       option_ids: i.selections.options.map((o) => o.id),
       attributes: i.selections.attributes,
+      config: i.selections.config as ProductConfig | undefined,
       snapshot: i,
     })) || [],
   );
@@ -1151,6 +1229,40 @@ export function OrderForm({
   function itemTotals(i: DraftItem) {
     const p = data.products.find((p) => p.id === i.product_id);
     if (!p) throw new Error('Elegí un producto.');
+    const configured = configuredKindOf(p);
+    if (configured) {
+      const config = parseConfig(
+        configured,
+        i.config || defaultConfig(configured),
+      );
+      const extras = extraTotals(configured, config, p.pricing);
+      const base =
+        i.price_mode === 'manual'
+          ? parseDecimal(i.manual_price)
+          : i.price_mode === 'ff'
+            ? friendsPrice(p)
+            : i.price_mode === 'promo'
+              ? promoPrice(p)
+              : p.price;
+      const price = i.snapshot?.unit_price ?? base + extras.price;
+      const cost = i.snapshot?.unit_cost ?? p.cost + extras.cost;
+      return {
+        ...lineTotals(
+          price,
+          cost,
+          Number(i.quantity),
+          parseDecimal(i.discount),
+        ),
+        price,
+        unitCost: cost,
+        sku: p.sku,
+        available: stockForConfig(
+          data.movements,
+          p.id,
+          stockKey(configured, config),
+        ),
+      };
+    }
     const category = data.categories.find((c) => c.id === p.category);
     const fields = category?.fields || [];
     for (const field of closedFields(fields)) {
@@ -1226,6 +1338,7 @@ export function OrderForm({
               manual_price: parseDecimal(i.manual_price),
               option_ids: i.option_ids,
               attributes: i.attributes,
+              config: i.config,
             })),
           });
         } catch (e) {
@@ -1383,17 +1496,21 @@ export function OrderForm({
                         const fields =
                           data.categories.find((c) => c.id === next?.category)
                             ?.fields || [];
+                        const kind = next ? configuredKindOf(next) : null;
                         update(i.key, {
                           product_id: v,
                           option_ids: [],
                           attributes: productFieldValues(next, fields),
+                          config: kind ? defaultConfig(kind) : undefined,
                         });
                       }}
                       options={data.products
                         .filter((product) => !product.archived)
                         .map((product) => ({
                           value: product.id,
-                          label: `${product.name} · ${product.sku} · ${product.stock} uds.`,
+                          label: isConfiguredProduct(product)
+                            ? `${product.name} · a configurar · ${product.stock} uds.`
+                            : `${product.name} · ${product.sku} · ${product.stock} uds.`,
                         }))}
                     />
                   </Field>
@@ -1459,99 +1576,115 @@ export function OrderForm({
                 </div>
                 {!i.snapshot && p && (
                   <>
-                    <div className="option-checks">
-                      {p.options.map((o) => (
-                        <div key={o.id}>
-                          {o.photo && (
-                            <Image
-                              unoptimized
-                              width={46}
-                              height={46}
-                              src={o.photo}
-                              alt={o.name}
-                            />
-                          )}
-                          <Check
-                            label={`${o.name} (+${formatMoney(o.price, data.currency)})`}
-                            checked={i.option_ids.includes(o.id)}
-                            onChange={(v) =>
-                              update(i.key, {
-                                option_ids: v
-                                  ? [...i.option_ids, o.id]
-                                  : i.option_ids.filter((id) => id !== o.id),
-                              })
-                            }
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <div className="form-grid">
-                      {data.categories
-                        .find((c) => c.id === p.category)
-                        ?.fields.map((field) => (
-                          <Field
-                            key={field.name}
-                            label={
-                              field.values.length
-                                ? `${field.name} *`
-                                : field.name
-                            }
-                          >
-                            {field.values.length ? (
-                              <Pick
-                                label={field.name}
-                                value={i.attributes[field.name] || ''}
-                                onChange={(v) => {
-                                  const fields =
-                                    data.categories.find(
-                                      (c) => c.id === p.category,
-                                    )?.fields || [];
-                                  const attributes = {
-                                    ...i.attributes,
-                                    [field.name]: v,
-                                  };
-                                  const match = findVariantProduct(
-                                    data.products,
-                                    p.category,
-                                    attributes,
-                                    fields,
-                                  );
+                    {configuredKindOf(p) ? (
+                      <Configurator
+                        kind={configuredKindOf(p)!}
+                        value={i.config || defaultConfig(configuredKindOf(p)!)}
+                        onChange={(config) => update(i.key, { config })}
+                        movements={data.movements}
+                        productId={p.id}
+                        pricing={p.pricing}
+                        currency={data.currency}
+                      />
+                    ) : (
+                      <>
+                        <div className="option-checks">
+                          {p.options.map((o) => (
+                            <div key={o.id}>
+                              {o.photo && (
+                                <Image
+                                  unoptimized
+                                  width={46}
+                                  height={46}
+                                  src={o.photo}
+                                  alt={o.name}
+                                />
+                              )}
+                              <Check
+                                label={`${o.name} (+${formatMoney(o.price, data.currency)})`}
+                                checked={i.option_ids.includes(o.id)}
+                                onChange={(v) =>
                                   update(i.key, {
-                                    attributes,
-                                    product_id: match?.id || i.product_id,
-                                    option_ids:
-                                      match && match.id !== i.product_id
-                                        ? []
-                                        : i.option_ids,
-                                  });
-                                }}
-                                options={options(field.values)}
-                              />
-                            ) : (
-                              <input
-                                value={i.attributes[field.name] || ''}
-                                onChange={(e) =>
-                                  update(i.key, {
-                                    attributes: {
-                                      ...i.attributes,
-                                      [field.name]: e.target.value,
-                                    },
+                                    option_ids: v
+                                      ? [...i.option_ids, o.id]
+                                      : i.option_ids.filter(
+                                          (id) => id !== o.id,
+                                        ),
                                   })
                                 }
                               />
-                            )}
-                          </Field>
-                        ))}
-                    </div>
-                    {skuKeys.length && shown ? (
-                      <p className="sku-line">
-                        SKU <strong>{shown.sku}</strong>
-                        {` · ${shown.stock} uds. disponibles`}
-                      </p>
-                    ) : null}
-                    {lineError === 'No hay un SKU para esa combinación.' ? (
-                      <p className="pending-text">{lineError}</p>
-                    ) : null}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="form-grid">
+                          {data.categories
+                            .find((c) => c.id === p.category)
+                            ?.fields.map((field) => (
+                              <Field
+                                key={field.name}
+                                label={
+                                  field.values.length
+                                    ? `${field.name} *`
+                                    : field.name
+                                }
+                              >
+                                {field.values.length ? (
+                                  <Pick
+                                    label={field.name}
+                                    value={i.attributes[field.name] || ''}
+                                    onChange={(v) => {
+                                      const fields =
+                                        data.categories.find(
+                                          (c) => c.id === p.category,
+                                        )?.fields || [];
+                                      const attributes = {
+                                        ...i.attributes,
+                                        [field.name]: v,
+                                      };
+                                      const match = findVariantProduct(
+                                        data.products,
+                                        p.category,
+                                        attributes,
+                                        fields,
+                                      );
+                                      update(i.key, {
+                                        attributes,
+                                        product_id: match?.id || i.product_id,
+                                        option_ids:
+                                          match && match.id !== i.product_id
+                                            ? []
+                                            : i.option_ids,
+                                      });
+                                    }}
+                                    options={options(field.values)}
+                                  />
+                                ) : (
+                                  <input
+                                    value={i.attributes[field.name] || ''}
+                                    onChange={(e) =>
+                                      update(i.key, {
+                                        attributes: {
+                                          ...i.attributes,
+                                          [field.name]: e.target.value,
+                                        },
+                                      })
+                                    }
+                                  />
+                                )}
+                              </Field>
+                            ))}
+                        </div>
+                        {skuKeys.length && shown ? (
+                          <p className="sku-line">
+                            SKU <strong>{shown.sku}</strong>
+                            {` · ${shown.stock} uds. disponibles`}
+                          </p>
+                        ) : null}
+                        {lineError === 'No hay un SKU para esa combinación.' ? (
+                          <p className="pending-text">{lineError}</p>
+                        ) : null}
+                      </>
+                    )}
                   </>
                 )}
                 {t && (
@@ -1637,32 +1770,159 @@ export function OrderForm({
     </form>
   );
 }
+function configLine(record: Product, config: Record<string, unknown>) {
+  const kind = configuredKindOf(record);
+  if (!kind || !Object.keys(config || {}).length)
+    return 'Combinación sin detalle';
+  try {
+    return summarizeConfig(kind, config as ProductConfig);
+  } catch {
+    return 'Combinación sin detalle';
+  }
+}
+export function StockOverview({
+  record,
+  data,
+  onEdit,
+}: {
+  record: Product;
+  data: Data;
+  onEdit: (movement: Movement) => void;
+}) {
+  const items = data.movements.filter(
+    (m) => m.product_id === record.id && m.quantity > 0,
+  );
+  return (
+    <div className="stock-overview">
+      <div className="stock-current stock-summary">
+        <div>
+          <span>Disponible</span>
+          <strong>
+            {record.stock} <small>unidades</small>
+          </strong>
+        </div>
+        <div className="stock-places">
+          {STOCK_PLACES.map((place) => (
+            <span key={place.id}>
+              {place.label}
+              <b>{stockAtPlace(data.movements, record.id, place.id)}</b>
+            </span>
+          ))}
+        </div>
+      </div>
+      {items.length ? (
+        items.map((m) => (
+          <div className="stock-item" key={m.id}>
+            <div>
+              <b>
+                {configuredKindOf(record)
+                  ? configLine(record, m.config)
+                  : record.name}
+              </b>
+              <small>
+                {[
+                  stockPlaceLabel(m.location),
+                  data.contacts.find((c) => c.id === m.supplier_id)?.name,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </small>
+            </div>
+            <div className="stock-item-side">
+              <strong>
+                {m.quantity} <small>uds.</small>
+              </strong>
+              <button
+                type="button"
+                className="icon-button"
+                title="Editar registro"
+                aria-label="Editar registro"
+                onClick={() => onEdit(m)}
+              >
+                <Pencil size={16} />
+              </button>
+            </div>
+          </div>
+        ))
+      ) : (
+        <p className="hint">Todavía no hay unidades cargadas.</p>
+      )}
+    </div>
+  );
+}
 export function StockForm({
   record,
   data,
   save,
+  movement,
 }: {
   record: Product;
   data: Data;
   save: Save;
+  movement?: Movement;
 }) {
-  const [q, Q] = useState('1'),
-    [kind, K] = useState('in'),
-    [reason, R] = useState(''),
+  const configured = configuredKindOf(record);
+  const editing = !!movement;
+  const [q, Q] = useState(
+      movement ? String(Math.abs(movement.quantity)) : '1',
+    ),
+    [kind, K] = useState(movement && movement.quantity < 0 ? 'out' : 'in'),
+    [place, setPlace] = useState(movement?.location || ''),
+    [supplier, setSupplier] = useState(
+      movement?.supplier_id || record.supplier_id || '',
+    ),
+    [reason, R] = useState(movement?.reason || ''),
+    [config, setConfig] = useState<ProductConfig>(() => {
+      if (!configured) return defaultConfig('montura');
+      if (movement?.config && Object.keys(movement.config).length) {
+        try {
+          return parseConfig(configured, movement.config);
+        } catch {
+          return defaultConfig(configured);
+        }
+      }
+      return defaultConfig(configured);
+    }),
     [error, E] = useState(''),
     [busy, B] = useState(false);
+  const configKey = configured ? stockKey(configured, config) : '';
+  const available = stockForConfig(
+    data.movements,
+    record.id,
+    configKey,
+    place || undefined,
+  );
   return (
     <form
       onSubmit={async (e) => {
         e.preventDefault();
         B(true);
         try {
-          await save({
-            action: 'stock',
-            product_id: record.id,
-            quantity: Number(q) * (kind === 'in' ? 1 : -1),
-            reason,
-          });
+          if (configured) parseConfig(configured, config);
+          if (!place) throw new Error('Elegí si el stock está en Ivan o Kriko.');
+          if (!supplier) throw new Error('Elegí el proveedor.');
+          await save(
+            editing
+              ? {
+                  action: 'stock_update',
+                  id: movement.id,
+                  product_id: record.id,
+                  quantity: Number(q),
+                  reason,
+                  location: place,
+                  supplier_id: supplier,
+                  config: configured ? config : undefined,
+                }
+              : {
+                  action: 'stock',
+                  product_id: record.id,
+                  quantity: Number(q) * (kind === 'in' ? 1 : -1),
+                  reason,
+                  location: place,
+                  supplier_id: supplier,
+                  config: configured ? config : undefined,
+                },
+          );
         } catch (e) {
           E((e as Error).message);
         } finally {
@@ -1672,23 +1932,47 @@ export function StockForm({
     >
       <ErrorBox message={error} />
       <div className="stock-current">
-        <span>Disponible</span>
+        <span>
+          {configured ? 'Esta combinación' : 'Disponible'}
+          {place ? ` · ${stockPlaceLabel(place)}` : ''}
+        </span>
         <strong>
-          {record.stock} <small>unidades</small>
+          {available} <small>unidades</small>
         </strong>
       </div>
-      <div className="form-grid">
-        <Field label="Movimiento">
-          <Pick
-            label="Movimiento"
-            value={kind}
-            onChange={K}
-            options={[
-              { value: 'in', label: 'Ingreso / devolución' },
-              { value: 'out', label: 'Salida / ajuste' },
-            ]}
+      {configured ? (
+        <>
+          <p className="hint">
+            Elegí las variantes como en un pedido. Este movimiento no se asocia
+            a un cliente.
+          </p>
+          <Configurator
+            kind={configured}
+            value={config}
+            onChange={setConfig}
+            movements={data.movements}
+            productId={record.id}
+            pricing={record.pricing}
+            currency={data.currency}
+            onError={E}
+            onBusy={B}
           />
-        </Field>
+        </>
+      ) : null}
+      <div className="form-grid">
+        {editing ? null : (
+          <Field label="Movimiento">
+            <Pick
+              label="Movimiento"
+              value={kind}
+              onChange={K}
+              options={[
+                { value: 'in', label: 'Stock' },
+                { value: 'out', label: 'Devolución' },
+              ]}
+            />
+          </Field>
+        )}
         <Field label="Cantidad *">
           <input
             type="number"
@@ -1699,36 +1983,80 @@ export function StockForm({
             onChange={(e) => Q(e.target.value)}
           />
         </Field>
-        <Field label="Motivo *" wide>
+        <Field label="Dónde está *">
+          <Pick
+            label="Dónde está"
+            value={place}
+            onChange={setPlace}
+            options={STOCK_PLACES.map((item) => ({
+              value: item.id,
+              label: item.label,
+            }))}
+          />
+        </Field>
+        <Field label="Proveedor *">
+          <Pick
+            label="Proveedor"
+            value={supplier}
+            onChange={setSupplier}
+            options={[
+              { value: '', label: 'Elegí un proveedor' },
+              ...data.contacts
+                .filter(
+                  (c) =>
+                    c.kind === 'supplier' &&
+                    (!c.archived || c.id === supplier),
+                )
+                .map((c) => ({ value: c.id, label: c.name })),
+            ]}
+          />
+        </Field>
+        <Field label="Motivo" wide>
           <input
-            required
             value={reason}
             onChange={(e) => R(e.target.value)}
-            placeholder="Ej. Recepción del proveedor"
+            placeholder="Opcional"
           />
         </Field>
       </div>
-      <p className="hint">
-        El movimiento queda registrado. Las correcciones se realizan con un
-        nuevo movimiento inverso.
-      </p>
-      <h3 className="form-section">Últimos movimientos</h3>
-      {data.movements
-        .filter((m) => m.product_id === record.id)
-        .slice(0, 8)
-        .map((m) => (
-          <div className="history-line" key={m.id}>
-            <span>
-              {m.reason}
-              <small>{new Date(m.created_at).toLocaleString('es-AR')}</small>
-            </span>
-            <b>
-              {m.quantity > 0 ? '+' : ''}
-              {m.quantity}
-            </b>
-          </div>
-        ))}
-      <Footer busy={busy} label="Registrar movimiento" />
+      {editing ? null : (
+        <p className="hint">
+          El movimiento queda registrado. Las correcciones se realizan editando
+          el registro o con un movimiento inverso.
+        </p>
+      )}
+      {editing ? null : (
+        <>
+          <h3 className="form-section">Últimos movimientos</h3>
+          {data.movements
+            .filter((m) => m.product_id === record.id)
+            .slice(0, 8)
+            .map((m) => (
+              <div className="history-line" key={m.id}>
+                <span>
+                  {m.reason || (m.quantity > 0 ? 'Stock' : 'Devolución')}
+                  <small>
+                    {[
+                      stockPlaceLabel(m.location),
+                      data.contacts.find((c) => c.id === m.supplier_id)?.name,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </small>
+                  <small>{new Date(m.created_at).toLocaleString('es-AR')}</small>
+                </span>
+                <b>
+                  {m.quantity > 0 ? '+' : ''}
+                  {m.quantity}
+                </b>
+              </div>
+            ))}
+        </>
+      )}
+      <Footer
+        busy={busy}
+        label={editing ? 'Guardar cambios' : 'Registrar movimiento'}
+      />
     </form>
   );
 }

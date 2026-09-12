@@ -48,6 +48,8 @@ export const products = sqliteTable(
     photos: text('photos').notNull().default('[]'),
     options: text('options').notNull().default('[]'),
     attributes: text('attributes').notNull().default('{}'),
+    pricing: text('pricing').notNull().default('{}'),
+    kind: text('kind').notNull().default('sku'),
     archived: integer('archived').notNull().default(0),
     version: integer('version').notNull().default(1),
   },
@@ -108,8 +110,15 @@ export const stockMovements = sqliteTable(
     quantity: integer('quantity').notNull(),
     reason: text('reason').notNull(),
     createdAt: text('created_at').notNull(),
+    config: text('config').notNull().default('{}'),
+    configKey: text('config_key').notNull().default(''),
+    location: text('location').notNull().default(''),
+    supplierId: text('supplier_id').notNull().default(''),
   },
-  (t) => [index('idx_stock_product').on(t.productId)],
+  (t) => [
+    index('idx_stock_product').on(t.productId),
+    index('idx_stock_product_config').on(t.productId, t.configKey),
+  ],
 );
 export const images = sqliteTable('images', {
   id: text('id').primaryKey(),

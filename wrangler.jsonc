@@ -1,0 +1,22 @@
+{
+  "name": "iconic-crm",
+  "account_id": "35d3d7c12fe5b8af53a25c64680d9422",
+  "compatibility_date": "2026-09-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "not_found_handling": "none"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "iconic-crm",
+      "database_id": "d40d3c2f-d003-4070-8ea6-201d17b5eb67"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "iconic-crm-files"
+    }
+  ]
+}

@@ -1,6 +1,5 @@
 'use client';
 import Image from 'next/image';
-import Link from 'next/link';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -24,6 +23,7 @@ import {
   ArrowRight,
   CircleDollarSign,
   Landmark,
+  Check,
 } from 'lucide-react';
 import {
   SidebarProvider,
@@ -76,6 +76,7 @@ import {
   ProductBulkBar,
   OrderForm,
   StockForm,
+  StockOverview,
   SettingsForm,
   whatsapp,
   whatsappGroup,
@@ -83,7 +84,9 @@ import {
 import { AccountBoard } from './account';
 import { Status, ProductPhoto, Pick, ErrorBox, SelectCheck } from './ui';
 import { formatMoney, friendsPrice, margin } from '@/lib/money';
-import type { Data, Contact, Product, Order } from '@/lib/types';
+import { isConfiguredCategory, isConfiguredProduct } from '@/lib/configure';
+import { TypeCards, TypeConfigForm } from './type-config';
+import type { Data, Contact, Product, Order, Movement } from '@/lib/types';
 
 const nav: { id: string; title: string; short: string; icon: LucideIcon }[] = [
   {
@@ -118,7 +121,8 @@ type Panel =
   | { type: 'supplier' | 'customer'; record?: Contact }
   | { type: 'product'; record?: Product; editing?: boolean }
   | { type: 'order'; record?: Order }
-  | { type: 'stock'; record: Product }
+  | { type: 'stock'; record: Product; movement?: Movement; back?: 'inventory' }
+  | { type: 'inventory'; record: Product }
   | { type: 'settings' };
 type Archived = {
   entity: 'products' | 'orders' | 'contacts';
@@ -182,7 +186,9 @@ function ProductCard({
         <ProductPhoto name={product.name} url={product.photos[0]} />
         <div className="record-card-id">
           <span className="record-link">{product.name}</span>
-          <small>{product.sku}</small>
+          <small>
+            {isConfiguredProduct(product) ? 'Configurable' : product.sku}
+          </small>
           <small className={supplierName ? undefined : 'pending-text'}>
             {[categoryName, supplierName || 'Sin proveedor']
               .filter(Boolean)
@@ -460,7 +466,7 @@ export default function CRM({
 }) {
   const [data, D] = useState<Data | null>(null),
     [error, E] = useState(''),
-    [notice, N] = useState(''),
+    [notice, setNotice] = useState<{ id: number; text: string } | null>(null),
     [panel, P] = useState<Panel | null>(null),
     [query, Q] = useState(''),
     [filter, F] = useState(initialFilter),
@@ -476,6 +482,14 @@ export default function CRM({
     D(next);
     return next;
   }, []);
+  const N = (text: string) => {
+    setNotice(text ? { id: Date.now(), text } : null);
+  };
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(null), 3200);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
   useEffect(() => {
     // oxlint-disable-next-line react/react-compiler -- The async refresh synchronizes this view with D1.
     void refresh().catch((e) => E(e.message));
@@ -546,8 +560,20 @@ export default function CRM({
       const next = await refresh();
       if (body.action === 'product' && typeof body.id === 'string') {
         const updated = next.products.find((p) => p.id === body.id);
-        if (updated) {
+        if (updated && !isConfiguredProduct(updated)) {
           P({ type: 'product', record: updated });
+          return;
+        }
+      }
+      if (
+        (body.action === 'stock' || body.action === 'stock_update') &&
+        typeof body.product_id === 'string' &&
+        (panel?.type === 'inventory' ||
+          (panel?.type === 'stock' && panel.back === 'inventory'))
+      ) {
+        const updated = next.products.find((p) => p.id === body.product_id);
+        if (updated) {
+          P({ type: 'inventory', record: updated });
           return;
         }
       }
@@ -615,7 +641,9 @@ export default function CRM({
   const closed = activeOrders.filter((o) => o.status === 'cerrado');
   const open = activeOrders.filter((o) => o.status !== 'cerrado');
   const lowStock =
-    data?.products.filter((p) => !p.archived && p.stock <= 2) || [];
+    data?.products.filter(
+      (p) => !p.archived && !isConfiguredProduct(p) && p.stock <= 2,
+    ) || [];
   const customer = (id: string) =>
     data?.contacts.find((c) => c.id === id)?.name || 'Cliente';
   const contacts =
@@ -628,6 +656,7 @@ export default function CRM({
   const products =
     data?.products.filter(
       (p) =>
+        !isConfiguredProduct(p) &&
         !!p.archived === archived &&
         search(p.name, p.sku) &&
         (filter === 'all' || p.category === filter) &&
@@ -796,1029 +825,1165 @@ export default function CRM({
   const panelTitle =
     panel?.type === 'settings'
       ? 'Configuración'
-      : panel?.type === 'stock'
+      : panel?.type === 'stock' || panel?.type === 'inventory'
         ? `Stock · ${panel.record.name}`
         : panel?.type === 'order'
           ? panel.record?.number || 'Nuevo pedido'
-          : panel?.type === 'product'
-            ? panel.record?.name || 'Nuevo producto'
+          : panel?.type === 'product' &&
+              panel.record &&
+              isConfiguredProduct(panel.record)
+            ? `Configurar ${panel.record.name}`
+            : panel?.type === 'product'
+              ? panel.record?.name || 'Nuevo producto'
             : panel?.type === 'supplier'
               ? panel.record?.name || 'Nuevo proveedor'
               : panel?.record?.name || 'Nuevo cliente';
   return (
-    <SidebarProvider>
-      <Sidebar>
-        <SidebarHeader>
-          <Link className="brand" href="/" aria-label="Iconic CRM">
-            <Image
-              unoptimized
-              src="/logo-iconic.png"
-              alt="Iconic"
-              width={89}
-              height={100}
-              priority
-            />
-          </Link>
-        </SidebarHeader>
-        <SidebarContent>
-          <SidebarMenu>
-            {nav.map(({ id, title, icon: Icon }) => (
-              <SidebarMenuItem key={id}>
-                <SidebarMenuButton
-                  isActive={module === id}
-                  render={
-                    <Link
-                      aria-label={title}
-                      href={id === 'dashboard' ? '/' : `/${id}`}
-                    />
-                  }
-                >
-                  <Icon />
-                  {title}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
-        </SidebarContent>
-        <SidebarFooter>
-          <button
-            className="settings-button"
-            onClick={() => P({ type: 'settings' })}
-          >
-            <Settings size={17} /> Configuración
-          </button>
-          <div className="sidebar-foot">
-            <span className="avatar">IC</span>
-            <span>
-              Iconic Equestrian<small>Gestión comercial · {currency}</small>
-            </span>
-          </div>
-        </SidebarFooter>
-      </Sidebar>
-      <SidebarInset>
-        <header className="topbar">
-          <Link className="topbar-logo" href="/" aria-label="Iconic CRM">
-            <Image
-              unoptimized
-              src="/logo-iconic.png"
-              alt="Iconic"
-              width={225}
-              height={253}
-              priority
-            />
-          </Link>
-          <SidebarTrigger />
-          <div className="topbar-end">
+    <>
+      <SidebarProvider>
+        <Sidebar>
+          <SidebarHeader>
+            <a className="brand" href="/" aria-label="Iconic CRM">
+              <Image
+                unoptimized
+                src="/logo-iconic.png"
+                alt="Iconic"
+                width={89}
+                height={100}
+                priority
+              />
+            </a>
+          </SidebarHeader>
+          <SidebarContent>
+            <SidebarMenu>
+              {nav.map(({ id, title, icon: Icon }) => (
+                <SidebarMenuItem key={id}>
+                  <SidebarMenuButton
+                    isActive={module === id}
+                    render={
+                      <a
+                        aria-label={title}
+                        href={id === 'dashboard' ? '/' : `/${id}`}
+                      />
+                    }
+                  >
+                    <Icon />
+                    {title}
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarContent>
+          <SidebarFooter>
             <button
-              className="icon-button topbar-settings"
-              aria-label="Configuración"
+              className="settings-button"
               onClick={() => P({ type: 'settings' })}
             >
-              <Settings size={17} />
+              <Settings size={17} /> Configuración
             </button>
-            <button
-              className="icon-button"
-              aria-label="Actualizar datos"
-              onClick={() => {
-                E('');
-                void refresh()
-                  .then(() => N('Datos actualizados.'))
-                  .catch((e) => E(e.message));
-              }}
-            >
-              <RefreshCw size={17} />
-            </button>
-          </div>
-        </header>
-        <main className="workspace">
-          <div className="page-title">
-            <div>
-              <p className="eyebrow">
-                {module === 'dashboard'
-                  ? 'TU NEGOCIO, EN PERSPECTIVA'
-                  : module === 'tablero'
-                    ? 'RESULTADO Y CAJA'
-                    : module === 'tareas'
-                      ? 'SEGUIMIENTO OPERATIVO'
-                      : 'ICONIC · GESTIÓN COMERCIAL'}
-              </p>
-              <h1>{title}</h1>
-              <p>
-                {module === 'dashboard'
-                  ? 'Una mirada a las ventas, los clientes y lo que viene.'
-                  : module === 'tablero'
-                    ? 'Facturación, costos, ganancia y cashouts de socios.'
-                    : module === 'tareas'
-                      ? 'Pendientes, responsables y avance de cada trabajo.'
-                      : module === 'productos'
-                        ? 'Tu catálogo, sus precios y cada movimiento de stock.'
-                        : module === 'clientes'
-                          ? 'Cada relación, con su historia y su próxima oportunidad.'
-                          : module === 'proveedores'
-                            ? 'Las personas y talleres detrás de tus productos.'
-                            : 'De la primera consulta a la entrega.'}
-              </p>
-            </div>
-            {module !== 'tareas' && module !== 'tablero' && (
-              <button
-                className="primary"
-                disabled={!data?.categories.length}
-                onClick={create}
-              >
-                <Plus size={18} />
-                {module === 'productos'
-                  ? 'Nuevo producto'
-                  : module === 'clientes'
-                    ? 'Nuevo cliente'
-                    : module === 'proveedores'
-                      ? 'Nuevo proveedor'
-                      : 'Nuevo pedido'}
-              </button>
-            )}
-          </div>
-          <ErrorBox message={error} />
-          {notice && (
-            <output className="notice">
-              {notice}
-              <button onClick={() => N('')} aria-label="Cerrar aviso">
-                ×
-              </button>
-            </output>
-          )}
-          {!data ? (
-            <div className="metrics">
-              {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-40 rounded-xl" />
-              ))}
-            </div>
-          ) : !data.categories.length ? (
-            <section className="onboarding">
-              <span className="onboarding-icon">
-                <Package size={32} />
+            <div className="sidebar-foot">
+              <span className="avatar">IC</span>
+              <span>
+                Iconic Equestrian<small>Gestión comercial · {currency}</small>
               </span>
-              <h2>Bienvenido a Iconic</h2>
-              <p>
-                Tu espacio para gestionar productos de polo, equitación y salto.
-              </p>
+            </div>
+          </SidebarFooter>
+        </Sidebar>
+        <SidebarInset>
+          <header className="topbar">
+            <a className="topbar-logo" href="/" aria-label="Iconic CRM">
+              <Image
+                unoptimized
+                src="/logo-iconic.png"
+                alt="Iconic"
+                width={225}
+                height={253}
+                priority
+              />
+            </a>
+            <SidebarTrigger />
+            <div className="topbar-end">
+              <button
+                className="icon-button topbar-settings"
+                aria-label="Configuración"
+                onClick={() => P({ type: 'settings' })}
+              >
+                <Settings size={17} />
+              </button>
+              <button
+                className="icon-button"
+                aria-label="Actualizar datos"
+                onClick={() => {
+                  E('');
+                  void refresh()
+                    .then(() => N('Datos actualizados.'))
+                    .catch((e) => E(e.message));
+                }}
+              >
+                <RefreshCw size={17} />
+              </button>
+            </div>
+          </header>
+          <main className="workspace">
+            <div className="page-title">
               <div>
+                <p className="eyebrow">
+                  {module === 'dashboard'
+                    ? 'TU NEGOCIO, EN PERSPECTIVA'
+                    : module === 'tablero'
+                      ? 'RESULTADO Y CAJA'
+                      : module === 'tareas'
+                        ? 'SEGUIMIENTO OPERATIVO'
+                        : 'ICONIC · GESTIÓN COMERCIAL'}
+                </p>
+                <h1>{title}</h1>
+                <p>
+                  {module === 'dashboard'
+                    ? 'Una mirada a las ventas, los clientes y lo que viene.'
+                    : module === 'tablero'
+                      ? 'Facturación, costos, ganancia y cashouts de socios.'
+                      : module === 'tareas'
+                        ? 'Pendientes, responsables y avance de cada trabajo.'
+                        : module === 'productos'
+                          ? 'Tu catálogo, sus precios y cada movimiento de stock.'
+                          : module === 'clientes'
+                            ? 'Cada relación, con su historia y su próxima oportunidad.'
+                            : module === 'proveedores'
+                              ? 'Las personas y talleres detrás de tus productos.'
+                              : 'De la primera consulta a la entrega.'}
+                </p>
+              </div>
+              {module !== 'tareas' && module !== 'tablero' && (
                 <button
                   className="primary"
-                  disabled={busy}
-                  onClick={() => initialize(true)}
+                  disabled={!data?.categories.length}
+                  onClick={create}
                 >
-                  Explorar con datos de ejemplo <ArrowRight size={17} />
+                  <Plus size={18} />
+                  {module === 'productos'
+                    ? 'Nuevo producto'
+                    : module === 'clientes'
+                      ? 'Nuevo cliente'
+                      : module === 'proveedores'
+                        ? 'Nuevo proveedor'
+                        : 'Nuevo pedido'}
                 </button>
-                <button
-                  className="secondary"
-                  disabled={busy}
-                  onClick={() => initialize(false)}
-                >
-                  Empezar con una base vacía
-                </button>
-              </div>
-              <small>
-                Los ejemplos incluyen productos, clientes y pedidos ficticios.
-              </small>
-            </section>
-          ) : module === 'dashboard' ? (
-            <>
+              )}
+            </div>
+            <ErrorBox message={error} />
+            {!data ? (
               <div className="metrics">
-                {[
-                  {
-                    label: 'Ventas cerradas',
-                    value: money(closed.reduce((s, o) => s + o.total, 0)),
-                    hint: `${closed.length} pedidos cerrados`,
-                    icon: CircleDollarSign,
-                  },
-                  {
-                    label: 'Ganancia bruta',
-                    value: money(
-                      closed.reduce((s, o) => s + o.total - o.cost, 0),
-                    ),
-                    hint: 'Venta menos costo del producto',
-                    icon: TrendingUp,
-                  },
-                  {
-                    label: 'Pedidos en curso',
-                    value: String(open.length).padStart(2, '0'),
-                    hint: `${money(open.reduce((s, o) => s + o.total, 0))} en cartera`,
-                    icon: ShoppingBag,
-                  },
-                  {
-                    label: 'Clientes activos',
-                    value: String(
-                      data.contacts.filter(
-                        (c) => c.kind === 'customer' && !c.archived,
-                      ).length,
-                    ).padStart(2, '0'),
-                    hint: 'Relaciones para seguir creciendo',
-                    icon: Users,
-                  },
-                ].map(({ label, value, hint, icon: Icon }) => (
-                  <article className="metric" key={label}>
-                    <p>
-                      {label}
-                      <Icon size={18} />
-                    </p>
-                    <strong>{value}</strong>
-                    <span>{hint}</span>
-                  </article>
+                {[0, 1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-40 rounded-xl" />
                 ))}
               </div>
-              <div className="dashboard-grid">
-                <section className="panel">
-                  <div className="panel-heading">
-                    <h2>Pedidos recientes</h2>
-                    <Link href="/pedidos">
-                      Ver todos <ArrowUpRight size={15} />
-                    </Link>
-                  </div>
-                  {activeOrders.length
-                    ? renderOrderTable({
-                        rows: activeOrders.slice(0, 6),
-                        compact: true,
-                      })
-                    : renderNoRows({
-                        text: 'Tu pr\u00f3ximo pedido empieza ac\u00e1',
-                      })}
-                </section>
-                <section className="attention">
-                  <div className="panel-heading">
-                    <h2>Para tener en cuenta</h2>
-                    <span className="count">{lowStock.length}</span>
-                  </div>
-                  <p className="hint">Productos con 2 unidades o menos</p>
-                  {lowStock.length ? (
-                    lowStock.slice(0, 5).map((p) => (
-                      <button
-                        className="attention-row"
-                        key={p.id}
-                        onClick={() => P({ type: 'stock', record: p })}
-                      >
-                        <ProductPhoto name={p.name} url={p.photos[0]} />
-                        <span>
-                          <b>{p.name}</b>
-                          <small>{p.sku}</small>
-                        </span>
-                        <strong>
-                          {p.stock}
-                          <small>uds.</small>
-                        </strong>
-                      </button>
-                    ))
-                  ) : (
-                    <p className="hint">No hay alertas de stock.</p>
-                  )}
-                  <div className="pending-money">
-                    <span>Pendiente de cobro</span>
-                    <strong>
-                      {money(
-                        activeOrders.reduce((s, o) => s + o.total - o.paid, 0),
-                      )}
-                    </strong>
-                    <p>De todos los pedidos activos</p>
-                  </div>
-                </section>
-                <section className="panel flow-panel">
-                  <div className="panel-heading">
-                    <h2>El recorrido de tus pedidos</h2>
-                    <span>Estado actual</span>
-                  </div>
-                  <div className="pipeline">
-                    {['nuevo', 'abierto', 'en producción', 'cerrado'].map(
-                      (s, i) => (
-                        <Link
-                          href={`/pedidos?estado=${encodeURIComponent(s)}`}
-                          key={s}
-                        >
-                          <span>
-                            0{i + 1} / {s}
-                          </span>
-                          <strong>
-                            {activeOrders.filter((o) => o.status === s).length}
-                          </strong>
-                          <div className="pipeline-track">
-                            <div
-                              style={{
-                                width: `${activeOrders.length ? (activeOrders.filter((o) => o.status === s).length / activeOrders.length) * 100 : 0}%`,
-                              }}
-                            />
-                          </div>
-                        </Link>
+            ) : !data.categories.length ? (
+              <section className="onboarding">
+                <span className="onboarding-icon">
+                  <Package size={32} />
+                </span>
+                <h2>Bienvenido a Iconic</h2>
+                <p>
+                  Tu espacio para gestionar productos de polo, equitación y
+                  salto.
+                </p>
+                <div>
+                  <button
+                    className="primary"
+                    disabled={busy}
+                    onClick={() => initialize(true)}
+                  >
+                    Explorar con datos de ejemplo <ArrowRight size={17} />
+                  </button>
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => initialize(false)}
+                  >
+                    Empezar con una base vacía
+                  </button>
+                </div>
+                <small>
+                  Los ejemplos incluyen productos, clientes y pedidos ficticios.
+                </small>
+              </section>
+            ) : module === 'dashboard' ? (
+              <>
+                <div className="metrics">
+                  {[
+                    {
+                      label: 'Ventas cerradas',
+                      value: money(closed.reduce((s, o) => s + o.total, 0)),
+                      hint: `${closed.length} pedidos cerrados`,
+                      icon: CircleDollarSign,
+                    },
+                    {
+                      label: 'Ganancia bruta',
+                      value: money(
+                        closed.reduce((s, o) => s + o.total - o.cost, 0),
                       ),
-                    )}
-                  </div>
-                </section>
-                <section className="panel followup">
-                  <div className="panel-heading">
-                    <h2>Seguimiento comercial</h2>
-                    <Link href="/clientes" aria-label="Ver clientes">
-                      <ArrowUpRight size={17} />
-                    </Link>
-                  </div>
-                  {data.contacts
-                    .filter((c) => c.kind === 'customer' && !c.archived)
-                    .slice(0, 3)
-                    .map((c) => {
-                      const last = closed.find((o) => o.customer_id === c.id);
-                      return (
+                      hint: 'Venta menos costo del producto',
+                      icon: TrendingUp,
+                    },
+                    {
+                      label: 'Pedidos en curso',
+                      value: String(open.length).padStart(2, '0'),
+                      hint: `${money(open.reduce((s, o) => s + o.total, 0))} en cartera`,
+                      icon: ShoppingBag,
+                    },
+                    {
+                      label: 'Clientes activos',
+                      value: String(
+                        data.contacts.filter(
+                          (c) => c.kind === 'customer' && !c.archived,
+                        ).length,
+                      ).padStart(2, '0'),
+                      hint: 'Relaciones para seguir creciendo',
+                      icon: Users,
+                    },
+                  ].map(({ label, value, hint, icon: Icon }) => (
+                    <article className="metric" key={label}>
+                      <p>
+                        {label}
+                        <Icon size={18} />
+                      </p>
+                      <strong>{value}</strong>
+                      <span>{hint}</span>
+                    </article>
+                  ))}
+                </div>
+                <div className="dashboard-grid">
+                  <section className="panel">
+                    <div className="panel-heading">
+                      <h2>Pedidos recientes</h2>
+                      <a href="/pedidos">
+                        Ver todos <ArrowUpRight size={15} />
+                      </a>
+                    </div>
+                    {activeOrders.length
+                      ? renderOrderTable({
+                          rows: activeOrders.slice(0, 6),
+                          compact: true,
+                        })
+                      : renderNoRows({
+                          text: 'Tu pr\u00f3ximo pedido empieza ac\u00e1',
+                        })}
+                  </section>
+                  <section className="attention">
+                    <div className="panel-heading">
+                      <h2>Para tener en cuenta</h2>
+                      <span className="count">{lowStock.length}</span>
+                    </div>
+                    <p className="hint">Productos con 2 unidades o menos</p>
+                    {lowStock.length ? (
+                      lowStock.slice(0, 5).map((p) => (
                         <button
-                          key={c.id}
-                          className="followup-row"
-                          onClick={() => P({ type: 'customer', record: c })}
+                          className="attention-row"
+                          key={p.id}
+                          onClick={() => P({ type: 'stock', record: p })}
                         >
-                          <span className="avatar">
-                            {c.name
-                              .split(' ')
-                              .slice(0, 2)
-                              .map((w) => w[0])
-                              .join('')}
-                          </span>
+                          <ProductPhoto name={p.name} url={p.photos[0]} />
                           <span>
-                            <b>{c.name}</b>
+                            <b>{p.name}</b>
                             <small>
-                              {last
-                                ? `Última compra ${last.date}`
-                                : 'Primera compra por concretar'}
+                              {isConfiguredProduct(p) ? 'Configurable' : p.sku}
                             </small>
                           </span>
-                          <ChevronRight size={16} />
+                          <strong>
+                            {p.stock}
+                            <small>uds.</small>
+                          </strong>
                         </button>
-                      );
-                    })}
-                  {!data.contacts.some(
-                    (c) => c.kind === 'customer' && !c.archived,
-                  ) && (
-                    <p className="hint">
-                      Agregá clientes para iniciar el seguimiento.
-                    </p>
-                  )}
-                </section>
-              </div>
-              <p className="report-note">
-                Acumulado de todos los períodos · Ganancia bruta sin impuestos,
-                comisiones ni gastos operativos.
-              </p>
-            </>
-          ) : module === 'tablero' ? (
-            <AccountBoard data={data} save={save} />
-          ) : module === 'tareas' ? (
-            <section className="panel records">
-              <Empty className="empty">
-                <EmptyHeader>
-                  <EmptyTitle>Seguimiento de tareas</EmptyTitle>
-                  <EmptyDescription>
-                    Esta sección va a concentrar pendientes, responsables y
-                    avance. Todavía no hay un flujo definido: cuando lo
-                    definamos, armamos estados, plazos y cómo se relaciona con
-                    pedidos y clientes.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            </section>
-          ) : (
-            <section className="panel records">
-              <div className="toolbar">
-                <label className="search">
-                  <Search size={17} />
-                  <input
-                    aria-label="Buscar"
-                    placeholder={
-                      module === 'productos'
-                        ? 'Buscar producto o SKU…'
-                        : module === 'pedidos'
-                          ? 'Buscar pedido o cliente…'
-                          : 'Buscar nombre, email o teléfono…'
+                      ))
+                    ) : (
+                      <p className="hint">No hay alertas de stock.</p>
+                    )}
+                    <div className="pending-money">
+                      <span>Pendiente de cobro</span>
+                      <strong>
+                        {money(
+                          activeOrders.reduce(
+                            (s, o) => s + o.total - o.paid,
+                            0,
+                          ),
+                        )}
+                      </strong>
+                      <p>De todos los pedidos activos</p>
+                    </div>
+                  </section>
+                  <section className="panel flow-panel">
+                    <div className="panel-heading">
+                      <h2>El recorrido de tus pedidos</h2>
+                      <span>Estado actual</span>
+                    </div>
+                    <div className="pipeline">
+                      {['nuevo', 'abierto', 'en producción', 'cerrado'].map(
+                        (s, i) => (
+                          <a
+                            href={`/pedidos?estado=${encodeURIComponent(s)}`}
+                            key={s}
+                          >
+                            <span>
+                              0{i + 1} / {s}
+                            </span>
+                            <strong>
+                              {
+                                activeOrders.filter((o) => o.status === s)
+                                  .length
+                              }
+                            </strong>
+                            <div className="pipeline-track">
+                              <div
+                                style={{
+                                  width: `${activeOrders.length ? (activeOrders.filter((o) => o.status === s).length / activeOrders.length) * 100 : 0}%`,
+                                }}
+                              />
+                            </div>
+                          </a>
+                        ),
+                      )}
+                    </div>
+                  </section>
+                  <section className="panel followup">
+                    <div className="panel-heading">
+                      <h2>Seguimiento comercial</h2>
+                      <a href="/clientes" aria-label="Ver clientes">
+                        <ArrowUpRight size={17} />
+                      </a>
+                    </div>
+                    {data.contacts
+                      .filter((c) => c.kind === 'customer' && !c.archived)
+                      .slice(0, 3)
+                      .map((c) => {
+                        const last = closed.find((o) => o.customer_id === c.id);
+                        return (
+                          <button
+                            key={c.id}
+                            className="followup-row"
+                            onClick={() => P({ type: 'customer', record: c })}
+                          >
+                            <span className="avatar">
+                              {c.name
+                                .split(' ')
+                                .slice(0, 2)
+                                .map((w) => w[0])
+                                .join('')}
+                            </span>
+                            <span>
+                              <b>{c.name}</b>
+                              <small>
+                                {last
+                                  ? `Última compra ${last.date}`
+                                  : 'Primera compra por concretar'}
+                              </small>
+                            </span>
+                            <ChevronRight size={16} />
+                          </button>
+                        );
+                      })}
+                    {!data.contacts.some(
+                      (c) => c.kind === 'customer' && !c.archived,
+                    ) && (
+                      <p className="hint">
+                        Agregá clientes para iniciar el seguimiento.
+                      </p>
+                    )}
+                  </section>
+                </div>
+                <p className="report-note">
+                  Acumulado de todos los períodos · Ganancia bruta sin
+                  impuestos, comisiones ni gastos operativos.
+                </p>
+              </>
+            ) : module === 'tablero' ? (
+              <AccountBoard data={data} save={save} />
+            ) : module === 'tareas' ? (
+              <section className="panel records">
+                <Empty className="empty">
+                  <EmptyHeader>
+                    <EmptyTitle>Seguimiento de tareas</EmptyTitle>
+                    <EmptyDescription>
+                      Esta sección va a concentrar pendientes, responsables y
+                      avance. Todavía no hay un flujo definido: cuando lo
+                      definamos, armamos estados, plazos y cómo se relaciona con
+                      pedidos y clientes.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              </section>
+            ) : (
+              <>
+                {module === 'productos' && data && !archived ? (
+                  <TypeCards
+                    data={data}
+                    onOpen={(product) => P({ type: 'product', record: product })}
+                    onStock={(product) => P({ type: 'stock', record: product })}
+                    onViewStock={(product) =>
+                      P({ type: 'inventory', record: product })
                     }
-                    value={query}
-                    onChange={(e) => Q(e.target.value)}
                   />
-                </label>
-                {module === 'productos' && (
-                  <>
+                ) : null}
+                <section className="panel records">
+                <div className="toolbar">
+                  <label className="search">
+                    <Search size={17} />
+                    <input
+                      aria-label="Buscar"
+                      placeholder={
+                        module === 'productos'
+                          ? 'Buscar producto o SKU…'
+                          : module === 'pedidos'
+                            ? 'Buscar pedido o cliente…'
+                            : 'Buscar nombre, email o teléfono…'
+                      }
+                      value={query}
+                      onChange={(e) => Q(e.target.value)}
+                    />
+                  </label>
+                  {module === 'productos' && (
+                    <>
+                      <Pick
+                        label="Filtrar categoría"
+                        value={filter}
+                        onChange={F}
+                        options={[
+                          { value: 'all', label: 'Todas las categorías' },
+                          ...data.categories
+                            .filter((c) => !isConfiguredCategory(c.id))
+                            .map((c) => ({
+                              value: c.id,
+                              label: c.name,
+                            })),
+                        ]}
+                      />
+                      <fieldset className="seg">
+                        <legend className="sr-only">
+                          Disponibilidad de stock
+                        </legend>
+                        <button
+                          type="button"
+                          className={stocked ? '' : 'selected'}
+                          aria-pressed={!stocked}
+                          onClick={() => T(false)}
+                        >
+                          Todos
+                        </button>
+                        <button
+                          type="button"
+                          className={stocked ? 'selected' : ''}
+                          aria-pressed={stocked}
+                          onClick={() => T(true)}
+                        >
+                          Con stock
+                        </button>
+                      </fieldset>
+                    </>
+                  )}{' '}
+                  {module === 'pedidos' && (
                     <Pick
-                      label="Filtrar categoría"
+                      label="Filtrar estado"
                       value={filter}
                       onChange={F}
                       options={[
-                        { value: 'all', label: 'Todas las categorías' },
-                        ...data.categories.map((c) => ({
-                          value: c.id,
-                          label: c.name,
-                        })),
-                      ]}
+                        'all',
+                        'nuevo',
+                        'abierto',
+                        'en producción',
+                        'cerrado',
+                      ].map((value) => ({
+                        value,
+                        label: value === 'all' ? 'Todos los estados' : value,
+                      }))}
                     />
-                    <fieldset className="seg">
-                      <legend className="sr-only">
-                        Disponibilidad de stock
-                      </legend>
-                      <button
-                        type="button"
-                        className={stocked ? '' : 'selected'}
-                        aria-pressed={!stocked}
-                        onClick={() => T(false)}
-                      >
-                        Todos
-                      </button>
-                      <button
-                        type="button"
-                        className={stocked ? 'selected' : ''}
-                        aria-pressed={stocked}
-                        onClick={() => T(true)}
-                      >
-                        Con stock
-                      </button>
-                    </fieldset>
-                  </>
-                )}{' '}
-                {module === 'pedidos' && (
-                  <Pick
-                    label="Filtrar estado"
-                    value={filter}
-                    onChange={F}
-                    options={[
-                      'all',
-                      'nuevo',
-                      'abierto',
-                      'en producción',
-                      'cerrado',
-                    ].map((value) => ({
-                      value,
-                      label: value === 'all' ? 'Todos los estados' : value,
-                    }))}
+                  )}
+                  <button
+                    className={`secondary ${archived ? 'selected' : ''}`}
+                    onClick={() => A(!archived)}
+                  >
+                    <Archive size={16} />
+                    {archived ? 'Ver activos' : 'Archivados'}
+                  </button>
+                  <span className="result-count">
+                    {module === 'productos'
+                      ? products.length
+                      : module === 'pedidos'
+                        ? orders.length
+                        : contacts.length}{' '}
+                    registros
+                  </span>
+                </div>
+                {module === 'productos' && liveSelected.length ? (
+                  <ProductBulkBar
+                    count={liveSelected.length}
+                    categories={data.categories}
+                    suppliers={data.contacts
+                      .filter(
+                        (contact) =>
+                          contact.kind === 'supplier' && !contact.archived,
+                      )
+                      .map((contact) => ({
+                        id: contact.id,
+                        name: contact.name,
+                      }))}
+                    busy={busy}
+                    onClear={() => S([])}
+                    onApply={applyBulk}
                   />
-                )}
-                <button
-                  className={`secondary ${archived ? 'selected' : ''}`}
-                  onClick={() => A(!archived)}
-                >
-                  <Archive size={16} />
-                  {archived ? 'Ver activos' : 'Archivados'}
-                </button>
-                <span className="result-count">
-                  {module === 'productos'
-                    ? products.length
-                    : module === 'pedidos'
-                      ? orders.length
-                      : contacts.length}{' '}
-                  registros
-                </span>
-              </div>
-              {module === 'productos' && liveSelected.length ? (
-                <ProductBulkBar
-                  count={liveSelected.length}
-                  categories={data.categories}
-                  suppliers={data.contacts
-                    .filter(
-                      (contact) =>
-                        contact.kind === 'supplier' && !contact.archived,
-                    )
-                    .map((contact) => ({
-                      id: contact.id,
-                      name: contact.name,
-                    }))}
-                  busy={busy}
-                  onClear={() => S([])}
-                  onApply={applyBulk}
-                />
-              ) : null}
-              {module === 'productos' ? (
-                products.length ? (
+                ) : null}
+                {module === 'productos' ? (
+                  products.length ? (
+                    <>
+                      <div className="desktop-table">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="row-select">
+                                <SelectCheck
+                                  label={
+                                    allVisibleSelected
+                                      ? 'Quitar toda la selección visible'
+                                      : 'Seleccionar todos los productos visibles'
+                                  }
+                                  checked={allVisibleSelected}
+                                  mixed={someVisibleSelected}
+                                  onChange={selectVisible}
+                                />
+                              </TableHead>
+                              <TableHead>Producto</TableHead>
+                              <TableHead>Categoría / proveedor</TableHead>
+                              <TableHead className="text-right">
+                                Precio de costo
+                              </TableHead>
+                              <TableHead className="text-right">
+                                Precio lista
+                              </TableHead>
+                              <TableHead className="text-right">
+                                Friends & Family
+                              </TableHead>
+                              <TableHead className="text-right">
+                                Margen lista
+                              </TableHead>
+                              <TableHead>Stock</TableHead>
+                              <TableHead>
+                                <span className="sr-only">Acciones</span>
+                              </TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {products.map((p) => {
+                              const costPending =
+                                p.attributes.Costo === 'Pendiente de definir';
+                              const pricePending =
+                                p.attributes['Precio de lista'] ===
+                                'Pendiente de definir';
+                              const ffPending =
+                                p.attributes['Precio F&F'] ===
+                                'Pendiente de definir';
+                              const supplier = data.contacts.find(
+                                (c) => c.id === p.supplier_id,
+                              )?.name;
+                              const openProduct = () =>
+                                P({ type: 'product', record: p });
+                              return (
+                                <TableRow
+                                  key={p.id}
+                                  className={`clickable-row${liveSelected.includes(p.id) ? ' is-selected' : ''}`}
+                                >
+                                  <TableCell className="row-select">
+                                    <SelectCheck
+                                      label={`Seleccionar ${p.name}`}
+                                      checked={liveSelected.includes(p.id)}
+                                      onChange={(checked) =>
+                                        toggleProduct(p.id, checked)
+                                      }
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <button
+                                      type="button"
+                                      className="row-hit"
+                                      aria-label={`Ver ficha de ${p.name}`}
+                                      onClick={openProduct}
+                                    />
+                                    <div className="product-cell">
+                                      <ProductPhoto
+                                        name={p.name}
+                                        url={p.photos[0]}
+                                      />
+                                      <div>
+                                        <span className="record-link">
+                                          {p.name}
+                                        </span>
+                                        <small>
+                                          {isConfiguredProduct(p)
+                                            ? 'Configurable'
+                                            : p.sku}
+                                        </small>
+                                      </div>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    {
+                                      data.categories.find(
+                                        (c) => c.id === p.category,
+                                      )?.name
+                                    }
+                                    <small
+                                      className={
+                                        supplier ? undefined : 'pending-text'
+                                      }
+                                    >
+                                      {supplier || 'Sin proveedor'}
+                                    </small>
+                                  </TableCell>
+                                  <TableCell className="text-right amount">
+                                    {costPending ? (
+                                      <span className="pending-text">
+                                        Pendiente
+                                      </span>
+                                    ) : (
+                                      money(p.cost)
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-right amount">
+                                    {pricePending ? (
+                                      <span className="pending-text">
+                                        Pendiente
+                                      </span>
+                                    ) : (
+                                      money(p.price)
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-right amount">
+                                    {ffPending || !p.price ? (
+                                      <span className="pending-text">
+                                        Pendiente
+                                      </span>
+                                    ) : (
+                                      money(friendsPrice(p))
+                                    )}
+                                    <small
+                                      className={
+                                        ffPending || !p.price
+                                          ? 'pending-text'
+                                          : undefined
+                                      }
+                                    >
+                                      {ffPending || !p.price
+                                        ? 'Completar precio'
+                                        : `${
+                                            Math.round(
+                                              (1 - friendsPrice(p) / p.price) *
+                                                10000,
+                                            ) / 100
+                                          }% de descuento`}
+                                    </small>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {costPending || pricePending ? (
+                                      <span className="pending-text">
+                                        Pendiente
+                                      </span>
+                                    ) : (
+                                      `${margin(p.price, p.cost) ?? '—'}%`
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <span
+                                      className={`stock-pill ${p.stock <= 2 ? 'low' : ''}`}
+                                    >
+                                      {p.stock} uds.
+                                    </span>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="row-actions">
+                                      {!archived && (
+                                        <button
+                                          className="icon-button"
+                                          title="Registrar movimiento"
+                                          aria-label={`Registrar stock de ${p.name}`}
+                                          onClick={() =>
+                                            P({ type: 'stock', record: p })
+                                          }
+                                        >
+                                          <ArrowDownUp size={17} />
+                                        </button>
+                                      )}
+                                      {renderArchiveButton({
+                                        entity: 'products',
+                                        record: p,
+                                      })}
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                      <div className="record-card-list">
+                        <div className="record-card-toolbar">
+                          <SelectCheck
+                            label={
+                              allVisibleSelected
+                                ? 'Quitar toda la selección visible'
+                                : 'Seleccionar todos los productos visibles'
+                            }
+                            checked={allVisibleSelected}
+                            mixed={someVisibleSelected}
+                            onChange={selectVisible}
+                          />
+                          <span>
+                            {allVisibleSelected
+                              ? 'Quitar selección'
+                              : 'Seleccionar visibles'}
+                          </span>
+                        </div>
+                        {products.map((p) => (
+                          <ProductCard
+                            key={p.id}
+                            product={p}
+                            categoryName={
+                              data.categories.find((c) => c.id === p.category)
+                                ?.name
+                            }
+                            supplierName={
+                              data.contacts.find((c) => c.id === p.supplier_id)
+                                ?.name
+                            }
+                            selected={liveSelected.includes(p.id)}
+                            archived={archived}
+                            money={money}
+                            onOpen={() => P({ type: 'product', record: p })}
+                            onToggle={(checked) => toggleProduct(p.id, checked)}
+                            onStock={() => P({ type: 'stock', record: p })}
+                            archiveButton={renderArchiveButton({
+                              entity: 'products',
+                              record: p,
+                            })}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    renderNoRows({
+                      text: stocked
+                        ? 'No hay productos con stock'
+                        : 'No hay productos para mostrar',
+                    })
+                  )
+                ) : module === 'pedidos' ? (
+                  orders.length ? (
+                    renderOrderTable({ rows: orders })
+                  ) : (
+                    renderNoRows({ text: 'No hay pedidos para mostrar' })
+                  )
+                ) : contacts.length ? (
                   <>
                     <div className="desktop-table">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead className="row-select">
-                              <SelectCheck
-                                label={
-                                  allVisibleSelected
-                                    ? 'Quitar toda la selección visible'
-                                    : 'Seleccionar todos los productos visibles'
-                                }
-                                checked={allVisibleSelected}
-                                mixed={someVisibleSelected}
-                                onChange={selectVisible}
-                              />
+                            <TableHead>
+                              {module === 'proveedores'
+                                ? 'Proveedor / contacto'
+                                : 'Cliente / contacto'}
                             </TableHead>
-                            <TableHead>Producto</TableHead>
-                            <TableHead>Categoría / proveedor</TableHead>
-                            <TableHead className="text-right">
-                              Precio de costo
+                            <TableHead>Contacto directo</TableHead>
+                            <TableHead>Ubicación</TableHead>
+                            <TableHead>
+                              {module === 'proveedores'
+                                ? 'Productos'
+                                : 'Última compra'}
                             </TableHead>
-                            <TableHead className="text-right">
-                              Precio lista
-                            </TableHead>
-                            <TableHead className="text-right">
-                              Friends & Family
-                            </TableHead>
-                            <TableHead className="text-right">
-                              Margen lista
-                            </TableHead>
-                            <TableHead>Stock</TableHead>
                             <TableHead>
                               <span className="sr-only">Acciones</span>
                             </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {products.map((p) => {
-                            const costPending =
-                              p.attributes.Costo === 'Pendiente de definir';
-                            const pricePending =
-                              p.attributes['Precio de lista'] ===
-                              'Pendiente de definir';
-                            const ffPending =
-                              p.attributes['Precio F&F'] ===
-                              'Pendiente de definir';
-                            const supplier = data.contacts.find(
-                              (c) => c.id === p.supplier_id,
-                            )?.name;
-                            const openProduct = () =>
-                              P({ type: 'product', record: p });
-                            return (
-                              <TableRow
-                                key={p.id}
-                                className={`clickable-row${liveSelected.includes(p.id) ? ' is-selected' : ''}`}
-                              >
-                                <TableCell className="row-select">
-                                  <SelectCheck
-                                    label={`Seleccionar ${p.name}`}
-                                    checked={liveSelected.includes(p.id)}
-                                    onChange={(checked) =>
-                                      toggleProduct(p.id, checked)
-                                    }
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <button
-                                    type="button"
-                                    className="row-hit"
-                                    aria-label={`Ver ficha de ${p.name}`}
-                                    onClick={openProduct}
-                                  />
-                                  <div className="product-cell">
-                                    <ProductPhoto
-                                      name={p.name}
-                                      url={p.photos[0]}
-                                    />
-                                    <div>
-                                      <span className="record-link">
-                                        {p.name}
-                                      </span>
-                                      <small>{p.sku}</small>
-                                    </div>
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  {
-                                    data.categories.find(
-                                      (c) => c.id === p.category,
-                                    )?.name
-                                  }
-                                  <small
-                                    className={
-                                      supplier ? undefined : 'pending-text'
-                                    }
-                                  >
-                                    {supplier || 'Sin proveedor'}
-                                  </small>
-                                </TableCell>
-                                <TableCell className="text-right amount">
-                                  {costPending ? (
-                                    <span className="pending-text">
-                                      Pendiente
-                                    </span>
-                                  ) : (
-                                    money(p.cost)
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-right amount">
-                                  {pricePending ? (
-                                    <span className="pending-text">
-                                      Pendiente
-                                    </span>
-                                  ) : (
-                                    money(p.price)
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-right amount">
-                                  {ffPending ? (
-                                    <span className="pending-text">
-                                      Pendiente
-                                    </span>
-                                  ) : (
-                                    money(friendsPrice(p))
-                                  )}
-                                  <small
-                                    className={
-                                      ffPending ? 'pending-text' : undefined
-                                    }
-                                  >
-                                    {ffPending
-                                      ? 'Completar precio'
-                                      : `${
-                                          Math.round(
-                                            (1 - friendsPrice(p) / p.price) *
-                                              10000,
-                                          ) / 100
-                                        }% de descuento`}
-                                  </small>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  {costPending || pricePending ? (
-                                    <span className="pending-text">
-                                      Pendiente
-                                    </span>
-                                  ) : (
-                                    `${margin(p.price, p.cost) ?? '—'}%`
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  <span
-                                    className={`stock-pill ${p.stock <= 2 ? 'low' : ''}`}
-                                  >
-                                    {p.stock} uds.
+                          {contacts.map((c) => (
+                            <TableRow key={c.id}>
+                              <TableCell>
+                                <div className="product-cell">
+                                  <span className="avatar">
+                                    {initials(c.name)}
                                   </span>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="row-actions">
-                                    {!archived && (
-                                      <button
-                                        className="icon-button"
-                                        title="Registrar movimiento"
-                                        aria-label={`Registrar stock de ${p.name}`}
-                                        onClick={() =>
-                                          P({ type: 'stock', record: p })
-                                        }
-                                      >
-                                        <ArrowDownUp size={17} />
-                                      </button>
-                                    )}
-                                    {renderArchiveButton({
-                                      entity: 'products',
-                                      record: p,
-                                    })}
+                                  <div>
+                                    <button
+                                      className="record-link"
+                                      onClick={() =>
+                                        P({ type: c.kind, record: c })
+                                      }
+                                    >
+                                      {c.name}
+                                    </button>
+                                    <small>
+                                      {c.contact || 'Sin persona de contacto'}
+                                      {c.kind === 'supplier' && c.title
+                                        ? ` · ${c.title}`
+                                        : ''}
+                                    </small>
                                   </div>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {c.phone && (
+                                  <a
+                                    className="contact-phone"
+                                    href={whatsapp(c.phone) || '#'}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    <MessageCircle size={15} />
+                                    {c.phone}
+                                  </a>
+                                )}
+                                {c.kind === 'supplier' &&
+                                whatsappGroup(c.whatsapp_group) ? (
+                                  <a
+                                    className="contact-phone"
+                                    href={
+                                      whatsappGroup(c.whatsapp_group) || '#'
+                                    }
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    <MessageCircle size={15} />
+                                    Grupo WhatsApp
+                                  </a>
+                                ) : null}
+                                {c.email ? (
+                                  <a
+                                    className="email"
+                                    href={`mailto:${c.email}`}
+                                  >
+                                    {c.email}
+                                  </a>
+                                ) : (
+                                  <small>Sin email</small>
+                                )}
+                                {c.website && (
+                                  <a
+                                    className="email"
+                                    href={c.website}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    Página web ↗
+                                  </a>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {c.address || 'Sin dirección'}
+                              </TableCell>
+                              <TableCell>
+                                {c.kind === 'supplier'
+                                  ? `${data.products.filter((p) => p.supplier_id === c.id && !p.archived).length} productos`
+                                  : closed.find((o) => o.customer_id === c.id)
+                                      ?.date || 'Sin compras'}
+                                {c.kind === 'customer' && (
+                                  <small>
+                                    {
+                                      data.orders.filter(
+                                        (o) => o.customer_id === c.id,
+                                      ).length
+                                    }{' '}
+                                    pedidos
+                                  </small>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {renderArchiveButton({
+                                  entity: 'contacts',
+                                  record: c,
+                                })}
+                              </TableCell>
+                            </TableRow>
+                          ))}
                         </TableBody>
                       </Table>
                     </div>
                     <div className="record-card-list">
-                      <div className="record-card-toolbar">
-                        <SelectCheck
-                          label={
-                            allVisibleSelected
-                              ? 'Quitar toda la selección visible'
-                              : 'Seleccionar todos los productos visibles'
+                      {contacts.map((c) => (
+                        <ContactCard
+                          key={c.id}
+                          contact={c}
+                          productCount={
+                            data.products.filter(
+                              (p) => p.supplier_id === c.id && !p.archived,
+                            ).length
                           }
-                          checked={allVisibleSelected}
-                          mixed={someVisibleSelected}
-                          onChange={selectVisible}
-                        />
-                        <span>
-                          {allVisibleSelected
-                            ? 'Quitar selección'
-                            : 'Seleccionar visibles'}
-                        </span>
-                      </div>
-                      {products.map((p) => (
-                        <ProductCard
-                          key={p.id}
-                          product={p}
-                          categoryName={
-                            data.categories.find((c) => c.id === p.category)
-                              ?.name
+                          lastPurchase={
+                            closed.find((o) => o.customer_id === c.id)?.date
                           }
-                          supplierName={
-                            data.contacts.find((c) => c.id === p.supplier_id)
-                              ?.name
+                          orderCount={
+                            data.orders.filter((o) => o.customer_id === c.id)
+                              .length
                           }
-                          selected={liveSelected.includes(p.id)}
-                          archived={archived}
-                          money={money}
-                          onOpen={() => P({ type: 'product', record: p })}
-                          onToggle={(checked) => toggleProduct(p.id, checked)}
-                          onStock={() => P({ type: 'stock', record: p })}
                           archiveButton={renderArchiveButton({
-                            entity: 'products',
-                            record: p,
+                            entity: 'contacts',
+                            record: c,
                           })}
+                          onOpen={() => P({ type: c.kind, record: c })}
                         />
                       ))}
                     </div>
                   </>
                 ) : (
-                  renderNoRows({
-                    text: stocked
-                      ? 'No hay productos con stock'
-                      : 'No hay productos para mostrar',
-                  })
-                )
-              ) : module === 'pedidos' ? (
-                orders.length ? (
-                  renderOrderTable({ rows: orders })
-                ) : (
-                  renderNoRows({ text: 'No hay pedidos para mostrar' })
-                )
-              ) : contacts.length ? (
-                <>
-                  <div className="desktop-table">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>
-                            {module === 'proveedores'
-                              ? 'Proveedor / contacto'
-                              : 'Cliente / contacto'}
-                          </TableHead>
-                          <TableHead>Contacto directo</TableHead>
-                          <TableHead>Ubicación</TableHead>
-                          <TableHead>
-                            {module === 'proveedores'
-                              ? 'Productos'
-                              : 'Última compra'}
-                          </TableHead>
-                          <TableHead>
-                            <span className="sr-only">Acciones</span>
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {contacts.map((c) => (
-                          <TableRow key={c.id}>
-                            <TableCell>
-                              <div className="product-cell">
-                                <span className="avatar">
-                                  {initials(c.name)}
-                                </span>
-                                <div>
-                                  <button
-                                    className="record-link"
-                                    onClick={() =>
-                                      P({ type: c.kind, record: c })
-                                    }
-                                  >
-                                    {c.name}
-                                  </button>
-                                  <small>
-                                    {c.contact || 'Sin persona de contacto'}
-                                    {c.kind === 'supplier' && c.title
-                                      ? ` · ${c.title}`
-                                      : ''}
-                                  </small>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {c.phone && (
-                                <a
-                                  className="contact-phone"
-                                  href={whatsapp(c.phone) || '#'}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  <MessageCircle size={15} />
-                                  {c.phone}
-                                </a>
-                              )}
-                              {c.kind === 'supplier' &&
-                              whatsappGroup(c.whatsapp_group) ? (
-                                <a
-                                  className="contact-phone"
-                                  href={whatsappGroup(c.whatsapp_group) || '#'}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  <MessageCircle size={15} />
-                                  Grupo WhatsApp
-                                </a>
-                              ) : null}
-                              {c.email ? (
-                                <a className="email" href={`mailto:${c.email}`}>
-                                  {c.email}
-                                </a>
-                              ) : (
-                                <small>Sin email</small>
-                              )}
-                              {c.website && (
-                                <a
-                                  className="email"
-                                  href={c.website}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  Página web ↗
-                                </a>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {c.address || 'Sin dirección'}
-                            </TableCell>
-                            <TableCell>
-                              {c.kind === 'supplier'
-                                ? `${data.products.filter((p) => p.supplier_id === c.id && !p.archived).length} productos`
-                                : closed.find((o) => o.customer_id === c.id)
-                                    ?.date || 'Sin compras'}
-                              {c.kind === 'customer' && (
-                                <small>
-                                  {
-                                    data.orders.filter(
-                                      (o) => o.customer_id === c.id,
-                                    ).length
-                                  }{' '}
-                                  pedidos
-                                </small>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {renderArchiveButton({
-                                entity: 'contacts',
-                                record: c,
-                              })}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                  <div className="record-card-list">
-                    {contacts.map((c) => (
-                      <ContactCard
-                        key={c.id}
-                        contact={c}
-                        productCount={
-                          data.products.filter(
-                            (p) => p.supplier_id === c.id && !p.archived,
-                          ).length
-                        }
-                        lastPurchase={
-                          closed.find((o) => o.customer_id === c.id)?.date
-                        }
-                        orderCount={
-                          data.orders.filter((o) => o.customer_id === c.id)
-                            .length
-                        }
-                        archiveButton={renderArchiveButton({
-                          entity: 'contacts',
-                          record: c,
-                        })}
-                        onOpen={() => P({ type: c.kind, record: c })}
-                      />
-                    ))}
-                  </div>
-                </>
-              ) : (
-                renderNoRows({ text: `No hay ${module} para mostrar` })
-              )}
-            </section>
-          )}
-        </main>
-      </SidebarInset>
-      <nav className="mobile-tabbar" aria-label="Navegación principal">
-        {nav.map(({ id, short, icon: Icon }) => (
-          <Link
-            key={id}
-            href={id === 'dashboard' ? '/' : `/${id}`}
-            className={`mobile-tab ${module === id ? 'active' : ''}`}
-            aria-current={module === id ? 'page' : undefined}
-          >
-            <Icon size={22} />
-            {short}
-          </Link>
-        ))}
-      </nav>
-      <Dialog
-        open={!!panel}
-        onOpenChange={(open) => {
-          if (!open) P(null);
-        }}
-      >
-        <DialogContent
-          className="crm-dialog"
-          style={{ maxWidth: panel?.type === 'stock' ? '640px' : '950px' }}
+                  renderNoRows({ text: `No hay ${module} para mostrar` })
+                )}
+              </section>
+              </>
+            )}
+          </main>
+        </SidebarInset>
+        <nav className="mobile-tabbar" aria-label="Navegación principal">
+          {nav.map(({ id, short, icon: Icon }) => (
+            <a
+              key={id}
+              href={id === 'dashboard' ? '/' : `/${id}`}
+              className={`mobile-tab ${module === id ? 'active' : ''}`}
+              aria-current={module === id ? 'page' : undefined}
+            >
+              <Icon size={22} />
+              {short}
+            </a>
+          ))}
+        </nav>
+        <Dialog
+          open={!!panel}
+          onOpenChange={(open) => {
+            if (!open) P(null);
+          }}
         >
-          <DialogHeader>
-            <DialogTitle>{panelTitle}</DialogTitle>
-            <DialogDescription>
-              {panel?.type === 'stock'
-                ? 'Cada ingreso y salida queda en el historial.'
-                : panel?.type === 'order'
-                  ? 'Precios, costos y características se guardan con el pedido.'
-                  : panel?.type === 'product' && panel.record && !panel.editing
-                    ? 'Ficha completa del producto.'
-                    : panel?.type === 'product'
-                      ? 'Editá precios, fotos y características.'
-                      : 'Información de tu gestión comercial.'}
-            </DialogDescription>
-          </DialogHeader>
-          {panel &&
-            data &&
-            (panel.type === 'product' ? (
-              panel.record && !panel.editing ? (
-                <ProductDetail
+          <DialogContent
+            className="crm-dialog"
+            style={{
+              maxWidth:
+                panel?.type === 'stock' || panel?.type === 'inventory'
+                  ? '640px'
+                  : '950px',
+            }}
+          >
+            <DialogHeader>
+              {panel?.type === 'inventory' ? (
+                <div className="stock-dialog-heading">
+                  <div>
+                    <DialogTitle>{panelTitle}</DialogTitle>
+                    <DialogDescription>
+                      Unidades disponibles.
+                    </DialogDescription>
+                  </div>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => {
+                      const record =
+                        data?.products.find((p) => p.id === panel.record.id) ??
+                        panel.record;
+                      P({
+                        type: 'stock',
+                        record,
+                        back: 'inventory',
+                      });
+                    }}
+                  >
+                    <Plus size={16} />
+                    Agregar stock
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <DialogTitle>{panelTitle}</DialogTitle>
+                  <DialogDescription>
+                    {panel?.type === 'stock'
+                      ? panel.movement
+                        ? 'Editá este registro de stock.'
+                        : 'Cada ingreso y salida queda en el historial.'
+                      : panel?.type === 'order'
+                        ? 'Precios, costos y características se guardan con el pedido.'
+                        : panel?.type === 'product' &&
+                            panel.record &&
+                            isConfiguredProduct(panel.record)
+                          ? 'Definí el precio base y el de cada variante. El pedido usa estos valores.'
+                          : panel?.type === 'product' &&
+                              panel.record &&
+                              !panel.editing
+                            ? 'Ficha completa del producto.'
+                            : panel?.type === 'product'
+                              ? 'Editá precios, fotos y características.'
+                              : 'Información de tu gestión comercial.'}
+                  </DialogDescription>
+                </>
+              )}
+            </DialogHeader>
+            {panel &&
+              data &&
+              (panel.type === 'product' ? (
+                panel.record &&
+                isConfiguredProduct(
+                  data.products.find((p) => p.id === panel.record?.id) ??
+                    panel.record,
+                ) ? (
+                  <TypeConfigForm
+                    key={
+                      (
+                        data.products.find((p) => p.id === panel.record?.id) ??
+                        panel.record
+                      ).version
+                    }
+                    record={
+                      data.products.find((p) => p.id === panel.record?.id) ??
+                      panel.record
+                    }
+                    data={data}
+                    save={async (body) => {
+                      await save(body);
+                      P(null);
+                    }}
+                    onStock={() => {
+                      const record =
+                        data.products.find((p) => p.id === panel.record?.id) ??
+                        panel.record;
+                      if (record) P({ type: 'stock', record });
+                    }}
+                  />
+                ) : panel.record && !panel.editing ? (
+                  <ProductDetail
+                    record={
+                      data.products.find((p) => p.id === panel.record?.id) ??
+                      panel.record
+                    }
+                    data={data}
+                    onEdit={() => {
+                      const record =
+                        data.products.find((p) => p.id === panel.record?.id) ??
+                        panel.record;
+                      if (record) P({ type: 'product', record, editing: true });
+                    }}
+                    onStock={() => {
+                      const record =
+                        data.products.find((p) => p.id === panel.record?.id) ??
+                        panel.record;
+                      if (record) P({ type: 'stock', record });
+                    }}
+                  />
+                ) : (
+                  <ProductForm
+                    record={panel.record}
+                    data={data}
+                    save={save}
+                    onCancel={
+                      panel.record
+                        ? () =>
+                            P({
+                              type: 'product',
+                              record: panel.record,
+                            })
+                        : undefined
+                    }
+                  />
+                )
+              ) : panel.type === 'order' ? (
+                <OrderForm record={panel.record} data={data} save={save} />
+              ) : panel.type === 'inventory' ? (
+                <StockOverview
                   record={
-                    data.products.find((p) => p.id === panel.record?.id) ??
+                    data.products.find((p) => p.id === panel.record.id) ??
                     panel.record
                   }
                   data={data}
-                  onEdit={() => {
-                    const record =
-                      data.products.find((p) => p.id === panel.record?.id) ??
-                      panel.record;
-                    if (record) P({ type: 'product', record, editing: true });
-                  }}
-                  onStock={() => {
-                    const record =
-                      data.products.find((p) => p.id === panel.record?.id) ??
-                      panel.record;
-                    if (record) P({ type: 'stock', record });
-                  }}
+                  onEdit={(movement) =>
+                    P({
+                      type: 'stock',
+                      record:
+                        data.products.find((p) => p.id === panel.record.id) ??
+                        panel.record,
+                      movement,
+                      back: 'inventory',
+                    })
+                  }
                 />
-              ) : (
-                <ProductForm
+              ) : panel.type === 'stock' ? (
+                <StockForm
+                  key={panel.movement?.id || 'new'}
                   record={panel.record}
                   data={data}
                   save={save}
-                  onCancel={
-                    panel.record
-                      ? () =>
-                          P({
-                            type: 'product',
-                            record: panel.record,
-                          })
-                      : undefined
-                  }
+                  movement={panel.movement}
                 />
-              )
-            ) : panel.type === 'order' ? (
-              <OrderForm record={panel.record} data={data} save={save} />
-            ) : panel.type === 'stock' ? (
-              <StockForm record={panel.record} data={data} save={save} />
-            ) : panel.type === 'settings' ? (
-              <SettingsForm data={data} save={save} />
-            ) : (
-              <ContactForm
-                kind={panel.type}
-                record={panel.record}
-                data={data}
-                save={save}
-              />
-            ))}
-        </DialogContent>
-      </Dialog>
-      <AlertDialog
-        open={!!confirm}
-        onOpenChange={(open) => {
-          if (!open) C(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {confirm?.record.archived
-                ? 'Restaurar registro'
-                : 'Archivar registro'}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirm?.record.archived
-                ? 'El registro volverá a estar disponible.'
-                : 'Se ocultará de los listados activos. Su historial se conserva y podés restaurarlo luego. Los pedidos cerrados o con cobros no se pueden archivar.'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={busy}
-              onClick={async () => {
-                if (!confirm) return;
-                B(true);
-                try {
-                  await post({
-                    action: 'archive',
-                    entity: confirm.entity,
-                    id: confirm.record.id,
-                    version: confirm.record.version,
-                    archived: confirm.record.archived ? 0 : 1,
-                  });
-                  C(null);
-                  await refresh();
-                  N('Registro actualizado.');
-                } catch (e) {
-                  E((e as Error).message);
-                } finally {
-                  B(false);
-                }
-              }}
-            >
-              Confirmar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </SidebarProvider>
+              ) : panel.type === 'settings' ? (
+                <SettingsForm data={data} save={save} />
+              ) : (
+                <ContactForm
+                  kind={panel.type}
+                  record={panel.record}
+                  data={data}
+                  save={save}
+                />
+              ))}
+          </DialogContent>
+        </Dialog>
+        <AlertDialog
+          open={!!confirm}
+          onOpenChange={(open) => {
+            if (!open) C(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {confirm?.record.archived
+                  ? 'Restaurar registro'
+                  : 'Archivar registro'}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirm?.record.archived
+                  ? 'El registro volverá a estar disponible.'
+                  : 'Se ocultará de los listados activos. Su historial se conserva y podés restaurarlo luego. Los pedidos cerrados o con cobros no se pueden archivar.'}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={busy}
+                onClick={async () => {
+                  if (!confirm) return;
+                  B(true);
+                  try {
+                    await post({
+                      action: 'archive',
+                      entity: confirm.entity,
+                      id: confirm.record.id,
+                      version: confirm.record.version,
+                      archived: confirm.record.archived ? 0 : 1,
+                    });
+                    C(null);
+                    await refresh();
+                    N('Registro actualizado.');
+                  } catch (e) {
+                    E((e as Error).message);
+                  } finally {
+                    B(false);
+                  }
+                }}
+              >
+                Confirmar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </SidebarProvider>
+      {notice ? (
+        <output key={notice.id} className="notice">
+          <Check size={16} strokeWidth={2.5} aria-hidden />
+          <span>{notice.text}</span>
+          <button onClick={() => N('')} aria-label="Cerrar aviso">
+            ×
+          </button>
+        </output>
+      ) : null}
+    </>
   );
 }

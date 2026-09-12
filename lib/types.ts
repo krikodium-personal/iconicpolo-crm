@@ -1,3 +1,5 @@
+import type { ConfiguredPricing } from './configure';
+
 export type Contact = {
   id: string;
   kind: 'supplier' | 'customer';
@@ -36,6 +38,8 @@ export type Product = {
   photos: string[];
   options: Option[];
   attributes: Record<string, string>;
+  pricing: ConfiguredPricing;
+  kind: 'sku' | 'configured';
   stock: number;
   archived: number;
   version: number;
@@ -46,7 +50,11 @@ export type Item = {
   product_id: string;
   name: string;
   sku: string;
-  selections: { options: Option[]; attributes: Record<string, string> };
+  selections: {
+    options: Option[];
+    attributes: Record<string, string>;
+    config?: Record<string, unknown>;
+  };
   unit_price: number;
   unit_cost: number;
   quantity: number;
@@ -83,6 +91,10 @@ export type Movement = {
   quantity: number;
   reason: string;
   created_at: string;
+  config: Record<string, unknown>;
+  config_key: string;
+  location: string;
+  supplier_id: string;
 };
 export type Partner = {
   id: string;

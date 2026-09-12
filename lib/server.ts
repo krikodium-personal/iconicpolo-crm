@@ -18,6 +18,16 @@ import type {
   PartnerCashout,
 } from './types';
 import { whatsappGroup } from './whatsapp';
+import {
+  configuredKindOf,
+  extraTotals,
+  configLabels,
+  parseConfig,
+  parsePricing,
+  stockKey,
+  stockPlaceLabel,
+  TEMPLATE_IDS,
+} from './configure';
 export function obj(v: unknown): Record<string, unknown> {
   if (!v || typeof v !== 'object' || Array.isArray(v))
     throw new Error('Datos inválidos.');
@@ -53,6 +63,16 @@ export function photo(v: unknown) {
   if (s && !/^\/api\/images\/[a-z0-9-]+$/.test(s))
     throw new Error('Foto inválida.');
   return s;
+}
+async function requireSupplier(id: unknown, keep?: string) {
+  const supplier = str(id, 'Proveedor', true);
+  const row = await stmt(
+    "SELECT id FROM contacts WHERE id=? AND kind='supplier' AND (archived=0 OR id=?)",
+    supplier,
+    keep || '',
+  ).first();
+  if (!row) throw new Error('Proveedor inválido.');
+  return supplier;
 }
 export function attributes(v: unknown) {
   const a = obj(v);
@@ -95,8 +115,102 @@ export async function ensureAccountTables() {
     ),
   ]);
 }
+export async function ensureConfiguredCatalog() {
+  const d = db();
+  const productCols = await stmt('PRAGMA table_info(products)').all();
+  const productNames = new Set(
+    productCols.results.map((column) => String(obj(column).name)),
+  );
+  const movementCols = await stmt('PRAGMA table_info(stock_movements)').all();
+  const movementNames = new Set(
+    movementCols.results.map((column) => String(obj(column).name)),
+  );
+  const alters = [
+    ...(!productNames.has('kind')
+      ? [stmt("ALTER TABLE products ADD kind text NOT NULL DEFAULT 'sku'")]
+      : []),
+    ...(!movementNames.has('config')
+      ? [
+          stmt(
+            "ALTER TABLE stock_movements ADD config text NOT NULL DEFAULT '{}'",
+          ),
+        ]
+      : []),
+    ...(!movementNames.has('config_key')
+      ? [
+          stmt(
+            "ALTER TABLE stock_movements ADD config_key text NOT NULL DEFAULT ''",
+          ),
+        ]
+      : []),
+    ...(!movementNames.has('location')
+      ? [
+          stmt(
+            "ALTER TABLE stock_movements ADD location text NOT NULL DEFAULT ''",
+          ),
+        ]
+      : []),
+    ...(!movementNames.has('supplier_id')
+      ? [
+          stmt(
+            "ALTER TABLE stock_movements ADD supplier_id text NOT NULL DEFAULT ''",
+          ),
+        ]
+      : []),
+    ...(!productNames.has('pricing')
+      ? [stmt("ALTER TABLE products ADD pricing text NOT NULL DEFAULT '{}'")]
+      : []),
+  ];
+  if (alters.length) await d.batch(alters);
+  const pending = JSON.stringify({
+    Costo: 'Pendiente de definir',
+    'Precio de lista': 'Pendiente de definir',
+  });
+  await d.batch([
+    stmt(
+      "INSERT OR IGNORE INTO categories(id,name,fields) VALUES('monturas','Monturas','[]')",
+    ),
+    stmt(
+      "INSERT OR IGNORE INTO categories(id,name,fields) VALUES('cascos','Cascos','[]')",
+    ),
+    stmt(
+      "INSERT OR IGNORE INTO categories(id,name,fields) VALUES('rodilleras','Rodilleras','[]')",
+    ),
+    stmt(
+      "INSERT OR IGNORE INTO categories(id,name,fields) VALUES('botas','Botas','[]')",
+    ),
+    stmt(
+      'CREATE INDEX IF NOT EXISTS idx_stock_product_config ON stock_movements (product_id, config_key)',
+    ),
+    stmt('DROP TRIGGER IF EXISTS stock_no_negative'),
+    stmt(
+      `CREATE TRIGGER stock_no_negative BEFORE INSERT ON stock_movements WHEN NEW.quantity + COALESCE((SELECT SUM(quantity) FROM stock_movements WHERE product_id=NEW.product_id AND COALESCE(config_key,'')=COALESCE(NEW.config_key,'')),0) < 0 BEGIN SELECT RAISE(ABORT,'STOCK_NEGATIVE'); END`,
+    ),
+    stmt(
+      "INSERT OR IGNORE INTO products(id,name,sku,category,supplier_id,cost,price,ff_discount,ff_price,promo_kind,promo_value,photos,options,attributes,pricing,kind) VALUES ('cfg-montura','Montura','MONTURA','monturas',NULL,0,0,1500,NULL,'none',0,'[]','[]',?,'{}','configured')",
+      pending,
+    ),
+    stmt(
+      "INSERT OR IGNORE INTO products(id,name,sku,category,supplier_id,cost,price,ff_discount,ff_price,promo_kind,promo_value,photos,options,attributes,pricing,kind) VALUES ('cfg-casco','Casco','CASCO','cascos',NULL,0,0,1500,NULL,'none',0,'[]','[]',?,'{}','configured')",
+      pending,
+    ),
+    stmt(
+      "INSERT OR IGNORE INTO products(id,name,sku,category,supplier_id,cost,price,ff_discount,ff_price,promo_kind,promo_value,photos,options,attributes,pricing,kind) VALUES ('cfg-rodillera','Rodillera','RODILLERA','rodilleras',NULL,0,0,1500,NULL,'none',0,'[]','[]',?,'{}','configured')",
+      pending,
+    ),
+    stmt(
+      "INSERT OR IGNORE INTO products(id,name,sku,category,supplier_id,cost,price,ff_discount,ff_price,promo_kind,promo_value,photos,options,attributes,pricing,kind) VALUES ('cfg-bota','Bota','BOTA','botas',NULL,0,0,1500,NULL,'none',0,'[]','[]',?,'{}','configured')",
+      pending,
+    ),
+    stmt(
+      "UPDATE products SET kind='configured', version=version+1 WHERE id IN ('cfg-montura','cfg-casco','cfg-rodillera','cfg-bota') AND kind!='configured'",
+    ),
+  ]);
+}
+
 export async function allData() {
   await ensureAccountTables();
+  await ensureConfiguredCatalog();
   const d = db();
   const [c, p, o, i, m, cat, s, partners, expenses, cashouts] = await d.batch([
     d.prepare('SELECT * FROM contacts ORDER BY name'),
@@ -119,14 +233,43 @@ export async function allData() {
   const items = i.results.map((r) => decode<Item>(r, ['selections']));
   return {
     contacts: c.results.map((r) => decode<Contact>(r, ['fiscal'])),
-    products: p.results.map((r) =>
-      decode<Product>(r, ['photos', 'options', 'attributes']),
-    ),
+    products: p.results.map((r) => {
+      const raw = obj(r);
+      const product = decode<Product>(
+        { ...raw, pricing: raw.pricing ?? '{}' },
+        ['photos', 'options', 'attributes', 'pricing'],
+      );
+      return {
+        ...product,
+        kind: product.kind === 'configured' ? 'configured' : 'sku',
+        pricing: parsePricing(product.pricing),
+      };
+    }),
     orders: o.results.map((r) => ({
       ...obj(r),
       items: items.filter((item) => item.order_id === obj(r).id),
     })),
-    movements: m.results,
+    movements: m.results.map((r) => {
+      const row = obj(r);
+      let config: Record<string, unknown> = {};
+      if (typeof row.config === 'string' && row.config) {
+        try {
+          config = obj(JSON.parse(row.config));
+        } catch {
+          config = {};
+        }
+      } else if (row.config && typeof row.config === 'object') {
+        config = obj(row.config);
+      }
+      return {
+        ...row,
+        config,
+        config_key: typeof row.config_key === 'string' ? row.config_key : '',
+        location: typeof row.location === 'string' ? row.location : '',
+        supplier_id:
+          typeof row.supplier_id === 'string' ? row.supplier_id : '',
+      };
+    }),
     categories: cat.results.map((r) => decode<Category>(r, ['fields'])),
     partners: partners.results as Partner[],
     expenses: expenses.results as AccountExpense[],
@@ -256,6 +399,30 @@ export async function product(b: Record<string, unknown>) {
     productAttributes['Precio F&F'] === 'Pendiente de definir'
   )
     delete productAttributes['Precio F&F'];
+  const kind =
+    id === TEMPLATE_IDS.rodilleras ||
+    id === TEMPLATE_IDS.botas ||
+    category === 'monturas' ||
+    category === 'cascos'
+      ? 'configured'
+      : 'sku';
+  if (kind === 'configured') {
+    const expected =
+      category === 'cascos'
+        ? TEMPLATE_IDS.cascos
+        : category === 'rodilleras'
+          ? TEMPLATE_IDS.rodilleras
+          : category === 'botas'
+            ? TEMPLATE_IDS.botas
+            : TEMPLATE_IDS.monturas;
+    if (!b.id || id !== expected)
+      throw new Error(
+        'Monturas, cascos, rodilleras y botas se configuran desde Productos.',
+      );
+  }
+  const pricingJson = JSON.stringify(
+    kind === 'configured' ? parsePricing(b.pricing) : {},
+  );
   const values = [
     str(b.name, 'Nombre', true, 150),
     str(b.sku, 'SKU', true, 80).toUpperCase(),
@@ -270,10 +437,12 @@ export async function product(b: Record<string, unknown>) {
     JSON.stringify(photos),
     JSON.stringify(options),
     JSON.stringify(productAttributes),
+    pricingJson,
+    kind,
   ];
   if (b.id) {
     const result = await stmt(
-      'UPDATE products SET name=?,sku=?,category=?,supplier_id=?,cost=?,price=?,ff_discount=?,ff_price=?,promo_kind=?,promo_value=?,photos=?,options=?,attributes=?,version=? WHERE id=? AND archived=0',
+      'UPDATE products SET name=?,sku=?,category=?,supplier_id=?,cost=?,price=?,ff_discount=?,ff_price=?,promo_kind=?,promo_value=?,photos=?,options=?,attributes=?,pricing=?,kind=?,version=? WHERE id=? AND archived=0',
       ...values,
       integer(b.version, 'Versión') + 1,
       id,
@@ -281,7 +450,7 @@ export async function product(b: Record<string, unknown>) {
     if (!result.meta.changes) throw new Error('Producto no disponible.');
   } else
     await stmt(
-      'INSERT INTO products(name,sku,category,supplier_id,cost,price,ff_discount,ff_price,promo_kind,promo_value,photos,options,attributes,id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO products(name,sku,category,supplier_id,cost,price,ff_discount,ff_price,promo_kind,promo_value,photos,options,attributes,pricing,kind,id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       ...values,
       id,
     ).run();
@@ -331,39 +500,19 @@ export async function saveOrder(b: Record<string, unknown>) {
         str(input.product_id, 'Producto', true),
       ).first();
       if (!row) throw new Error('Producto no disponible.');
-      const p = decode<Product>(row, ['options', 'attributes', 'photos']);
+      const rawProduct = obj(row);
+      const p = decode<Product>(
+        { ...rawProduct, pricing: rawProduct.pricing ?? '{}' },
+        ['options', 'attributes', 'photos', 'pricing'],
+      );
+      p.kind = p.kind === 'configured' ? 'configured' : 'sku';
+      p.pricing = parsePricing(p.pricing);
       if (p.attributes.Costo === 'Pendiente de definir')
         throw new Error(`Completá el costo de ${p.name} antes de venderlo.`);
       if (p.attributes['Precio de lista'] === 'Pendiente de definir')
         throw new Error(
           `Completá el precio de lista de ${p.name} antes de venderlo.`,
         );
-      const ids = list(input.option_ids || [], 30).map((v) =>
-        str(v, 'Opción', true),
-      );
-      if (new Set(ids).size !== ids.length) throw new Error('Opción repetida.');
-      const options: Option[] = ids.map((optionId) => {
-        const found = p.options.find((o) => o.id === optionId);
-        if (!found) throw new Error('Opción no disponible.');
-        return found;
-      });
-      const selected = attributes(input.attributes || {});
-      const cat = await stmt(
-        'SELECT * FROM categories WHERE id=?',
-        p.category,
-      ).first();
-      const fields = decode<Category>(cat, ['fields']).fields;
-      for (const field of fields) {
-        if (field.values.length && !selected[field.name])
-          throw new Error(`Elegí ${field.name}.`);
-      }
-      for (const [k, v] of Object.entries(selected)) {
-        const field = fields.find((f) => f.name === k);
-        if (!field || (field.values.length && !field.values.includes(v)))
-          throw new Error('Característica seleccionada inválida.');
-        if (p.attributes[k] && p.attributes[k] !== v)
-          throw new Error(`La combinación no corresponde al SKU ${p.sku}.`);
-      }
       const mode = choice(
         input.price_mode || 'list',
         ['list', 'ff', 'promo', 'manual'],
@@ -374,22 +523,79 @@ export async function saveOrder(b: Record<string, unknown>) {
         p.attributes['Precio F&F'] === 'Pendiente de definir'
       )
         throw new Error(`Completá el precio F&F de ${p.name}.`);
-      const base =
-        mode === 'manual'
-          ? integer(input.manual_price, 'Precio manual')
-          : mode === 'ff'
-            ? (p.ff_price ?? discounted(p.price, p.ff_discount))
-            : mode === 'promo'
-              ? promoPrice(p)
-              : p.price;
-      snapshot = {
-        product_id: p.id,
-        name: p.name,
-        sku: p.sku,
-        selections: { options, attributes: selected },
-        unit_price: integer(base + options.reduce((s, o) => s + o.price, 0)),
-        unit_cost: integer(p.cost + options.reduce((s, o) => s + o.cost, 0)),
-      };
+      const configured = configuredKindOf(p);
+      if (configured) {
+        const config = parseConfig(configured, input.config);
+        const extras = extraTotals(configured, config, p.pricing);
+        if (extras.pending)
+          throw new Error(
+            `Completá los precios de ${p.name} en Productos antes de venderlo.`,
+          );
+        const base =
+          mode === 'manual'
+            ? integer(input.manual_price, 'Precio manual')
+            : mode === 'ff'
+              ? (p.ff_price ?? discounted(p.price, p.ff_discount))
+              : mode === 'promo'
+                ? promoPrice(p)
+                : p.price;
+        snapshot = {
+          product_id: p.id,
+          name: p.name,
+          sku: p.sku,
+          selections: {
+            options: [],
+            attributes: configLabels(configured, config),
+            config,
+          },
+          unit_price: integer(base + extras.price),
+          unit_cost: integer(p.cost + extras.cost),
+        };
+      } else {
+        const ids = list(input.option_ids || [], 30).map((v) =>
+          str(v, 'Opción', true),
+        );
+        if (new Set(ids).size !== ids.length)
+          throw new Error('Opción repetida.');
+        const options: Option[] = ids.map((optionId) => {
+          const found = p.options.find((o) => o.id === optionId);
+          if (!found) throw new Error('Opción no disponible.');
+          return found;
+        });
+        const selected = attributes(input.attributes || {});
+        const cat = await stmt(
+          'SELECT * FROM categories WHERE id=?',
+          p.category,
+        ).first();
+        const fields = decode<Category>(cat, ['fields']).fields;
+        for (const field of fields) {
+          if (field.values.length && !selected[field.name])
+            throw new Error(`Elegí ${field.name}.`);
+        }
+        for (const [k, v] of Object.entries(selected)) {
+          const field = fields.find((f) => f.name === k);
+          if (!field || (field.values.length && !field.values.includes(v)))
+            throw new Error('Característica seleccionada inválida.');
+          if (p.attributes[k] && p.attributes[k] !== v)
+            throw new Error(`La combinación no corresponde al SKU ${p.sku}.`);
+        }
+        const base =
+          mode === 'manual'
+            ? integer(input.manual_price, 'Precio manual')
+            : mode === 'ff'
+              ? (p.ff_price ?? discounted(p.price, p.ff_discount))
+              : mode === 'promo'
+                ? promoPrice(p)
+                : p.price;
+        snapshot = {
+          product_id: p.id,
+          name: p.name,
+          sku: p.sku,
+          selections: { options, attributes: selected },
+          unit_price: integer(base + options.reduce((s, o) => s + o.price, 0)),
+          unit_cost: integer(p.cost + options.reduce((s, o) => s + o.cost, 0)),
+        };
+      }
     }
     const itemId = old?.id || crypto.randomUUID();
     if (used.has(itemId)) throw new Error('Ítem duplicado.');
@@ -628,6 +834,7 @@ async function productsBulk(b: Record<string, unknown>) {
   return { ok: true, updated, skipped };
 }
 export async function mutate(b: Record<string, unknown>) {
+  await ensureConfiguredCatalog();
   switch (b.action) {
     case 'contact':
       return contact(b);
@@ -647,21 +854,129 @@ export async function mutate(b: Record<string, unknown>) {
       )
         throw new Error('Movimiento inválido.');
       const id = str(b.product_id, 'Producto', true);
-      if (
-        !(await stmt(
-          'SELECT id FROM products WHERE id=? AND archived=0',
+      const row = await stmt(
+        'SELECT * FROM products WHERE id=? AND archived=0',
+        id,
+      ).first();
+      if (!row) throw new Error('Producto no disponible.');
+      const product = decode<Product>(row, ['options', 'attributes', 'photos']);
+      product.kind = product.kind === 'configured' ? 'configured' : 'sku';
+      const configured = configuredKindOf(product);
+      let configJson = '{}';
+      let key = '';
+      if (configured) {
+        const config = parseConfig(configured, b.config);
+        configJson = JSON.stringify(config);
+        key = stockKey(configured, config);
+      }
+      const location = choice(b.location, ['ivan', 'kriko'], 'Ubicación');
+      const supplier = await requireSupplier(b.supplier_id);
+      if (q < 0) {
+        const have = await stmt(
+          "SELECT COALESCE(SUM(quantity),0) qty FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? AND COALESCE(location,'')=?",
           id,
-        ).first())
-      )
-        throw new Error('Producto no disponible.');
+          key,
+          location,
+        ).first<{ qty: number }>();
+        if ((have?.qty || 0) + q < 0)
+          throw new Error(
+            `No hay suficiente stock en ${stockPlaceLabel(location)}.`,
+          );
+      }
       await stmt(
-        'INSERT INTO stock_movements (id,product_id,quantity,reason,created_at) VALUES (?,?,?,?,?)',
+        'INSERT INTO stock_movements (id,product_id,quantity,reason,created_at,config,config_key,location,supplier_id) VALUES (?,?,?,?,?,?,?,?,?)',
         crypto.randomUUID(),
         id,
         q,
-        str(b.reason, 'Motivo', true, 500),
+        typeof b.reason === 'string' ? str(b.reason, 'Motivo', false, 500) : '',
         new Date().toISOString(),
+        configJson,
+        key,
+        location,
+        supplier,
       ).run();
+      return { ok: true };
+    }
+    case 'stock_update': {
+      const movementId = str(b.id, 'Movimiento', true);
+      const existing = await stmt(
+        'SELECT * FROM stock_movements WHERE id=?',
+        movementId,
+      ).first();
+      if (!existing) throw new Error('Movimiento no disponible.');
+      const current = obj(existing);
+      if (current.order_id)
+        throw new Error(
+          'Este movimiento viene de un pedido y no se puede editar.',
+        );
+      const id = str(current.product_id, 'Producto', true);
+      const row = await stmt(
+        'SELECT * FROM products WHERE id=? AND archived=0',
+        id,
+      ).first();
+      if (!row) throw new Error('Producto no disponible.');
+      const product = decode<Product>(row, ['options', 'attributes', 'photos']);
+      product.kind = product.kind === 'configured' ? 'configured' : 'sku';
+      const configured = configuredKindOf(product);
+      let configJson = '{}';
+      let key = '';
+      if (configured) {
+        const config = parseConfig(configured, b.config);
+        configJson = JSON.stringify(config);
+        key = stockKey(configured, config);
+      }
+      const location = choice(b.location, ['ivan', 'kriko'], 'Ubicación');
+      const supplier = await requireSupplier(
+        b.supplier_id,
+        typeof current.supplier_id === 'string' ? current.supplier_id : '',
+      );
+      const rawQty = b.quantity;
+      if (
+        typeof rawQty !== 'number' ||
+        !Number.isInteger(rawQty) ||
+        rawQty < 1 ||
+        rawQty > 100000
+      )
+        throw new Error('Movimiento inválido.');
+      const q = rawQty * (Number(current.quantity) < 0 ? -1 : 1);
+      const have = await stmt(
+        "SELECT COALESCE(SUM(quantity),0) qty FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? AND id!=?",
+        id,
+        key,
+        movementId,
+      ).first<{ qty: number }>();
+      if ((have?.qty || 0) + q < 0)
+        throw new Error('El cambio dejaría el stock en negativo.');
+      if (q < 0) {
+        const atPlace = await stmt(
+          "SELECT COALESCE(SUM(quantity),0) qty FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? AND COALESCE(location,'')=? AND id!=?",
+          id,
+          key,
+          location,
+          movementId,
+        ).first<{ qty: number }>();
+        if ((atPlace?.qty || 0) + q < 0)
+          throw new Error(
+            `No hay suficiente stock en ${stockPlaceLabel(location)}.`,
+          );
+      }
+      const d = db();
+      await d.batch([
+        stmt('DROP TRIGGER IF EXISTS stock_immutable_update'),
+        stmt(
+          'UPDATE stock_movements SET quantity=?,reason=?,config=?,config_key=?,location=?,supplier_id=? WHERE id=?',
+          q,
+          typeof b.reason === 'string' ? str(b.reason, 'Motivo', false, 500) : '',
+          configJson,
+          key,
+          location,
+          supplier,
+          movementId,
+        ),
+        stmt(
+          "CREATE TRIGGER stock_immutable_update BEFORE UPDATE ON stock_movements BEGIN SELECT RAISE(ABORT,'STOCK_IMMUTABLE'); END",
+        ),
+      ]);
       return { ok: true };
     }
     case 'archive': {

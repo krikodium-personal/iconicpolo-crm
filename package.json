@@ -10,7 +10,7 @@
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
-    "test": "node --test --experimental-strip-types tests/money.test.ts tests/variants.test.ts tests/account.test.ts",
+    "test": "node --test --experimental-strip-types tests/money.test.ts tests/variants.test.ts tests/account.test.ts tests/configure.test.ts",
     "format": "oxfmt",
     "db:generate": "drizzle-kit generate",
     "catalog:import": "node scripts/import-real-catalog.mjs",
