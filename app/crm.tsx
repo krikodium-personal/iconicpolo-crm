@@ -82,8 +82,28 @@ import {
   whatsappGroup,
 } from './forms';
 import { AccountBoard } from './account';
-import { Status, ProductPhoto, Pick, ErrorBox, SelectCheck } from './ui';
-import { formatMoney, friendsPrice, margin } from '@/lib/money';
+import {
+  StatusMenu,
+  ProductPhoto,
+  Pick,
+  ErrorBox,
+  SelectCheck,
+} from './ui';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import {
+  decimal,
+  formatMoney,
+  friendsPrice,
+  margin,
+  orderDiscountPercent,
+  parseDecimal,
+} from '@/lib/money';
 import { isConfiguredCategory, isConfiguredProduct } from '@/lib/configure';
 import { TypeCards, TypeConfigForm } from './type-config';
 import type { Data, Contact, Product, Order, Movement } from '@/lib/types';
@@ -364,6 +384,96 @@ function ContactCard({
     </article>
   );
 }
+function discountLabel(order: Order) {
+  const pct = orderDiscountPercent(order);
+  return `${pct.toLocaleString('es-AR')}% dto.`;
+}
+function OrderPayMenu({
+  order,
+  onChange,
+}: {
+  order: Order;
+  onChange: (pay: string, paid?: number) => Promise<void>;
+}) {
+  const value = payStatus(order);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [amount, setAmount] = useState(decimal(order.paid));
+  const [error, setError] = useState('');
+  async function pick(option: string) {
+    setBusy(true);
+    setError('');
+    try {
+      await onChange(
+        option,
+        option === 'pago parcial' ? parseDecimal(amount) : undefined,
+      );
+      setOpen(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          setAmount(decimal(order.paid));
+          setError('');
+        }
+      }}
+    >
+      <button
+        type="button"
+        className={`status ${value.replaceAll(' ', '-')} status-pick`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`Cambiar pago: ${value}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+      >
+        {value}
+      </button>
+      <SheetContent side="bottom" className="status-sheet">
+        <SheetHeader>
+          <SheetTitle>Estado de pago</SheetTitle>
+          <SheetDescription>
+            Marcá si está cobrado. En un pago parcial, escribí el importe.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="status-sheet-options">
+          {['no pagado', 'pago parcial', 'pagado'].map((option) => (
+            <button
+              key={option}
+              type="button"
+              disabled={busy}
+              className={`status ${option.replaceAll(' ', '-')}${
+                option === value ? ' is-current' : ''
+              }`}
+              onClick={() => pick(option)}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+        <label className="status-sheet-amount">
+          Importe parcial
+          <input
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+        </label>
+        {error ? <p className="pending-text">{error}</p> : null}
+      </SheetContent>
+    </Sheet>
+  );
+}
 function OrderCard({
   order,
   customerName,
@@ -371,6 +481,8 @@ function OrderCard({
   compact = false,
   archiveButton,
   onOpen,
+  onStatus,
+  onPay,
 }: {
   order: Order;
   customerName: string;
@@ -378,6 +490,8 @@ function OrderCard({
   compact?: boolean;
   archiveButton: ReactNode;
   onOpen: () => void;
+  onStatus: (status: string) => Promise<void>;
+  onPay: (pay: string, paid?: number) => Promise<void>;
 }) {
   return (
     <article className="record-card clickable-row">
@@ -412,8 +526,14 @@ function OrderCard({
         </div>
       </div>
       <div className="record-card-status">
-        <Status value={order.status} />
-        <Status value={payStatus(order)} />
+        <StatusMenu
+          value={order.status}
+          title="Estado del pedido"
+          description="Elegí el estado. El cierre descuenta stock."
+          options={['nuevo', 'abierto', 'en producción', 'cerrado']}
+          onPick={onStatus}
+        />
+        <OrderPayMenu order={order} onChange={onPay} />
       </div>
       <dl className={`record-card-facts${compact ? ' facts-compact' : ''}`}>
         {compact ? null : (
@@ -425,7 +545,10 @@ function OrderCard({
         <div>
           <dt>Total</dt>
           <dd className="amount">{money(order.total)}</dd>
-          {compact ? null : <small>{money(order.paid)} cobrado</small>}
+          <small>
+            {discountLabel(order)}
+            {compact ? '' : ` · ${money(order.paid)} cobrado`}
+          </small>
         </div>
         {compact ? null : (
           <div>
@@ -553,6 +676,21 @@ export default function CRM({
     }
     return () => life.abort();
   }, []);
+  async function patchOrder(order: Order, body: Record<string, unknown>) {
+    try {
+      await post({
+        action: 'order_quick',
+        id: order.id,
+        version: order.version,
+        ...body,
+      });
+      N('Cambios guardados.');
+      await refresh();
+    } catch (e) {
+      E((e as Error).message);
+      throw e;
+    }
+  }
   async function save(body: Record<string, unknown>) {
     await post(body);
     N('Cambios guardados.');
@@ -768,17 +906,27 @@ export default function CRM({
                     </small>
                   </TableCell>
                   <TableCell>
-                    <Status value={o.status} />
+                    <StatusMenu
+                      value={o.status}
+                      title="Estado del pedido"
+                      description="Elegí el estado. El cierre descuenta stock."
+                      options={['nuevo', 'abierto', 'en producción', 'cerrado']}
+                      onPick={(status) => patchOrder(o, { status })}
+                    />
                   </TableCell>
                   {!compact && (
                     <TableCell>{o.delivery || 'Sin definir'}</TableCell>
                   )}
                   <TableCell>
-                    <Status value={payStatus(o)} />
+                    <OrderPayMenu
+                      order={o}
+                      onChange={(pay, paid) => patchOrder(o, { pay, paid })}
+                    />
                     {!compact && <small>{money(o.paid)} cobrado</small>}
                   </TableCell>
                   <TableCell className="text-right amount">
                     {money(o.total)}
+                    <small>{discountLabel(o)}</small>
                   </TableCell>
                   {!compact && (
                     <TableCell className="text-right amount">
@@ -816,6 +964,8 @@ export default function CRM({
                 record: o,
               })}
               onOpen={() => P({ type: 'order', record: o })}
+              onStatus={(status) => patchOrder(o, { status })}
+              onPay={(pay, paid) => patchOrder(o, { pay, paid })}
             />
           ))}
         </div>
@@ -1758,13 +1908,11 @@ export default function CRM({
           }}
         >
           <DialogContent
-            className="crm-dialog"
-            style={{
-              maxWidth:
-                panel?.type === 'stock' || panel?.type === 'inventory'
-                  ? '640px'
-                  : '950px',
-            }}
+            className={`crm-dialog${
+              panel?.type === 'stock' || panel?.type === 'inventory'
+                ? ' crm-dialog-stock'
+                : ''
+            } max-[767px]:top-0 max-[767px]:left-0 max-[767px]:right-0 max-[767px]:bottom-0 max-[767px]:translate-x-0 max-[767px]:translate-y-0 max-[767px]:w-full max-[767px]:max-w-none max-[767px]:h-dvh max-[767px]:max-h-dvh max-[767px]:rounded-none max-[767px]:animate-none`}
           >
             <DialogHeader>
               {panel?.type === 'inventory' ? (

@@ -38,6 +38,7 @@ import {
   type ProductConfig,
 } from '@/lib/configure';
 import { Configurator } from './configure-form';
+import { OrderProductPicker } from './order-product-picker';
 import {
   Field,
   Pick,
@@ -59,6 +60,7 @@ export type Save = (body: Record<string, unknown>) => Promise<void>;
 export { whatsapp, whatsappGroup };
 const options = (values: string[]) =>
   values.map((value) => ({ value, label: value }));
+const NEW_CUSTOMER = '__new__';
 const today = () =>
   new Date().toLocaleDateString('en-CA', {
     timeZone: 'America/Argentina/Buenos_Aires',
@@ -1205,6 +1207,12 @@ export function OrderForm({
     invoice: !!record?.invoice,
     notes: record?.notes || '',
   });
+  const [newCustomer, setNewCustomer] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    address: '',
+  });
   const [items, I] = useState<DraftItem[]>(
     record?.items.map((i) => ({
       key: i.id,
@@ -1222,9 +1230,41 @@ export function OrderForm({
   );
   const [busy, B] = useState(false);
   const [error, E] = useState('');
+  const [picking, setPicking] = useState<null | 'new' | string>(null);
   const closed = record?.status === 'cerrado';
   function update(key: string, change: Partial<DraftItem>) {
     I(items.map((i) => (i.key === key ? { ...i, ...change } : i)));
+  }
+  function applyProduct(product: Product, key?: string, config?: ProductConfig) {
+    const fields =
+      data.categories.find((c) => c.id === product.category)?.fields || [];
+    const kind = configuredKindOf(product);
+    const next = {
+      product_id: product.id,
+      option_ids: [] as string[],
+      attributes: productFieldValues(product, fields),
+      config: kind
+        ? config
+          ? parseConfig(kind, config)
+          : defaultConfig(kind)
+        : undefined,
+    };
+    if (key && items.some((i) => i.key === key)) {
+      update(key, next);
+    } else {
+      I([
+        ...items,
+        {
+          key: crypto.randomUUID(),
+          quantity: '1',
+          discount: '0.00',
+          price_mode: 'list',
+          manual_price: '0.00',
+          ...next,
+        },
+      ]);
+    }
+    setPicking(null);
   }
   function itemTotals(i: DraftItem) {
     const p = data.products.find((p) => p.id === i.product_id);
@@ -1322,9 +1362,14 @@ export function OrderForm({
         B(true);
         E('');
         try {
+          const creatingCustomer = f.customer_id === NEW_CUSTOMER;
+          if (creatingCustomer && !newCustomer.name.trim())
+            throw new Error('Escribí el nombre del cliente.');
           await save({
             action: 'order',
             ...f,
+            customer_id: creatingCustomer ? undefined : f.customer_id,
+            customer: creatingCustomer ? newCustomer : undefined,
             invoice: Number(f.invoice),
             paid: parseDecimal(f.paid),
             id: record?.id,
@@ -1387,13 +1432,16 @@ export function OrderForm({
               label="Cliente"
               value={f.customer_id}
               onChange={(v) => set({ ...f, customer_id: v })}
-              options={data.contacts
-                .filter(
-                  (c) =>
-                    c.kind === 'customer' &&
-                    (!c.archived || c.id === record?.customer_id),
-                )
-                .map((c) => ({ value: c.id, label: c.name }))}
+              options={[
+                { value: NEW_CUSTOMER, label: 'Nuevo cliente…' },
+                ...data.contacts
+                  .filter(
+                    (c) =>
+                      c.kind === 'customer' &&
+                      (!c.archived || c.id === record?.customer_id),
+                  )
+                  .map((c) => ({ value: c.id, label: c.name })),
+              ]}
             />
           </Field>
           <Field label="Estado">
@@ -1427,6 +1475,56 @@ export function OrderForm({
             />
           </Field>
         </div>
+        {f.customer_id === NEW_CUSTOMER ? (
+          <section className="form-section">
+            <h3>Datos del cliente nuevo</h3>
+            <p className="hint">
+              Se crea el cliente al guardar el pedido y queda asociado a esta
+              persona.
+            </p>
+            <div className="form-grid">
+              <Field label="Nombre / empresa *">
+                <input
+                  required
+                  value={newCustomer.name}
+                  onChange={(e) =>
+                    setNewCustomer({ ...newCustomer, name: e.target.value })
+                  }
+                  placeholder="Nombre"
+                />
+              </Field>
+              <Field label="Teléfono">
+                <input
+                  value={newCustomer.phone}
+                  onChange={(e) =>
+                    setNewCustomer({ ...newCustomer, phone: e.target.value })
+                  }
+                  placeholder="54911…"
+                />
+              </Field>
+              <Field label="Email">
+                <input
+                  type="email"
+                  value={newCustomer.email}
+                  onChange={(e) =>
+                    setNewCustomer({ ...newCustomer, email: e.target.value })
+                  }
+                />
+              </Field>
+              <Field label="Dirección">
+                <input
+                  value={newCustomer.address}
+                  onChange={(e) =>
+                    setNewCustomer({
+                      ...newCustomer,
+                      address: e.target.value,
+                    })
+                  }
+                />
+              </Field>
+            </div>
+          </section>
+        ) : null}
         <section className="form-section">
           <div className="section-heading">
             <h3>Productos del pedido</h3>
@@ -1454,6 +1552,7 @@ export function OrderForm({
             const skuKeys = p
               ? skuFields(category?.fields || [], data.products, p.category)
               : [];
+            const selecting = !i.snapshot && (picking === i.key || !i.product_id);
             return (
               <div className="order-line" key={i.key}>
                 <div className="section-heading">
@@ -1486,35 +1585,44 @@ export function OrderForm({
                       </span>
                     ))}
                   </div>
+                ) : selecting ? (
+                  <OrderProductPicker
+                    data={data}
+                    onPick={(product, config) =>
+                      applyProduct(product, i.key, config)
+                    }
+                    onCancel={() => {
+                      if (!i.product_id)
+                        I(items.filter((x) => x.key !== i.key));
+                      setPicking(null);
+                    }}
+                  />
                 ) : (
-                  <Field label="Producto *">
-                    <Pick
-                      label={`Producto del ítem ${index + 1}`}
-                      value={i.product_id}
-                      onChange={(v) => {
-                        const next = data.products.find((x) => x.id === v);
-                        const fields =
-                          data.categories.find((c) => c.id === next?.category)
-                            ?.fields || [];
-                        const kind = next ? configuredKindOf(next) : null;
-                        update(i.key, {
-                          product_id: v,
-                          option_ids: [],
-                          attributes: productFieldValues(next, fields),
-                          config: kind ? defaultConfig(kind) : undefined,
-                        });
-                      }}
-                      options={data.products
-                        .filter((product) => !product.archived)
-                        .map((product) => ({
-                          value: product.id,
-                          label: isConfiguredProduct(product)
-                            ? `${product.name} · a configurar · ${product.stock} uds.`
-                            : `${product.name} · ${product.sku} · ${product.stock} uds.`,
-                        }))}
-                    />
-                  </Field>
+                  <div className="order-picked">
+                    <ProductPhoto name={p?.name || ''} url={p?.photos[0]} />
+                    <div className="order-picked-copy">
+                      <b>{p?.name || 'Producto'}</b>
+                      <small>
+                        {p
+                          ? isConfiguredProduct(p)
+                            ? `A configurar · ${p.stock} uds.`
+                            : `${p.sku} · ${p.stock} uds.`
+                          : 'Producto no disponible'}
+                      </small>
+                    </div>
+                    {!closed && (
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => setPicking(i.key)}
+                      >
+                        Cambiar
+                      </button>
+                    )}
+                  </div>
                 )}
+                {!selecting && (
+                <>
                 <div className="form-grid line-fields">
                   <Field label="Cantidad *">
                     <input
@@ -1695,28 +1803,23 @@ export function OrderForm({
                     <b>{formatMoney(t.total, data.currency)}</b>
                   </div>
                 )}
+                </>
+                )}
               </div>
             );
           })}
-          {!closed && (
+          {!closed && picking === 'new' && (
+            <OrderProductPicker
+              data={data}
+              onPick={(product, config) => applyProduct(product, undefined, config)}
+              onCancel={() => setPicking(null)}
+            />
+          )}
+          {!closed && !picking && (
             <button
               type="button"
               className="secondary"
-              onClick={() =>
-                I([
-                  ...items,
-                  {
-                    key: crypto.randomUUID(),
-                    product_id: '',
-                    quantity: '1',
-                    discount: '0.00',
-                    price_mode: 'list',
-                    manual_price: '0.00',
-                    option_ids: [],
-                    attributes: {},
-                  },
-                ])
-              }
+              onClick={() => setPicking('new')}
             >
               <Plus size={17} /> Agregar producto
             </button>

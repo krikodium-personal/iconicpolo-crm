@@ -7,6 +7,7 @@ import {
   lineTotals,
   margin,
   markup,
+  orderDiscountPercent,
   parseDecimal,
   promoPrice,
   ratio,
@@ -42,6 +43,23 @@ test('reports margin over sale and profitability over cost separately', () => {
   assert.equal(markup(10_000, 6_000), 66.67);
   assert.equal(margin(0, 0), null);
   assert.equal(markup(1_000, 0), null);
+});
+
+test('reports the effective discount of an order from its lines', () => {
+  assert.equal(
+    orderDiscountPercent({
+      total: 27_000,
+      items: [{ unit_price: 10_000, quantity: 3 }],
+    }),
+    10,
+  );
+  assert.equal(
+    orderDiscountPercent({
+      total: 10_000,
+      items: [{ unit_price: 10_000, quantity: 1 }],
+    }),
+    0,
+  );
 });
 
 test('supports percentage and manual promotional prices', () => {

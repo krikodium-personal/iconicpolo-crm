@@ -456,6 +456,40 @@ export async function product(b: Record<string, unknown>) {
     ).run();
   return { id };
 }
+async function customerIdForOrder(b: Record<string, unknown>) {
+  const draft =
+    b.customer && typeof b.customer === 'object' && !Array.isArray(b.customer)
+      ? (b.customer as Record<string, unknown>)
+      : null;
+  if (draft) {
+    const created = await contact({
+      kind: 'customer',
+      name: draft.name,
+      contact: draft.contact || '',
+      title: '',
+      phone: draft.phone || '',
+      email: draft.email || '',
+      address: draft.address || '',
+      website: '',
+      whatsapp_group: '',
+      notes: draft.notes || '',
+      fiscal: {},
+    });
+    return created.id;
+  }
+  const customer = str(b.customer_id, 'Cliente', true);
+  if (customer === '__new__')
+    throw new Error('Completá los datos del cliente nuevo.');
+  if (
+    !(await stmt(
+      "SELECT id FROM contacts WHERE id=? AND kind='customer' AND archived=0",
+      customer,
+    ).first())
+  )
+    throw new Error('Seleccioná un cliente activo.');
+  return customer;
+}
+
 export async function saveOrder(b: Record<string, unknown>) {
   const d = db();
   const id = b.id ? str(b.id, 'ID', true) : crypto.randomUUID();
@@ -468,14 +502,7 @@ export async function saveOrder(b: Record<string, unknown>) {
   if (b.id && !existing) throw new Error('Pedido no disponible.');
   if (existing?.status === 'cerrado')
     throw new Error('Reabrí el pedido antes de editarlo.');
-  const customer = str(b.customer_id, 'Cliente', true);
-  if (
-    !(await stmt(
-      "SELECT id FROM contacts WHERE id=? AND kind='customer' AND archived=0",
-      customer,
-    ).first())
-  )
-    throw new Error('Seleccioná un cliente activo.');
+  const customer = await customerIdForOrder(b);
   const previous = existing
     ? (
         await stmt('SELECT * FROM order_items WHERE order_id=?', id).all()
@@ -708,6 +735,53 @@ export async function saveOrder(b: Record<string, unknown>) {
   await d.batch(statements);
   return { id, number };
 }
+export async function patchOrder(b: Record<string, unknown>) {
+  const id = str(b.id, 'ID', true);
+  const existing = await stmt(
+    'SELECT * FROM orders WHERE id=? AND archived=0',
+    id,
+  ).first<Order>();
+  if (!existing) throw new Error('Pedido no disponible.');
+  const version = integer(b.version, 'Versión') + 1;
+  if (b.status !== undefined) {
+    const status = choice(
+      b.status,
+      ['nuevo', 'abierto', 'en producción', 'cerrado'],
+      'Estado',
+    );
+    const result = await stmt(
+      'UPDATE orders SET status=?,version=? WHERE id=?',
+      status,
+      version,
+      id,
+    ).run();
+    if (!result.meta.changes) throw new Error('Pedido no disponible.');
+    return { ok: true };
+  }
+  const pay = choice(
+    b.pay,
+    ['no pagado', 'pago parcial', 'pagado'],
+    'Pago',
+  );
+  const paid =
+    pay === 'pagado'
+      ? existing.total
+      : pay === 'no pagado'
+        ? 0
+        : integer(b.paid, 'Cobrado');
+  if (pay === 'pago parcial' && (!paid || paid >= existing.total))
+    throw new Error('El pago parcial tiene que ser mayor a 0 y menor al total.');
+  if (paid > existing.total)
+    throw new Error('El cobro no puede superar el total.');
+  const result = await stmt(
+    'UPDATE orders SET paid=?,version=? WHERE id=?',
+    paid,
+    version,
+    id,
+  ).run();
+  if (!result.meta.changes) throw new Error('Pedido no disponible.');
+  return { ok: true };
+}
 const keptAttributes = new Set([
   'Costo',
   'Precio de lista',
@@ -842,6 +916,8 @@ export async function mutate(b: Record<string, unknown>) {
       return product(b);
     case 'order':
       return saveOrder(b);
+    case 'order_quick':
+      return patchOrder(b);
     case 'products_bulk':
       return productsBulk(b);
     case 'stock': {

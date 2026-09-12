@@ -783,6 +783,47 @@ small.pending-text {
   background: #f0eafb;
   color: #786093;
 }
+.status.no-pagado {
+  background: #eef0f3;
+  color: #5e6d7b;
+}
+button.status-pick {
+  border: 0;
+  cursor: pointer;
+  position: relative;
+  z-index: 2;
+}
+.status.is-current {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.status-sheet {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+.status-sheet-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 16px 8px;
+}
+.status-sheet-options .status {
+  border: 0;
+  cursor: pointer;
+}
+.status-sheet-amount {
+  display: grid;
+  gap: 6px;
+  padding: 0 16px 16px;
+  color: #5e7268;
+  font-size: 13px;
+}
+.status-sheet-amount input {
+  min-height: 44px;
+}
+.record-card-status {
+  position: relative;
+  z-index: 2;
+}
 .stock-pill {
   font-size: 12px;
   border-radius: 5px;
@@ -815,10 +856,14 @@ small.pending-text {
 }
 .crm-dialog {
   width: calc(100% - 32px);
+  max-width: 950px;
   max-height: 90dvh;
   overflow-y: auto;
   padding: 28px !important;
   gap: 24px !important;
+}
+.crm-dialog-stock {
+  max-width: 640px;
 }
 .crm-dialog [data-slot='dialog-title'] {
   font-size: 25px;
@@ -1776,19 +1821,26 @@ fieldset:disabled textarea {
     min-height: 44px;
   }
   .crm-dialog {
+    inset: 0 !important;
     top: 0 !important;
     right: 0 !important;
     bottom: 0 !important;
     left: 0 !important;
-    translate: none !important;
+    margin: 0 !important;
+    translate: 0 !important;
     transform: none !important;
+    --tw-translate-x: 0 !important;
+    --tw-translate-y: 0 !important;
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-enter-scale: 1 !important;
     width: 100% !important;
-    max-width: 100% !important;
+    max-width: none !important;
     height: 100dvh !important;
     max-height: 100dvh !important;
     border-radius: 0 !important;
     padding: calc(16px + env(safe-area-inset-top)) 16px
-      calc(16px + env(safe-area-inset-bottom)) !important;
+      calc(72px + env(safe-area-inset-bottom)) !important;
   }
   .stock-dialog-heading {
     flex-wrap: wrap;
@@ -2011,4 +2063,157 @@ fieldset:disabled textarea {
 }
 .extra-pending {
   margin-top: 6px;
+}
+button.type-card {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+button.type-card:hover,
+.order-pick-card:hover {
+  border-color: #b7cbb0;
+  background: #f7faf5;
+}
+.type-card-pick-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #134c45;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  width: fit-content;
+}
+.order-picker {
+  display: grid;
+  gap: 16px;
+  margin: 8px 0 4px;
+}
+.order-picker .type-card-grid {
+  margin: 0;
+}
+.order-picker .search {
+  max-width: 420px;
+}
+.order-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.order-stock-list {
+  display: grid;
+  gap: 0;
+}
+button.order-stock-pick {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+button.order-stock-pick:hover {
+  background: #f7faf5;
+}
+button.order-stock-pick strong {
+  display: grid;
+  justify-items: end;
+  font-size: 13px;
+  color: #134c45;
+}
+.order-picker-skus,
+.order-picker .record-card-list {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+}
+.order-pick-card,
+.order-picker .record-card {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #d7e0d6;
+  border-radius: 12px;
+  background: #fff;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.order-pick-card .record-card-top,
+.order-picker .record-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.order-pick-card .product-photo,
+.order-picker .product-photo {
+  width: 56px;
+  height: 56px;
+  flex: none;
+}
+.order-pick-card .record-card-id,
+.order-picker .record-card-id {
+  min-width: 0;
+  flex: 1;
+}
+.order-pick-card .record-card-meta,
+.order-picker .record-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.order-pick-card .record-card-facts,
+.order-picker .record-card-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 12px;
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid #e6ece4;
+}
+.order-pick-card .record-card-facts dt,
+.order-picker .record-card-facts dt {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #6a7e72;
+}
+.order-pick-card .record-card-facts dd,
+.order-picker .record-card-facts dd {
+  margin: 3px 0 0;
+  font-size: 14px;
+}
+.order-picked {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #edf3e9;
+}
+.order-picked .product-photo {
+  width: 48px;
+  height: 48px;
+}
+.order-picked-copy {
+  min-width: 0;
+  flex: 1;
+}
+.order-picked-copy b {
+  display: block;
+}
+@media (min-width: 768px) {
+  .order-picker-skus {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

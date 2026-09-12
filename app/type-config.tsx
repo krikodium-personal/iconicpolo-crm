@@ -44,17 +44,24 @@ export function TypeCards({
   onOpen,
   onStock,
   onViewStock,
+  onPick,
+  match = '',
 }: {
   data: Data;
-  onOpen: (product: Product) => void;
-  onStock: (product: Product) => void;
-  onViewStock: (product: Product) => void;
+  onOpen?: (product: Product) => void;
+  onStock?: (product: Product) => void;
+  onViewStock?: (product: Product) => void;
+  onPick?: (product: Product) => void;
+  match?: string;
 }) {
   return (
     <div className="type-card-grid">
       {(['montura', 'casco', 'rodillera', 'bota'] as ConfiguredKind[]).map((kind) => {
         const product = configuredProductOf(data.products, kind);
         if (!product) return null;
+        const hay = `${KIND_TITLES[kind]} ${kind} ${product.name}`.toLowerCase();
+        if (match.trim() && !hay.includes(match.trim().toLowerCase()))
+          return null;
         const pending =
           product.attributes.Costo === 'Pendiente de definir' ||
           product.attributes['Precio de lista'] === 'Pendiente de definir';
@@ -71,34 +78,63 @@ export function TypeCards({
           polo_argentino_triple_cuero: 'Polo TC',
           texanas: 'Texanas',
         } as const;
+        const copy = (
+          <div className="type-card-copy">
+            <small>Producto configurable</small>
+            <strong>{KIND_TITLES[kind]}</strong>
+            <p>
+              {pending
+                ? 'Falta definir el precio base y las variantes.'
+                : kind === 'rodillera' && premium
+                  ? `Standard ${formatMoney(product.price, data.currency)} · Premium ${formatMoney(product.price + premium.price, data.currency)}`
+                  : kind === 'casco' && h1
+                    ? `Standard ${formatMoney(product.price, data.currency)} · H1 ${formatMoney(product.price + h1.price, data.currency)}`
+                    : kind === 'bota' && botaExtras.some(Boolean)
+                      ? BOTA_MODELOS.map((modelo) => {
+                          const extra =
+                            modelo.id === BOTA_BASE_MODELO
+                              ? null
+                              : extras[botaModeloPriceId(modelo.id)];
+                          return `${botaShort[modelo.id]} ${formatMoney(product.price + (extra?.price || 0), data.currency)}`;
+                        }).join(' · ')
+                      : `${formatMoney(product.price, data.currency)} lista`}
+            </p>
+          </div>
+        );
+        if (onPick) {
+          return (
+            <article key={kind} className="type-card">
+              {copy}
+              <div className="type-card-actions">
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => onPick(product)}
+                >
+                  Agregar y personalizar
+                </button>
+                {onViewStock ? (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => onViewStock(product)}
+                  >
+                    <Package size={16} />
+                    Ver stock ({product.stock})
+                  </button>
+                ) : null}
+              </div>
+            </article>
+          );
+        }
         return (
           <article key={kind} className="type-card">
-            <div className="type-card-copy">
-              <small>Producto configurable</small>
-              <strong>{KIND_TITLES[kind]}</strong>
-              <p>
-                {pending
-                  ? 'Falta definir el precio base y las variantes.'
-                  : kind === 'rodillera' && premium
-                    ? `Standard ${formatMoney(product.price, data.currency)} · Premium ${formatMoney(product.price + premium.price, data.currency)}`
-                    : kind === 'casco' && h1
-                      ? `Standard ${formatMoney(product.price, data.currency)} · H1 ${formatMoney(product.price + h1.price, data.currency)}`
-                      : kind === 'bota' && botaExtras.some(Boolean)
-                        ? BOTA_MODELOS.map((modelo) => {
-                            const extra =
-                              modelo.id === BOTA_BASE_MODELO
-                                ? null
-                                : extras[botaModeloPriceId(modelo.id)];
-                            return `${botaShort[modelo.id]} ${formatMoney(product.price + (extra?.price || 0), data.currency)}`;
-                          }).join(' · ')
-                        : `${formatMoney(product.price, data.currency)} lista`}
-              </p>
-            </div>
+            {copy}
             <div className="type-card-actions">
               <button
                 type="button"
                 className="primary"
-                onClick={() => onOpen(product)}
+                onClick={() => onOpen?.(product)}
               >
                 <Settings2 size={16} />
                 Configurar
@@ -106,7 +142,7 @@ export function TypeCards({
               <button
                 type="button"
                 className="secondary"
-                onClick={() => onStock(product)}
+                onClick={() => onStock?.(product)}
               >
                 <Plus size={16} />
                 Agregar stock
@@ -114,7 +150,7 @@ export function TypeCards({
               <button
                 type="button"
                 className="secondary"
-                onClick={() => onViewStock(product)}
+                onClick={() => onViewStock?.(product)}
               >
                 <Package size={16} />
                 Ver stock ({product.stock})

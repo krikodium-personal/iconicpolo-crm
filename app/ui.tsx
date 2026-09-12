@@ -1,6 +1,6 @@
 'use client';
 import Image from 'next/image';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Select,
   SelectContent,
@@ -9,6 +9,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { Package, Upload, X } from 'lucide-react';
 export function Field({
   label,
@@ -109,6 +116,77 @@ export function Check({
 export function Status({ value }: { value: string }) {
   return (
     <span className={`status ${value.replaceAll(' ', '-')}`}>{value}</span>
+  );
+}
+export function StatusMenu({
+  value,
+  options,
+  title,
+  description,
+  onPick,
+  extra,
+}: {
+  value: string;
+  options: string[];
+  title: string;
+  description?: string;
+  onPick: (value: string) => void | Promise<void>;
+  extra?: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <button
+        type="button"
+        className={`status ${value.replaceAll(' ', '-')} status-pick`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`Cambiar ${title.toLowerCase()}: ${value}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+      >
+        {value}
+      </button>
+      <SheetContent side="bottom" className="status-sheet">
+        <SheetHeader>
+          <SheetTitle>{title}</SheetTitle>
+          {description ? (
+            <SheetDescription>{description}</SheetDescription>
+          ) : null}
+        </SheetHeader>
+        <div className="status-sheet-options">
+          {options.map((option) => (
+            <button
+              key={option}
+              type="button"
+              disabled={busy}
+              className={`status ${option.replaceAll(' ', '-')}${
+                option === value ? ' is-current' : ''
+              }`}
+              onClick={async () => {
+                if (option === value) {
+                  setOpen(false);
+                  return;
+                }
+                setBusy(true);
+                try {
+                  await onPick(option);
+                  setOpen(false);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+        {extra}
+      </SheetContent>
+    </Sheet>
   );
 }
 export function ProductPhoto({ url, name }: { url?: string; name: string }) {
