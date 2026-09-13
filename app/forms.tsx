@@ -1,7 +1,7 @@
 'use client';
 /* eslint-disable react/react-compiler -- Compiler analysis crashes on dynamic order snapshots (Invariant phi predecessor); React Compiler is not enabled. */
 import Image from 'next/image';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   Contact,
   Product,
@@ -20,7 +20,6 @@ import {
   lineTotals,
   promoPrice,
   friendsPrice,
-  orderDiscountPercent,
 } from '@/lib/money';
 import { closedFields, findVariantProduct, skuFields } from '@/lib/variants';
 import {
@@ -67,6 +66,9 @@ export type Save = (body: Record<string, unknown>) => Promise<void>;
 export { whatsapp, whatsappGroup };
 const options = (values: string[]) =>
   values.map((value) => ({ value, label: value }));
+function snapshotConfig(config?: ProductConfig) {
+  return JSON.stringify(config ?? null);
+}
 const NEW_CUSTOMER = '__new__';
 const today = () =>
   new Date().toLocaleDateString('en-CA', {
@@ -1324,10 +1326,12 @@ export function OrderDetail({
               <dd className="amount">
                 {formatMoney(record.total, data.currency)}
               </dd>
-              <small>
-                {`${orderDiscountPercent(record).toLocaleString('es-AR')}% dto.`}
-                {` · ${formatMoney(record.paid, data.currency)} cobrado`}
-              </small>
+            </div>
+            <div>
+              <dt>Cobrado</dt>
+              <dd className="amount">
+                {formatMoney(record.paid, data.currency)}
+              </dd>
             </div>
             <div>
               <dt>Ganancia</dt>
@@ -1360,7 +1364,12 @@ export function OrderDetail({
                     url={itemPhoto(item, product)}
                   />
                   <div>
-                    <b>{itemDescription(item, product)}</b>
+                    <div className="stock-item-heading">
+                      <b>{itemDescription(item, product)}</b>
+                      <span className="discount-badge">
+                        {`${(item.discount / 100).toLocaleString('es-AR')}% dto.`}
+                      </span>
+                    </div>
                     <small>
                       {[
                         `${item.quantity} ${item.quantity === 1 ? 'ud.' : 'uds.'}`,
@@ -1379,9 +1388,6 @@ export function OrderDetail({
                   <small>
                     {formatMoney(item.unit_price, data.currency)}
                     {item.quantity > 1 ? ` × ${item.quantity}` : ''}
-                    {item.discount
-                      ? ` · −${(item.discount / 100).toFixed(2)}%`
-                      : ''}
                   </small>
                 </div>
               </div>
@@ -1430,11 +1436,13 @@ export function OrderForm({
   data,
   save,
   onCancel,
+  onConfigDirtyChange,
 }: {
   record?: Order;
   data: Data;
   save: Save;
   onCancel?: () => void;
+  onConfigDirtyChange?: (dirty: boolean) => void;
 }) {
   const [f, set] = useState({
     customer_id: record?.customer_id || '',
@@ -1476,6 +1484,19 @@ export function OrderForm({
   const [error, E] = useState('');
   const [picking, setPicking] = useState<null | 'new' | string>(null);
   const closed = record?.status === 'cerrado';
+  const configBaselines = useRef<Record<string, string>>({});
+  useEffect(() => {
+    let dirty = false;
+    for (const item of items) {
+      const snap = snapshotConfig(item.config);
+      if (!(item.key in configBaselines.current)) {
+        configBaselines.current[item.key] = snap;
+      } else if (snap !== configBaselines.current[item.key]) {
+        dirty = true;
+      }
+    }
+    onConfigDirtyChange?.(dirty);
+  }, [items, onConfigDirtyChange]);
   function update(key: string, change: Partial<DraftItem>) {
     I(items.map((i) => (i.key === key ? { ...i, ...change } : i)));
   }
@@ -2340,11 +2361,13 @@ export function StockForm({
   data,
   save,
   movement,
+  onConfigDirtyChange,
 }: {
   record: Product;
   data: Data;
   save: Save;
   movement?: Movement;
+  onConfigDirtyChange?: (dirty: boolean) => void;
 }) {
   const configured = configuredKindOf(record);
   const editing = !!movement;
@@ -2372,6 +2395,12 @@ export function StockForm({
     }),
     [error, E] = useState(''),
     [busy, B] = useState(false);
+  const configBaseline = useRef(snapshotConfig(config));
+  useEffect(() => {
+    onConfigDirtyChange?.(
+      !!configured && snapshotConfig(config) !== configBaseline.current,
+    );
+  }, [configured, config, onConfigDirtyChange]);
   const configKey = configured ? stockKey(configured, config) : '';
   const available = stockForConfig(
     data.movements,

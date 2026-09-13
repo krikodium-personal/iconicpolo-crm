@@ -221,16 +221,31 @@ export function OrderPayMenu({
   const value = payStatus(order);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [picked, setPicked] = useState(value);
   const [amount, setAmount] = useState(decimal(order.paid));
   const [error, setError] = useState('');
   async function pick(option: string) {
+    if (option === 'pago parcial') {
+      setPicked(option);
+      setError('');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
-      await onChange(
-        option,
-        option === 'pago parcial' ? parseDecimal(amount) : undefined,
-      );
+      await onChange(option);
+      setOpen(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function savePartial() {
+    setBusy(true);
+    setError('');
+    try {
+      await onChange('pago parcial', parseDecimal(amount));
       setOpen(false);
     } catch (e) {
       setError((e as Error).message);
@@ -244,6 +259,7 @@ export function OrderPayMenu({
       onOpenChange={(next) => {
         setOpen(next);
         if (next) {
+          setPicked(value);
           setAmount(decimal(order.paid));
           setError('');
         }
@@ -276,7 +292,7 @@ export function OrderPayMenu({
               type="button"
               disabled={busy}
               className={`status ${option.replaceAll(' ', '-')}${
-                option === value ? ' is-current' : ''
+                option === picked ? ' is-current' : ''
               }`}
               onClick={() => pick(option)}
             >
@@ -284,14 +300,28 @@ export function OrderPayMenu({
             </button>
           ))}
         </div>
-        <label className="status-sheet-amount">
-          Importe parcial
-          <input
-            inputMode="decimal"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-          />
-        </label>
+        {picked === 'pago parcial' ? (
+          <>
+            <label className="status-sheet-amount">
+              Importe parcial
+              <input
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            </label>
+            <div className="status-sheet-options">
+              <button
+                type="button"
+                disabled={busy}
+                className="status pago-parcial"
+                onClick={() => void savePartial()}
+              >
+                Guardar importe
+              </button>
+            </div>
+          </>
+        ) : null}
         {error ? <p className="pending-text">{error}</p> : null}
       </SheetContent>
     </Sheet>

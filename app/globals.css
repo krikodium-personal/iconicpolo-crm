@@ -803,6 +803,22 @@ small.pending-text {
   background: #eef0f3;
   color: #5e6d7b;
 }
+.discount-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #f3efe8;
+  color: #7a6a52;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  position: relative;
+  z-index: 2;
+}
 button.status-pick {
   border: 0;
   cursor: pointer;
@@ -1400,6 +1416,20 @@ button.status-pick {
   height: 56px;
   flex: none;
 }
+.stock-item-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.stock-item-heading b {
+  flex: 1;
+  min-width: 0;
+}
+.stock-item-heading .discount-badge {
+  margin-top: 2px;
+}
 .stock-item b {
   display: block;
   font-size: 14px;
@@ -1458,12 +1488,16 @@ button.status-pick {
 .order-detail-card .record-card-top {
   display: flex;
   align-items: flex-start;
+  justify-content: space-between;
   gap: 10px;
   min-width: 0;
 }
 .order-detail-card .record-card-id {
   min-width: 0;
   flex: 1;
+}
+.order-detail-card .discount-badge {
+  margin-top: 1px;
 }
 .order-detail-card .record-card-id .record-link {
   display: block;
@@ -1484,7 +1518,7 @@ button.status-pick {
 }
 .order-detail-card .record-card-facts {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px 12px;
   min-width: 0;
   margin: 0;
@@ -1507,6 +1541,11 @@ button.status-pick {
   display: block;
   margin-top: 2px;
   color: #6a7e72;
+}
+@media (max-width: 699px) {
+  .order-detail-card .record-card-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .positive {
   color: #47864b;

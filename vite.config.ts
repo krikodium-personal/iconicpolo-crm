@@ -17,6 +17,7 @@ const localBindingConfig = {
           binding: d1,
           database_name: 'iconic-crm',
           database_id: 'd40d3c2f-d003-4070-8ea6-201d17b5eb67',
+          remote: true,
         },
       ]
     : [],
@@ -25,6 +26,7 @@ const localBindingConfig = {
         {
           binding: r2,
           bucket_name: 'iconic-crm-files',
+          remote: true,
         },
       ]
     : [],

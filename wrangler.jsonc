@@ -10,13 +10,15 @@
     {
       "binding": "DB",
       "database_name": "iconic-crm",
-      "database_id": "d40d3c2f-d003-4070-8ea6-201d17b5eb67"
+      "database_id": "d40d3c2f-d003-4070-8ea6-201d17b5eb67",
+      "remote": true
     }
   ],
   "r2_buckets": [
     {
       "binding": "FILES",
-      "bucket_name": "iconic-crm-files"
+      "bucket_name": "iconic-crm-files",
+      "remote": true
     }
   ]
 }

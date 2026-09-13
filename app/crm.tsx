@@ -139,6 +139,16 @@ type Panel =
   | { type: 'stock'; record: Product; movement?: Movement; back?: 'inventory' }
   | { type: 'inventory'; record: Product }
   | { type: 'settings' };
+function panelIdentity(panel: Panel | null) {
+  if (!panel) return '';
+  if (panel.type === 'stock') {
+    return `stock:${panel.record.id}:${panel.movement?.id || 'new'}`;
+  }
+  if (panel.type === 'order') {
+    return `order:${panel.record?.id || 'new'}:${panel.editing ? 'edit' : 'view'}`;
+  }
+  return panel.type;
+}
 type Archived = {
   entity: 'products' | 'orders' | 'contacts';
   record: Product | Order | Contact;
@@ -432,6 +442,7 @@ function OrderCard({
             {order.number} · {cardDate(order.date) || order.date}
           </small>
         </div>
+        <span className="discount-badge">{discountLabel(order)}</span>
         <div className="record-card-meta record-card-meta-inline">
           <div className="row-actions">
             {compact ? (
@@ -468,11 +479,13 @@ function OrderCard({
         <div>
           <dt>Total</dt>
           <dd className="amount">{money(order.total)}</dd>
-          <small>
-            {discountLabel(order)}
-            {compact ? '' : ` · ${money(order.paid)} cobrado`}
-          </small>
         </div>
+        {compact ? null : (
+          <div>
+            <dt>Cobrado</dt>
+            <dd className="amount">{money(order.paid)}</dd>
+          </div>
+        )}
         {compact ? null : (
           <div>
             <dt>Ganancia</dt>
@@ -513,6 +526,8 @@ export default function CRM({
     [filter, F] = useState(initialFilter),
     [archived, A] = useState(false),
     [confirm, C] = useState<Archived | null>(null),
+    [configDirty, setConfigDirty] = useState(false),
+    [discardOpen, setDiscardOpen] = useState(false),
     [busy, B] = useState(false),
     [selected, S] = useState<string[]>([]),
     [stocked, T] = useState(false);
@@ -594,6 +609,16 @@ export default function CRM({
     }
     return () => life.abort();
   }, []);
+  const openPanel = panelIdentity(panel);
+  useEffect(() => {
+    setConfigDirty(false);
+    setDiscardOpen(false);
+  }, [openPanel]);
+  function closePanel() {
+    setDiscardOpen(false);
+    setConfigDirty(false);
+    P(null);
+  }
   async function patchOrder(order: Order, body: Record<string, unknown>) {
     try {
       await post({
@@ -820,6 +845,9 @@ export default function CRM({
                 <TableHead>Productos</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 {!compact && (
+                  <TableHead className="text-right">Cobrado</TableHead>
+                )}
+                {!compact && (
                   <TableHead className="text-right">Ganancia</TableHead>
                 )}
                 <TableHead>
@@ -840,6 +868,7 @@ export default function CRM({
                     <small>
                       {o.number} · {cardDate(o.date) || o.date}
                     </small>
+                    <span className="discount-badge">{discountLabel(o)}</span>
                   </TableCell>
                   <TableCell>
                     <div className="record-card-status">
@@ -868,11 +897,12 @@ export default function CRM({
                   <TableCell>{unitsLabel(orderUnits(o))}</TableCell>
                   <TableCell className="text-right amount">
                     {money(o.total)}
-                    <small>
-                      {discountLabel(o)}
-                      {compact ? '' : ` · ${money(o.paid)} cobrado`}
-                    </small>
                   </TableCell>
+                  {!compact && (
+                    <TableCell className="text-right amount">
+                      {money(o.paid)}
+                    </TableCell>
+                  )}
                   {!compact && (
                     <TableCell className="text-right amount">
                       {money(o.total - o.cost)}
@@ -1851,8 +1881,14 @@ export default function CRM({
         </nav>
         <Dialog
           open={!!panel}
-          onOpenChange={(open) => {
-            if (!open) P(null);
+          onOpenChange={(open, details) => {
+            if (open) return;
+            if (configDirty) {
+              details.cancel();
+              setDiscardOpen(true);
+              return;
+            }
+            closePanel();
           }}
         >
           <DialogContent
@@ -2067,6 +2103,7 @@ export default function CRM({
                     }
                     data={data}
                     save={save}
+                    onConfigDirtyChange={setConfigDirty}
                     onCancel={
                       panel.record
                         ? () => {
@@ -2105,6 +2142,7 @@ export default function CRM({
                   data={data}
                   save={save}
                   movement={panel.movement}
+                  onConfigDirtyChange={setConfigDirty}
                 />
               ) : panel.type === 'settings' ? (
                 <SettingsForm data={data} save={save} />
@@ -2163,6 +2201,28 @@ export default function CRM({
                 }}
               >
                 Confirmar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <AlertDialog
+          open={discardOpen}
+          onOpenChange={(open) => {
+            if (!open) setDiscardOpen(false);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Vas a perder los cambios</AlertDialogTitle>
+              <AlertDialogDescription>
+                Si cerrás la ventana, se pierden las opciones de
+                personalización que modificaste.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Seguir editando</AlertDialogCancel>
+              <AlertDialogAction onClick={closePanel}>
+                Cerrar igual
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
