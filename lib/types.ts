@@ -54,6 +54,9 @@ export type Item = {
     options: Option[];
     attributes: Record<string, string>;
     config?: Record<string, unknown>;
+    supplier_id?: string;
+    from_stock?: boolean;
+    stock_qty?: number;
   };
   unit_price: number;
   unit_cost: number;

@@ -17,6 +17,18 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Package, Upload, X } from 'lucide-react';
+function selectFieldInput(e: { target: EventTarget }) {
+  const input = e.target;
+  if (!(input instanceof HTMLInputElement) || input.readOnly || input.disabled)
+    return;
+  if (
+    ['checkbox', 'radio', 'file', 'button', 'submit', 'hidden', 'color'].includes(
+      input.type,
+    )
+  )
+    return;
+  requestAnimationFrame(() => input.select());
+}
 export function Field({
   label,
   children,
@@ -33,6 +45,7 @@ export function Field({
   return (
     <label
       className={`field ${wide ? 'wide' : ''} ${pending ? 'pending' : ''}`}
+      onFocus={selectFieldInput}
     >
       <span>{label}</span>
       {children}

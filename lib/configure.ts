@@ -294,6 +294,25 @@ export const FONTS = [
   { id: 'baskerville', label: 'Baskerville' },
 ] as const;
 
+export const FONT_STACKS: Record<string, string> = {
+  trajan: '"Trajan Pro", "Trajan Pro 3", Cinzel, "Times New Roman", serif',
+  didot: 'Didot, "Didot LT STD", "Hoefler Text", "Playfair Display", serif',
+  bodoni: '"Bodoni 72", "Bodoni 72 Book", "Bodoni MT", "Bodoni Moda", Didot, serif',
+  optima: 'Optima, "Optima Regular", Candara, "Segoe UI", sans-serif',
+  garamond: 'Garamond, "Apple Garamond", "EB Garamond", "Palatino Linotype", serif',
+  helvetica: 'Helvetica, "Helvetica Neue", Arial, sans-serif',
+  futura: 'Futura, "Futura Medium", "Avenir Next", "Century Gothic", sans-serif',
+  copperplate:
+    'Copperplate, "Copperplate Gothic Light", "Copperplate Gothic Bold", fantasy',
+  palatino: 'Palatino, "Palatino Linotype", "Book Antiqua", serif',
+  baskerville:
+    'Baskerville, "Baskerville Old Face", "Libre Baskerville", "Times New Roman", serif',
+};
+
+export function fontStack(id: string) {
+  return FONT_STACKS[id] || 'serif';
+}
+
 export const HELMET_SIZES = [
   { id: '52', label: '52 cm · 20 1/2 in · Size 6 3/8' },
   { id: '53', label: '53 cm · 20 7/8 in · Size 6 1/2' },
@@ -339,6 +358,20 @@ export const RODILLERA_COLORS = [
   { id: 'tabaco', label: 'Tabaco' },
   { id: 'chocolate', label: 'Chocolate' },
 ] as const;
+
+export const LEATHER_HEX: Record<string, string> = {
+  negro: '#1c1612',
+  tabaco: '#8b5a2b',
+  chocolate: '#4a2a18',
+  marron: '#5c3317',
+};
+
+export const LEATHER_PHOTOS: Record<string, string> = {
+  negro: '/leather-negro.png',
+  tabaco: '/leather-tabaco.png',
+  chocolate: '/leather-chocolate.png',
+  marron: '/leather-tabaco.png',
+};
 
 export const RODILLERA_SIZES = [
   { id: 'chica', label: 'Chica' },
@@ -1469,13 +1502,19 @@ export function stockByConfig(
     config_key?: string;
     quantity: number;
     location?: string;
+    supplier_id?: string;
     config?: Record<string, unknown>;
   }[],
   productId: string,
 ) {
   const rows = new Map<
     string,
-    { quantity: number; location: string; config: Record<string, unknown> }
+    {
+      quantity: number;
+      location: string;
+      supplier_id: string;
+      config: Record<string, unknown>;
+    }
   >();
   for (const movement of movements) {
     if (movement.product_id !== productId) continue;
@@ -1486,9 +1525,14 @@ export function stockByConfig(
       movement.config && Object.keys(movement.config).length
         ? movement.config
         : prev?.config || {};
+    const supplier_id =
+      movement.quantity > 0 && movement.supplier_id
+        ? movement.supplier_id
+        : prev?.supplier_id || movement.supplier_id || '';
     rows.set(key, {
       quantity: (prev?.quantity || 0) + movement.quantity,
       location,
+      supplier_id,
       config,
     });
   }

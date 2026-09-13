@@ -1,4 +1,5 @@
 'use client';
+import type { CSSProperties } from 'react';
 import {
   BOTA_ACABADOS,
   BOTA_BASE_MODELO,
@@ -13,6 +14,8 @@ import {
   HELMET_MATERIALS,
   HELMET_SIZES,
   INITIAL_COLORS,
+  LEATHER_HEX,
+  LEATHER_PHOTOS,
   MONTURA_MATERIALS,
   RODILLERA_COLORS,
   RODILLERA_MODELOS,
@@ -33,6 +36,7 @@ import {
   configLabels,
   extraCharges,
   extraTotals,
+  fontStack,
   stockKey,
   stockForConfig,
 } from '@/lib/configure';
@@ -68,6 +72,86 @@ function ColorPicker({
           ))}
         </div>
         <small>{selected?.name || 'Sin color'}</small>
+      </div>
+    </Field>
+  );
+}
+
+function hexLuminance(hex: string) {
+  const n = hex.replace('#', '');
+  if (n.length < 6) return 0;
+  const r = parseInt(n.slice(0, 2), 16) / 255;
+  const g = parseInt(n.slice(2, 4), 16) / 255;
+  const b = parseInt(n.slice(4, 6), 16) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function mixHex(hex: string, toward: [number, number, number], amount: number) {
+  const n = hex.replace('#', '');
+  if (n.length < 6) return hex;
+  const rgb = [0, 2, 4].map((i) => parseInt(n.slice(i, i + 2), 16));
+  return `#${rgb
+    .map((c, i) =>
+      Math.round(c + (toward[i] - c) * amount)
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('')}`;
+}
+
+function leatherSurface(id?: string) {
+  if (!id) return '';
+  return LEATHER_HEX[id] || INITIAL_COLORS.find((item) => item.id === id)?.hex || '';
+}
+
+function leatherPreviewStyle(hex: string, photo?: string): CSSProperties {
+  return {
+    '--preview-leather': hex,
+    '--preview-leather-hi': mixHex(hex, [255, 255, 255], 0.2),
+    '--preview-leather-lo': mixHex(hex, [0, 0, 0], 0.22),
+    '--preview-leather-edge': mixHex(hex, [0, 0, 0], 0.28),
+    ...(photo ? { '--preview-leather-photo': `url(${photo})` } : {}),
+  } as CSSProperties;
+}
+
+function InitialsPreview({
+  text,
+  fontId,
+  colorId,
+  surfaceId,
+}: {
+  text: string;
+  fontId: string;
+  colorId: string;
+  surfaceId?: string;
+}) {
+  const font = FONTS.find((item) => item.id === fontId);
+  const color = INITIAL_COLORS.find((item) => item.id === colorId);
+  const shown = text.trim();
+  const ink = color?.hex || '#111111';
+  const surface = leatherSurface(surfaceId);
+  const photo = surfaceId ? LEATHER_PHOTOS[surfaceId] : '';
+  const darkSurface = surface
+    ? hexLuminance(surface) < 0.48
+    : hexLuminance(ink) > 0.55;
+  return (
+    <Field label="Vista previa" wide>
+      <div
+        className={`initials-preview${darkSurface ? ' on-dark' : ''}${photo ? ' has-photo' : ''}`}
+        style={
+          surface || photo ? leatherPreviewStyle(surface || '#1c1612', photo) : undefined
+        }
+      >
+        <span
+          className={`initials-preview-mark${shown ? '' : ' placeholder'}`}
+          style={{ fontFamily: fontStack(fontId), color: ink }}
+        >
+          {shown || 'IC'}
+        </span>
+        <small>
+          {font?.label || 'Tipografía'} · {color?.name || 'Color'}
+          {shown ? '' : ' · escribí el texto'}
+        </small>
       </div>
     </Field>
   );
@@ -310,6 +394,12 @@ export function Configurator({
                 value={c.inicialesColor}
                 onChange={(id) => set({ inicialesColor: id })}
               />
+              <InitialsPreview
+                text={c.inicialesTexto}
+                fontId={c.inicialesTipografia}
+                colorId={c.inicialesColor}
+                surfaceId={c.color}
+              />
               <ExtraNote
                 extra={pricePoint(pricing, 'iniciales')}
                 currency={currency}
@@ -470,6 +560,12 @@ export function Configurator({
                 label="Color de iniciales *"
                 value={c.inicialesColor}
                 onChange={(id) => set({ inicialesColor: id })}
+              />
+              <InitialsPreview
+                text={c.inicialesTexto}
+                fontId={c.inicialesTipografia}
+                colorId={c.inicialesColor}
+                surfaceId={c.color}
               />
               <ExtraNote
                 extra={pricePoint(pricing, 'iniciales')}
@@ -695,6 +791,12 @@ export function Configurator({
                 label="Color de iniciales *"
                 value={c.inicialesColor}
                 onChange={(id) => set({ inicialesColor: id })}
+              />
+              <InitialsPreview
+                text={c.inicialesTexto}
+                fontId={c.inicialesTipografia}
+                colorId={c.inicialesColor}
+                surfaceId={c.color}
               />
               <ExtraNote
                 extra={pricePoint(pricing, 'iniciales')}
@@ -994,6 +1096,12 @@ export function Configurator({
               label="Color de iniciales *"
               value={c.inicialesColor}
               onChange={(id) => set({ inicialesColor: id })}
+            />
+            <InitialsPreview
+              text={c.inicialesTexto}
+              fontId={c.inicialesTipografia}
+              colorId={c.inicialesColor}
+              surfaceId={c.colorCasco}
             />
             <ExtraNote
               extra={pricePoint(pricing, 'iniciales')}

@@ -520,7 +520,22 @@ export async function saveOrder(b: Record<string, unknown>) {
       'product_id' | 'name' | 'sku' | 'selections' | 'unit_price' | 'unit_cost'
     >;
     if (old) {
-      snapshot = old;
+      snapshot = {
+        ...old,
+        selections: {
+          ...old.selections,
+          supplier_id: old.selections.from_stock
+            ? old.selections.supplier_id ||
+              (await requireSupplier(
+                input.supplier_id || old.selections.supplier_id,
+                old.selections.supplier_id,
+              ))
+            : await requireSupplier(
+                input.supplier_id || old.selections.supplier_id,
+                old.selections.supplier_id,
+              ),
+        },
+      };
     } else {
       const row = await stmt(
         'SELECT * FROM products WHERE id=? AND archived=0',
@@ -574,6 +589,11 @@ export async function saveOrder(b: Record<string, unknown>) {
             options: [],
             attributes: configLabels(configured, config),
             config,
+            supplier_id: await requireSupplier(input.supplier_id),
+            from_stock: !!input.from_stock || undefined,
+            stock_qty: input.from_stock
+              ? integer(input.stock_qty, 'Stock', 10000)
+              : undefined,
           },
           unit_price: integer(base + extras.price),
           unit_cost: integer(p.cost + extras.cost),
@@ -618,7 +638,15 @@ export async function saveOrder(b: Record<string, unknown>) {
           product_id: p.id,
           name: p.name,
           sku: p.sku,
-          selections: { options, attributes: selected },
+          selections: {
+            options,
+            attributes: selected,
+            supplier_id: await requireSupplier(input.supplier_id),
+            from_stock: !!input.from_stock || undefined,
+            stock_qty: input.from_stock
+              ? integer(input.stock_qty, 'Stock', 10000)
+              : undefined,
+          },
           unit_price: integer(base + options.reduce((s, o) => s + o.price, 0)),
           unit_cost: integer(p.cost + options.reduce((s, o) => s + o.cost, 0)),
         };
@@ -628,6 +656,13 @@ export async function saveOrder(b: Record<string, unknown>) {
     if (used.has(itemId)) throw new Error('Ítem duplicado.');
     used.add(itemId);
     const quantity = integer(input.quantity, 'Cantidad', 10000);
+    const stockCap = snapshot.selections.stock_qty;
+    if (
+      snapshot.selections.from_stock &&
+      stockCap &&
+      quantity > stockCap
+    )
+      throw new Error('La cantidad no puede superar el stock de esa unidad.');
     const discount = integer(input.discount, 'Descuento', 10000);
     const totals = lineTotals(
       snapshot.unit_price,

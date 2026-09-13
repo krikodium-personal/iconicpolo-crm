@@ -25,6 +25,7 @@ import { closedFields, findVariantProduct, skuFields } from '@/lib/variants';
 import {
   configuredKindOf,
   defaultConfig,
+  configLabels,
   extraTotals,
   isConfiguredCategory,
   isConfiguredProduct,
@@ -1176,6 +1177,9 @@ type DraftItem = {
   option_ids: string[];
   attributes: Record<string, string>;
   config?: ProductConfig;
+  supplier_id?: string;
+  from_stock?: boolean;
+  stock_qty?: number;
   snapshot?: Item;
 };
 function productFieldValues(
@@ -1225,6 +1229,12 @@ export function OrderForm({
       option_ids: i.selections.options.map((o) => o.id),
       attributes: i.selections.attributes,
       config: i.selections.config as ProductConfig | undefined,
+      supplier_id:
+        i.selections.supplier_id ||
+        data.products.find((p) => p.id === i.product_id)?.supplier_id ||
+        undefined,
+      from_stock: !!i.selections.from_stock,
+      stock_qty: i.selections.stock_qty,
       snapshot: i,
     })) || [],
   );
@@ -1235,10 +1245,28 @@ export function OrderForm({
   function update(key: string, change: Partial<DraftItem>) {
     I(items.map((i) => (i.key === key ? { ...i, ...change } : i)));
   }
-  function applyProduct(product: Product, key?: string, config?: ProductConfig) {
+  function supplierName(item: DraftItem, product?: Product) {
+    const id =
+      item.supplier_id ||
+      item.snapshot?.selections.supplier_id ||
+      product?.supplier_id ||
+      '';
+    return data.contacts.find((c) => c.id === id)?.name || '';
+  }
+  function applyProduct(
+    product: Product,
+    key?: string,
+    config?: ProductConfig,
+    supplierId?: string,
+    fromStock = false,
+    stockQty?: number,
+  ) {
     const fields =
       data.categories.find((c) => c.id === product.category)?.fields || [];
     const kind = configuredKindOf(product);
+    const available = fromStock
+      ? Math.max(1, Math.floor(Number(stockQty) || 1))
+      : undefined;
     const next = {
       product_id: product.id,
       option_ids: [] as string[],
@@ -1248,6 +1276,10 @@ export function OrderForm({
           ? parseConfig(kind, config)
           : defaultConfig(kind)
         : undefined,
+      supplier_id: supplierId || product.supplier_id || '',
+      from_stock: fromStock,
+      stock_qty: available,
+      ...(fromStock ? { quantity: '1' } : {}),
     };
     if (key && items.some((i) => i.key === key)) {
       update(key, next);
@@ -1365,6 +1397,19 @@ export function OrderForm({
           const creatingCustomer = f.customer_id === NEW_CUSTOMER;
           if (creatingCustomer && !newCustomer.name.trim())
             throw new Error('Escribí el nombre del cliente.');
+          if (items.some((item) => !item.supplier_id))
+            throw new Error('Elegí el proveedor de cada producto.');
+          if (
+            items.some(
+              (item) =>
+                item.from_stock &&
+                item.stock_qty &&
+                Number(item.quantity) > item.stock_qty,
+            )
+          )
+            throw new Error(
+              'La cantidad no puede superar el stock de esa unidad.',
+            );
           await save({
             action: 'order',
             ...f,
@@ -1384,6 +1429,9 @@ export function OrderForm({
               option_ids: i.option_ids,
               attributes: i.attributes,
               config: i.config,
+              supplier_id: i.supplier_id,
+              from_stock: i.from_stock,
+              stock_qty: i.stock_qty,
             })),
           });
         } catch (e) {
@@ -1574,6 +1622,9 @@ export function OrderForm({
                     <small>
                       {i.snapshot.sku} · precio y costo guardados en este pedido
                     </small>
+                    {supplierName(i, p) ? (
+                      <span>Proveedor: {supplierName(i, p)}</span>
+                    ) : null}
                     {i.snapshot.selections.options.map((o) => (
                       <span key={o.id}>
                         {o.name} · +{formatMoney(o.price, data.currency)}
@@ -1588,8 +1639,21 @@ export function OrderForm({
                 ) : selecting ? (
                   <OrderProductPicker
                     data={data}
-                    onPick={(product, config) =>
-                      applyProduct(product, i.key, config)
+                    onPick={(
+                      product,
+                      config,
+                      supplierId,
+                      fromStock,
+                      stockQty,
+                    ) =>
+                      applyProduct(
+                        product,
+                        i.key,
+                        config,
+                        supplierId,
+                        fromStock,
+                        stockQty,
+                      )
                     }
                     onCancel={() => {
                       if (!i.product_id)
@@ -1604,11 +1668,20 @@ export function OrderForm({
                       <b>{p?.name || 'Producto'}</b>
                       <small>
                         {p
-                          ? isConfiguredProduct(p)
-                            ? `A configurar · ${p.stock} uds.`
-                            : `${p.sku} · ${p.stock} uds.`
+                          ? i.from_stock
+                            ? `Unidad de stock${
+                                i.stock_qty != null
+                                  ? ` · ${i.stock_qty} uds.`
+                                  : ''
+                              }`
+                            : isConfiguredProduct(p)
+                              ? `A configurar · ${p.stock} uds.`
+                              : `${p.sku} · ${p.stock} uds.`
                           : 'Producto no disponible'}
                       </small>
+                      {supplierName(i, p) ? (
+                        <small>Proveedor: {supplierName(i, p)}</small>
+                      ) : null}
                     </div>
                     {!closed && (
                       <button
@@ -1624,17 +1697,40 @@ export function OrderForm({
                 {!selecting && (
                 <>
                 <div className="form-grid line-fields">
-                  <Field label="Cantidad *">
-                    <input
-                      type="number"
-                      min="1"
-                      max="10000"
-                      required
-                      value={i.quantity}
-                      onChange={(e) =>
-                        update(i.key, { quantity: e.target.value })
-                      }
-                    />
+                  <Field
+                    label={
+                      i.from_stock && (i.stock_qty || 1) > 1
+                        ? `Cantidad * · máx. ${i.stock_qty}`
+                        : 'Cantidad *'
+                    }
+                  >
+                    {i.from_stock && (i.stock_qty || 1) > 1 ? (
+                      <Pick
+                        label="Cantidad"
+                        value={i.quantity}
+                        onChange={(v) => update(i.key, { quantity: v })}
+                        options={Array.from(
+                          { length: i.stock_qty || 1 },
+                          (_, n) => ({
+                            value: String(n + 1),
+                            label: String(n + 1),
+                          }),
+                        )}
+                      />
+                    ) : (
+                      <input
+                        type="number"
+                        min="1"
+                        max={i.from_stock ? 1 : 10000}
+                        required
+                        readOnly={!!i.from_stock}
+                        disabled={!!i.from_stock}
+                        value={i.quantity}
+                        onChange={(e) =>
+                          update(i.key, { quantity: e.target.value })
+                        }
+                      />
+                    )}
                   </Field>
                   <Field label="Descuento del ítem (%)">
                     <input
@@ -1643,6 +1739,24 @@ export function OrderForm({
                       onChange={(e) =>
                         update(i.key, { discount: e.target.value })
                       }
+                    />
+                  </Field>
+                  <Field label="Proveedor *" pending={!i.supplier_id}>
+                    <Pick
+                      label="Proveedor"
+                      value={i.supplier_id || ''}
+                      disabled={!!i.from_stock}
+                      onChange={(v) => update(i.key, { supplier_id: v })}
+                      options={[
+                        { value: '', label: 'Elegí un proveedor' },
+                        ...data.contacts
+                          .filter(
+                            (c) =>
+                              c.kind === 'supplier' &&
+                              (!c.archived || c.id === i.supplier_id),
+                          )
+                          .map((c) => ({ value: c.id, label: c.name })),
+                      ]}
                     />
                   </Field>
                   {!i.snapshot && (
@@ -1682,7 +1796,25 @@ export function OrderForm({
                     </>
                   )}
                 </div>
-                {!i.snapshot && p && (
+                {!i.snapshot && p ? (
+                  i.from_stock ? (
+                  <div className="snapshot">
+                    <small>
+                      Esta unidad ya está en stock. La combinación y el
+                      proveedor no se modifican.
+                    </small>
+                    {(configuredKindOf(p) && i.config
+                      ? Object.entries(
+                          configLabels(configuredKindOf(p)!, i.config),
+                        )
+                      : Object.entries(i.attributes)
+                    ).map(([k, v]) => (
+                      <span key={k}>
+                        {k}: {v}
+                      </span>
+                    ))}
+                  </div>
+                  ) : (
                   <>
                     {configuredKindOf(p) ? (
                       <Configurator
@@ -1794,7 +1926,8 @@ export function OrderForm({
                       </>
                     )}
                   </>
-                )}
+                  )
+                ) : null}
                 {t && (
                   <div className="line-summary">
                     <span>Unitario {formatMoney(t.price, data.currency)}</span>
@@ -1811,7 +1944,16 @@ export function OrderForm({
           {!closed && picking === 'new' && (
             <OrderProductPicker
               data={data}
-              onPick={(product, config) => applyProduct(product, undefined, config)}
+              onPick={(product, config, supplierId, fromStock, stockQty) =>
+                applyProduct(
+                  product,
+                  undefined,
+                  config,
+                  supplierId,
+                  fromStock,
+                  stockQty,
+                )
+              }
               onCancel={() => setPicking(null)}
             />
           )}

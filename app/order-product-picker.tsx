@@ -41,7 +41,13 @@ function OrderStockPicker({
 }: {
   product: Product;
   data: Data;
-  onPick: (product: Product, config?: ProductConfig) => void;
+  onPick: (
+    product: Product,
+    config?: ProductConfig,
+    supplierId?: string,
+    fromStock?: boolean,
+    stockQty?: number,
+  ) => void;
   onBack: () => void;
   onCancel: () => void;
 }) {
@@ -63,8 +69,8 @@ function OrderStockPicker({
         </div>
       </div>
       <p className="hint">
-        Elegí una unidad ya cargada. Queda en el pedido con esa combinación; si
-        hace falta, después la podés ajustar.
+        Elegí una unidad ya cargada. Queda en el pedido con esa combinación,
+        proveedor y stock. No se puede personalizar.
       </p>
       {rows.length ? (
         <div className="order-stock-list">
@@ -82,12 +88,24 @@ function OrderStockPicker({
                 key={row.key}
                 type="button"
                 className="stock-item order-stock-pick"
-                onClick={() => onPick(product, config)}
+                onClick={() =>
+                  onPick(
+                    product,
+                    config,
+                    row.supplier_id,
+                    true,
+                    row.quantity,
+                  )
+                }
               >
                 <div>
                   <b>{stockLabel(product, row.config)}</b>
                   <small>
-                    {[stockPlaceLabel(row.location), `${row.quantity} uds.`]
+                    {[
+                      stockPlaceLabel(row.location),
+                      data.contacts.find((c) => c.id === row.supplier_id)?.name,
+                      `${row.quantity} uds.`,
+                    ]
                       .filter(Boolean)
                       .join(' · ')}
                   </small>
@@ -115,7 +133,13 @@ export function OrderProductPicker({
   onCancel,
 }: {
   data: Data;
-  onPick: (product: Product, config?: ProductConfig) => void;
+  onPick: (
+    product: Product,
+    config?: ProductConfig,
+    supplierId?: string,
+    fromStock?: boolean,
+    stockQty?: number,
+  ) => void;
   onCancel: () => void;
 }) {
   const [query, setQuery] = useState('');
@@ -184,7 +208,9 @@ export function OrderProductPicker({
                 key={product.id}
                 type="button"
                 className="record-card clickable-row order-pick-card"
-                onClick={() => onPick(product)}
+                onClick={() =>
+                  onPick(product, undefined, product.supplier_id || undefined)
+                }
               >
                 <div className="record-card-top">
                   <ProductPhoto name={product.name} url={product.photos[0]} />
