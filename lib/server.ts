@@ -20,6 +20,13 @@ import {
   type AccountExpense,
   type PartnerCashout,
 } from './types';
+import {
+  assertSharesComplete,
+  cashoutLimit,
+  monthlyResults,
+  sharesAreComplete,
+  totalsOf,
+} from './account';
 import { whatsappGroup } from './whatsapp';
 import {
   configuredKindOf,
@@ -123,7 +130,7 @@ export async function ensureAccountTables() {
   const d = db();
   await d.batch([
     d.prepare(
-      'CREATE TABLE IF NOT EXISTS partners (id text PRIMARY KEY NOT NULL, name text NOT NULL, archived integer NOT NULL DEFAULT 0, version integer NOT NULL DEFAULT 1)',
+      'CREATE TABLE IF NOT EXISTS partners (id text PRIMARY KEY NOT NULL, name text NOT NULL, share integer NOT NULL DEFAULT 0, archived integer NOT NULL DEFAULT 0, version integer NOT NULL DEFAULT 1)',
     ),
     d.prepare(
       "CREATE TABLE IF NOT EXISTS account_expenses (id text PRIMARY KEY NOT NULL, kind text NOT NULL, amount integer NOT NULL, date text NOT NULL, notes text NOT NULL DEFAULT '', created_at text NOT NULL)",
@@ -138,6 +145,16 @@ export async function ensureAccountTables() {
       'CREATE INDEX IF NOT EXISTS idx_cashouts_partner_date ON partner_cashouts (partner_id, date)',
     ),
   ]);
+  const partnerCols = await stmt('PRAGMA table_info(partners)').all();
+  if (
+    !partnerCols.results.some(
+      (column) => String(obj(column).name) === 'share',
+    )
+  ) {
+    await stmt(
+      'ALTER TABLE partners ADD share integer NOT NULL DEFAULT 0',
+    ).run();
+  }
 }
 export async function ensureConfiguredCatalog() {
   const d = db();
@@ -530,7 +547,10 @@ export async function allData() {
       };
     }),
     categories: cat.results.map((r) => decode<Category>(r, ['fields'])),
-    partners: partners.results as Partner[],
+    partners: (partners.results as Partner[]).map((partner) => ({
+      ...partner,
+      share: Number(partner.share) || 0,
+    })),
     expenses: expenses.results as AccountExpense[],
     cashouts: cashouts.results as PartnerCashout[],
     currency: s.results[0] ? obj(s.results[0]).currency : 'ARS',
@@ -1491,31 +1511,85 @@ export async function mutate(b: Record<string, unknown>) {
       ).run();
       return { ok: true };
     }
-    case 'partner': {
+    case 'partner':
+    case 'partner_shares': {
       await ensureAccountTables();
-      const name = str(b.name, 'Socio', true, 80);
-      const id = b.id ? str(b.id, 'ID', true) : crypto.randomUUID();
-      if (b.id) {
-        const r = await stmt(
-          'UPDATE partners SET name=?,version=? WHERE id=? AND archived=0',
-          name,
-          integer(b.version, 'Versión') + 1,
-          id,
-        ).run();
-        if (!r.meta.changes) throw new Error('Socio no disponible.');
-      } else {
-        await stmt('INSERT INTO partners(id,name) VALUES(?,?)', id, name).run();
+      const items =
+        b.action === 'partner_shares'
+          ? list(b.partners, 20).map((item) => {
+              const row = obj(item);
+              return {
+                id: row.id ? str(row.id, 'ID', true) : '',
+                name: str(row.name, 'Socio', true, 80),
+                share: integer(row.share, 'Porcentaje', 10000),
+              };
+            })
+          : [
+              {
+                id: b.id ? str(b.id, 'ID', true) : '',
+                name: str(b.name, 'Socio', true, 80),
+                share:
+                  b.share == null
+                    ? undefined
+                    : integer(b.share, 'Porcentaje', 10000),
+              },
+            ];
+      if (!items.length) throw new Error('Socios: revisá el valor.');
+      for (const item of items) {
+        if (item.id) {
+          const r = await stmt(
+            item.share == null
+              ? 'UPDATE partners SET name=?,version=version+1 WHERE id=? AND archived=0'
+              : 'UPDATE partners SET name=?,share=?,version=version+1 WHERE id=? AND archived=0',
+            ...(item.share == null
+              ? [item.name, item.id]
+              : [item.name, item.share, item.id]),
+          ).run();
+          if (!r.meta.changes) throw new Error('Socio no disponible.');
+        } else {
+          await stmt(
+            'INSERT INTO partners(id,name,share) VALUES(?,?,?)',
+            crypto.randomUUID(),
+            item.name,
+            item.share ?? 0,
+          ).run();
+        }
       }
+      const snapshot = await allData();
+      assertSharesComplete(snapshot.partners);
       return { ok: true };
     }
-    case 'expense': {
+    case 'expense':
+    case 'month_expense': {
       await ensureAccountTables();
+      const kind = choice(b.kind, ['mkt', 'comisiones'], 'Tipo');
       const amount = integer(b.amount, 'Importe');
+      if (b.action === 'month_expense') {
+        const month = str(b.month, 'Mes', true);
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
+          throw new Error('Mes inválido.');
+        await stmt(
+          'DELETE FROM account_expenses WHERE kind=? AND substr(date,1,7)=?',
+          kind,
+          month,
+        ).run();
+        if (!amount) return { ok: true };
+        await stmt(
+          'INSERT INTO account_expenses(id,kind,amount,date,notes,created_at) VALUES(?,?,?,?,?,?)',
+          crypto.randomUUID(),
+          kind,
+          amount,
+          `${month}-01`,
+          str(b.notes || '', 'Notas'),
+          new Date().toISOString(),
+        ).run();
+        return { ok: true };
+      }
       if (!amount) throw new Error('Importe: debe ser mayor a cero.');
       await stmt(
         'INSERT INTO account_expenses(id,kind,amount,date,notes,created_at) VALUES(?,?,?,?,?,?)',
         crypto.randomUUID(),
-        choice(b.kind, ['mkt', 'comisiones'], 'Tipo'),
+        kind,
         amount,
         date(b.date, true),
         str(b.notes || '', 'Notas'),
@@ -1535,6 +1609,28 @@ export async function mutate(b: Record<string, unknown>) {
         throw new Error('Socio no disponible.');
       const amount = integer(b.amount, 'Importe');
       if (!amount) throw new Error('Importe: debe ser mayor a cero.');
+      const snapshot = await allData();
+      const profit = totalsOf(
+        monthlyResults(snapshot.orders as Order[], snapshot.expenses),
+      ).profit;
+      if (!sharesAreComplete(snapshot.partners))
+        throw new Error(
+          'Definí los porcentajes de los socios en Configuración.',
+        );
+      const partner = snapshot.partners.find((row) => row.id === partnerId);
+      const available = cashoutLimit(
+        partner,
+        profit,
+        snapshot.cashouts,
+        snapshot.partners,
+      );
+      if (amount > available) {
+        throw new Error(
+          available <= 0
+            ? 'Este socio no tiene ganancia disponible para retirar.'
+            : 'El cashout no puede superar la parte de este socio.',
+        );
+      }
       await stmt(
         'INSERT INTO partner_cashouts(id,partner_id,amount,date,notes,created_at) VALUES(?,?,?,?,?,?)',
         crypto.randomUUID(),

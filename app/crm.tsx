@@ -598,9 +598,13 @@ async function post(body: Record<string, unknown>) {
 export default function CRM({
   module,
   initialFilter = 'all',
+  accountView = 'board',
+  accountYear,
 }: {
   module: string;
   initialFilter?: string;
+  accountView?: 'board' | 'resultados';
+  accountYear?: number;
 }) {
   const [data, D] = useState<Data | null>(null),
     [error, E] = useState(''),
@@ -744,6 +748,10 @@ export default function CRM({
           P({ type: 'product', record: updated });
           return;
         }
+      }
+      if (body.action === 'partner_shares' || body.action === 'partner') {
+        P({ type: 'settings' });
+        return;
       }
       if (
         (body.action === 'stock' || body.action === 'stock_update') &&
@@ -1154,7 +1162,12 @@ export default function CRM({
                         ? 'SEGUIMIENTO OPERATIVO'
                         : 'ICONIC · GESTIÓN COMERCIAL'}
                 </p>
-                <h1>{title}</h1>
+                <div className="page-heading-row">
+                  <h1>{title}</h1>
+                  {module === 'tablero' && accountView === 'resultados' ? (
+                    <a href="/tablero">Volver</a>
+                  ) : null}
+                </div>
                 <p>
                   {module === 'dashboard'
                     ? 'Una mirada a las ventas, los clientes y lo que viene.'
@@ -1326,7 +1339,12 @@ export default function CRM({
                 </p>
               </>
             ) : module === 'tablero' ? (
-              <AccountBoard data={data} save={save} />
+              <AccountBoard
+                data={data}
+                save={save}
+                view={accountView}
+                initialYear={accountYear}
+              />
             ) : module === 'tareas' ? (
               <section className="panel records">
                 <Empty className="empty">

@@ -3,9 +3,18 @@ import test from 'node:test';
 
 import {
   accountLedger,
+  allocateShares,
+  assertCashoutFits,
+  assertSharesComplete,
+  cashoutLimit,
   cashoutsByMonth,
   monthlyResults,
+  partnerBalances,
+  partnerRemaining,
+  remainingProfit,
+  shareLabel,
   totalsOf,
+  yearSheet,
 } from '../lib/account.ts';
 import type {
   AccountExpense,
@@ -15,8 +24,8 @@ import type {
 } from '../lib/types.ts';
 
 const partners: Partner[] = [
-  { id: 'ivan', name: 'Ivan', archived: 0, version: 1 },
-  { id: 'pablo', name: 'Pablo', archived: 0, version: 1 },
+  { id: 'ivan', name: 'Ivan', share: 5000, archived: 0, version: 1 },
+  { id: 'pablo', name: 'Pablo', share: 5000, archived: 0, version: 1 },
 ];
 
 function order(
@@ -107,6 +116,96 @@ test('ledger credits monthly profit and debits partner cashouts', () => {
   assert.equal(caja[0]?.label, 'Enero');
   assert.equal(caja[0]?.byPartner.ivan, 20_000);
   assert.equal(caja[0]?.byPartner.pablo, 0);
+});
+
+test('collected orders count even if they are still open', () => {
+  const paidOpen = order('o1', '2026-03-12', 40_000, 15_000, 'nuevo');
+  const unpaidClosed = order('o2', '2026-03-12', 80_000, 20_000, 'cerrado');
+  unpaidClosed.paid = 0;
+  const rows = monthlyResults([paidOpen, unpaidClosed], []);
+  assert.equal(rows[0]?.billed, 40_000);
+  assert.equal(rows[0]?.cost, 15_000);
+  assert.equal(rows[0]?.profit, 25_000);
+  assert.equal(rows[0]?.orders, 1);
+});
+
+test('year sheet fills every month and remaining profit subtracts cashouts', () => {
+  const rows = monthlyResults(
+    [order('o1', '2026-01-05', 100_000, 40_000)],
+    [],
+  );
+  const sheet = yearSheet(2026, rows);
+  assert.equal(sheet.length, 12);
+  assert.equal(sheet[0]?.profit, 60_000);
+  assert.equal(sheet[1]?.label, 'Febrero');
+  assert.equal(sheet[1]?.profit, 0);
+  const leftover = remainingProfit(totalsOf(rows).profit, [
+    {
+      id: 'c1',
+      partner_id: 'ivan',
+      amount: 25_000,
+      date: '2026-01-20',
+      notes: '',
+      created_at: '',
+    },
+  ]);
+  assert.equal(leftover, 35_000);
+  assert.throws(
+    () => assertCashoutFits(leftover, 40_000),
+    /queda en cuenta/,
+  );
+  assert.doesNotThrow(() => assertCashoutFits(leftover, 35_000));
+});
+
+test('partner shares must add up to 100 percent', () => {
+  assert.equal(shareLabel(5000), '50%');
+  assert.doesNotThrow(() => assertSharesComplete(partners));
+  assert.throws(
+    () =>
+      assertSharesComplete([
+        { ...partners[0]!, share: 4000 },
+        partners[1]!,
+      ]),
+    /sumar 100/,
+  );
+  const leftover = 280_00;
+  const profit = 280_00;
+  assert.equal(partnerRemaining(profit, partners[0]!, [], partners), 140_00);
+  assert.equal(cashoutLimit(partners[0], profit, [], partners), 140_00);
+  assert.equal(
+    cashoutLimit(
+      partners[0],
+      profit,
+      [
+        {
+          id: 'c1',
+          partner_id: 'ivan',
+          amount: 40_00,
+          date: '2026-01-20',
+          notes: '',
+          created_at: '',
+        },
+      ],
+      partners,
+    ),
+    100_00,
+  );
+  const odd = allocateShares(101, partners);
+  assert.equal(odd.get('ivan'), 51);
+  assert.equal(odd.get('pablo'), 50);
+  assert.equal(
+    cashoutLimit(
+      { ...partners[0]!, share: 0 },
+      profit,
+      [],
+      [{ ...partners[0]!, share: 0 }, { ...partners[1]!, share: 0 }],
+    ),
+    0,
+  );
+  const [ivan] = partnerBalances(profit, partners, []);
+  assert.equal(ivan?.assigned, 140_00);
+  assert.equal(ivan?.available, 140_00);
+  assert.equal(leftover, 280_00);
 });
 
 test('year totals keep the same profit formula', () => {

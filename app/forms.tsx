@@ -23,6 +23,13 @@ import {
   promoPrice,
   friendsPrice,
 } from '@/lib/money';
+import {
+  SHARE_TOTAL,
+  parseShare,
+  shareInput,
+  shareLabel,
+  sharesTotal,
+} from '@/lib/account';
 import { closedFields, findVariantProduct, skuFields } from '@/lib/variants';
 import {
   configuredKindOf,
@@ -2737,15 +2744,56 @@ export function SettingsForm({ data, save }: { data: Data; save: Save }) {
     [fields, F] = useState(
       JSON.stringify(data.categories[0]?.fields || [], null, 2),
     ),
+    [partnerName, setPartnerName] = useState(''),
+    [partnerShare, setPartnerShare] = useState(''),
+    [shares, setShares] = useState(() =>
+      Object.fromEntries(
+        data.partners
+          .filter((partner) => !partner.archived)
+          .map((partner) => [partner.id, shareInput(partner.share)]),
+      ),
+    ),
     [error, E] = useState(''),
     [busy, B] = useState(false);
+  const partners = data.partners.filter((partner) => !partner.archived);
+  useEffect(() => {
+    setShares(
+      Object.fromEntries(
+        data.partners
+          .filter((partner) => !partner.archived)
+          .map((partner) => [partner.id, shareInput(partner.share)]),
+      ),
+    );
+  }, [data.partners]);
+  function draftShare(value: string) {
+    try {
+      return parseShare(value);
+    } catch {
+      return null;
+    }
+  }
+  const draftPartners = partners.map((partner) => ({
+    ...partner,
+    share: draftShare(shares[partner.id] ?? '') ?? 0,
+  }));
+  const newShare = draftShare(partnerShare);
+  const draftTotal =
+    sharesTotal(draftPartners) +
+    (partnerName.trim() && newShare != null ? newShare : 0);
+  const sharesReady =
+    partners.every((partner) => draftShare(shares[partner.id] ?? '') != null) &&
+    (!partnerName.trim() || newShare != null) &&
+    (partners.length || partnerName.trim()) &&
+    draftTotal === SHARE_TOTAL;
   async function run(body: Record<string, unknown>) {
     B(true);
     E('');
     try {
       await save(body);
+      return true;
     } catch (e) {
       E((e as Error).message);
+      return false;
     } finally {
       B(false);
     }
@@ -2773,6 +2821,99 @@ export function SettingsForm({ data, save }: { data: Data; save: Save }) {
           Guardar moneda
         </button>
       </div>
+      <section className="form-section">
+        <h3>Socios</h3>
+        <p className="hint">
+          Cada socio tiene un % de la ganancia. Los porcentajes deben sumar
+          100%.
+        </p>
+        {partners.length ? (
+          <ul className="settings-partners">
+            {partners.map((partner) => (
+              <li key={partner.id}>
+                <span>{partner.name}</span>
+                <label className="settings-partner-share">
+                  <input
+                    inputMode="decimal"
+                    aria-label={`Porcentaje de ${partner.name}`}
+                    value={shares[partner.id] ?? ''}
+                    onChange={(e) =>
+                      setShares({ ...shares, [partner.id]: e.target.value })
+                    }
+                  />
+                  <span>%</span>
+                </label>
+              </li>
+            ))}
+            <li
+              className={`settings-partners-total${
+                draftTotal === SHARE_TOTAL ? '' : ' is-invalid'
+              }`}
+            >
+              <span>Total</span>
+              <strong>{shareLabel(draftTotal)}</strong>
+            </li>
+          </ul>
+        ) : (
+          <p className="hint">Todavía no hay socios.</p>
+        )}
+        <form
+          className="settings-partner-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            try {
+              const next = [
+                ...partners.map((partner) => ({
+                  id: partner.id,
+                  name: partner.name,
+                  share: parseShare(shares[partner.id] ?? ''),
+                })),
+                ...(partnerName.trim()
+                  ? [
+                      {
+                        name: partnerName.trim(),
+                        share: parseShare(partnerShare),
+                      },
+                    ]
+                  : []),
+              ];
+              void run({ action: 'partner_shares', partners: next }).then(
+                (ok) => {
+                  if (ok) {
+                    setPartnerName('');
+                    setPartnerShare('');
+                  }
+                },
+              );
+            } catch (err) {
+              E((err as Error).message);
+            }
+          }}
+        >
+          <div className="settings-partner-fields">
+            <Field label="Nombre">
+              <input
+                value={partnerName}
+                onChange={(e) => setPartnerName(e.target.value)}
+              />
+            </Field>
+            <Field label="%">
+              <input
+                inputMode="decimal"
+                value={partnerShare}
+                onChange={(e) => setPartnerShare(e.target.value)}
+              />
+            </Field>
+          </div>
+          <button className="secondary" disabled={busy || !sharesReady}>
+            {busy
+              ? 'Guardando…'
+              : partnerName.trim()
+                ? 'Agregar socio'
+                : 'Guardar porcentajes'}
+          </button>
+        </form>
+      </section>
       <section className="form-section">
         <h3>Características por categoría</h3>
         <p className="hint">

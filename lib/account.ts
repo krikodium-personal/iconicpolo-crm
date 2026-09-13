@@ -1,5 +1,7 @@
 import type { AccountExpense, Order, Partner, PartnerCashout } from './types';
 
+export const SHARE_TOTAL = 10000;
+
 export const MONTHS = [
   'Enero',
   'Febrero',
@@ -54,10 +56,169 @@ export function monthAnchorDate(key: MonthKey) {
   return `${key}-01`;
 }
 
-export function closedOrders(orders: Order[]) {
-  return orders.filter(
-    (order) => !order.archived && order.status === 'cerrado',
+export function collectedOrders(orders: Order[]) {
+  return orders.filter((order) => !order.archived && order.paid > 0);
+}
+
+export function yearSheet(year: number, results: MonthlyResult[]) {
+  return MONTHS.map((label, index) => {
+    const month = `${year}-${String(index + 1).padStart(2, '0')}` as MonthKey;
+    return (
+      results.find((row) => row.month === month) || {
+        month,
+        year,
+        monthIndex: index,
+        label,
+        billed: 0,
+        cost: 0,
+        mkt: 0,
+        commissions: 0,
+        profit: 0,
+        margin: null,
+        orders: 0,
+      }
+    );
+  });
+}
+
+export function cashoutTotal(cashouts: PartnerCashout[]) {
+  return cashouts.reduce((sum, row) => sum + row.amount, 0);
+}
+
+export function remainingProfit(
+  profit: number,
+  cashouts: PartnerCashout[],
+) {
+  return profit - cashoutTotal(cashouts);
+}
+
+export function assertCashoutFits(remaining: number, amount: number) {
+  if (amount > remaining) {
+    throw new Error(
+      remaining <= 0
+        ? 'No hay ganancia disponible para retirar.'
+        : 'El cashout no puede superar lo que queda en cuenta.',
+    );
+  }
+}
+
+export function parseShare(value: string) {
+  if (!value.trim()) return 0;
+  const normalized = value.trim().replace(',', '.');
+  if (!/^\d{1,3}(\.\d{1,2})?$/.test(normalized))
+    throw new Error('Ingresá un porcentaje con hasta 2 decimales.');
+  const [whole, fraction = ''] = normalized.split('.');
+  const share = Number(
+    BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0')),
   );
+  if (share > SHARE_TOTAL)
+    throw new Error('El porcentaje no puede superar 100%.');
+  return share;
+}
+
+export function shareInput(share: number) {
+  if (!share) return '';
+  const whole = Math.trunc(share / 100);
+  const fraction = share % 100;
+  return fraction
+    ? `${whole},${String(fraction).padStart(2, '0')}`.replace(/0$/, '')
+    : String(whole);
+}
+
+export function shareLabel(share: number) {
+  return `${shareInput(share) || '0'}%`;
+}
+
+export function sharesTotal(partners: Partner[]) {
+  return partners
+    .filter((partner) => !partner.archived)
+    .reduce((sum, partner) => sum + (partner.share || 0), 0);
+}
+
+export function sharesAreComplete(partners: Partner[]) {
+  const active = partners.filter((partner) => !partner.archived);
+  return active.length > 0 && sharesTotal(active) === SHARE_TOTAL;
+}
+
+export function assertSharesComplete(partners: Partner[]) {
+  if (!partners.filter((partner) => !partner.archived).length) return;
+  if (!sharesAreComplete(partners))
+    throw new Error('Los porcentajes de los socios deben sumar 100%.');
+}
+
+export function partnerShareOf(amount: number, share: number) {
+  if (!share) return 0;
+  return Number((BigInt(amount) * BigInt(share) + 5000n) / 10000n);
+}
+
+export function allocateShares(amount: number, partners: Partner[]) {
+  const active = partners.filter((partner) => !partner.archived);
+  const parts = new Map<string, number>();
+  let used = 0;
+  active.forEach((partner, index) => {
+    const part =
+      index === active.length - 1
+        ? amount - used
+        : partnerShareOf(amount, partner.share);
+    parts.set(partner.id, part);
+    used += part;
+  });
+  return parts;
+}
+
+export function partnerTaken(partnerId: string, cashouts: PartnerCashout[]) {
+  return cashouts
+    .filter((cashout) => cashout.partner_id === partnerId)
+    .reduce((sum, cashout) => sum + cashout.amount, 0);
+}
+
+export type PartnerBalance = {
+  partner: Partner;
+  assigned: number;
+  taken: number;
+  available: number;
+};
+
+export function partnerBalances(
+  profit: number,
+  partners: Partner[],
+  cashouts: PartnerCashout[],
+): PartnerBalance[] {
+  const assigned = allocateShares(profit, partners);
+  return partners
+    .filter((partner) => !partner.archived)
+    .map((partner) => {
+      const share = assigned.get(partner.id) || 0;
+      const taken = partnerTaken(partner.id, cashouts);
+      return {
+        partner,
+        assigned: share,
+        taken,
+        available: share - taken,
+      };
+    });
+}
+
+export function partnerRemaining(
+  profit: number,
+  partner: Partner,
+  cashouts: PartnerCashout[],
+  partners: Partner[],
+) {
+  return (
+    (allocateShares(profit, partners).get(partner.id) || 0) -
+    partnerTaken(partner.id, cashouts)
+  );
+}
+
+export function cashoutLimit(
+  partner: Partner | undefined,
+  profit: number,
+  cashouts: PartnerCashout[],
+  partners: Partner[],
+) {
+  if (!partner || !sharesAreComplete(partners)) return 0;
+  return Math.max(0, partnerRemaining(profit, partner, cashouts, partners));
 }
 
 export function monthlyResults(
@@ -85,9 +246,9 @@ export function monthlyResults(
     buckets.set(key, current);
     return current;
   }
-  for (const order of closedOrders(orders)) {
+  for (const order of collectedOrders(orders)) {
     const row = bucket(monthKey(order.date));
-    row.billed += order.total;
+    row.billed += order.paid;
     row.cost += order.cost;
     row.orders += 1;
   }
@@ -152,7 +313,7 @@ export function accountLedger(
         kind: 'ganancia' as const,
         amount: row.profit,
         notes: row.orders
-          ? `${row.orders} pedido${row.orders === 1 ? '' : 's'} cerrado${row.orders === 1 ? '' : 's'}`
+          ? `${row.orders} pedido${row.orders === 1 ? '' : 's'} cobrado${row.orders === 1 ? '' : 's'}`
           : '',
       })),
     ...cashouts.map((cashout) => ({

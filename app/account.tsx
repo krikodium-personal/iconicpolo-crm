@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Table,
   TableHeader,
@@ -8,14 +8,29 @@ import {
   TableRow,
   TableCell,
 } from '@/components/ui/table';
+import { ArrowUpRight, Plus } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Field, Pick, ErrorBox } from './ui';
 import {
+  MONTHS,
   accountLedger,
-  cashoutsByMonth,
+  cashoutLimit,
   monthlyResults,
+  partnerBalances,
+  remainingProfit,
+  shareLabel,
+  sharesAreComplete,
   totalsOf,
+  yearSheet,
+  type MonthlyResult,
 } from '@/lib/account';
-import { formatMoney, parseDecimal } from '@/lib/money';
+import { decimal, formatMoney, parseDecimal } from '@/lib/money';
 import type { Data } from '@/lib/types';
 
 const today = () =>
@@ -26,13 +41,125 @@ const today = () =>
 function currentYear() {
   return Number(today().slice(0, 4));
 }
+function currentMonthIndex() {
+  return Number(today().slice(5, 7)) - 1;
+}
+function sheetValue(cents: number, money: (n: number) => string) {
+  return cents ? money(cents) : '—';
+}
+
+function MonthAmount({
+  cents,
+  disabled,
+  label,
+  onSave,
+}: {
+  cents: number;
+  disabled: boolean;
+  label: string;
+  onSave: (amount: number) => Promise<void>;
+}) {
+  const [text, setText] = useState(cents ? decimal(cents).replace('.', ',') : '');
+  useEffect(() => {
+    setText(cents ? decimal(cents).replace('.', ',') : '');
+  }, [cents]);
+  async function commit() {
+    const next = text.trim() ? parseDecimal(text) : 0;
+    if (next === cents) return;
+    await onSave(next);
+  }
+  return (
+    <input
+      className="sheet-amount"
+      aria-label={label}
+      inputMode="decimal"
+      disabled={disabled}
+      value={text}
+      placeholder="—"
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => {
+        void commit().catch(() => {
+          setText(cents ? decimal(cents).replace('.', ',') : '');
+        });
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
+      }}
+    />
+  );
+}
+
+function ResultMonth({
+  row,
+  money,
+  busy,
+  onSave,
+}: {
+  row: MonthlyResult;
+  money: (n: number) => string;
+  busy: boolean;
+  onSave: (kind: 'mkt' | 'comisiones', amount: number) => Promise<void>;
+}) {
+  const hasResult = !!(row.billed || row.cost || row.mkt || row.commissions);
+  return (
+    <article className="result-month">
+      <h3>
+        {row.label} {row.year}
+      </h3>
+      <dl>
+        <div>
+          <dt>Fact</dt>
+          <dd className="amount">{sheetValue(row.billed, money)}</dd>
+        </div>
+        <div>
+          <dt>Costo</dt>
+          <dd className="amount">{sheetValue(row.cost, money)}</dd>
+        </div>
+        <div>
+          <dt>MKT</dt>
+          <dd>
+            <MonthAmount
+              cents={row.mkt}
+              disabled={busy}
+              label={`MKT ${row.label}`}
+              onSave={(amount) => onSave('mkt', amount)}
+            />
+          </dd>
+        </div>
+        <div>
+          <dt>Comisiones</dt>
+          <dd>
+            <MonthAmount
+              cents={row.commissions}
+              disabled={busy}
+              label={`Comisiones ${row.label}`}
+              onSave={(amount) => onSave('comisiones', amount)}
+            />
+          </dd>
+        </div>
+        <div className="result-profit-row">
+          <dt>Ganancia</dt>
+          <dd
+            className={`sheet-profit${row.profit < 0 ? ' money-neg' : ''}`}
+          >
+            {hasResult ? money(row.profit) : '—'}
+          </dd>
+        </div>
+      </dl>
+    </article>
+  );
+}
 
 export function AccountBoard({
   data,
   save,
+  view = 'board',
+  initialYear,
 }: {
   data: Data;
   save: (body: Record<string, unknown>) => Promise<void>;
+  view?: 'board' | 'resultados';
+  initialYear?: number;
 }) {
   const results = useMemo(
     () => monthlyResults(data.orders, data.expenses),
@@ -49,6 +176,7 @@ export function AccountBoard({
       .sort((a, b) => b - a);
   }, [results, data.cashouts]);
   const [year, Y] = useState(() => {
+    if (initialYear && years.includes(initialYear)) return initialYear;
     const withData = years.find(
       (value) =>
         results.some((row) => row.year === value) ||
@@ -56,25 +184,44 @@ export function AccountBoard({
     );
     return withData || years[0] || currentYear();
   });
+  const [monthIndex, setMonthIndex] = useState(() => {
+    const now = currentMonthIndex();
+    return now >= 0 && now < 12 ? now : 0;
+  });
   const [busy, B] = useState(false);
   const [error, E] = useState('');
-  const [partnerName, P] = useState('');
-  const [expense, X] = useState({
-    kind: 'mkt',
-    amount: '',
-    date: today(),
-    notes: '',
-  });
+  const [cashoutOpen, setCashoutOpen] = useState(false);
   const [cashout, C] = useState({
     partner_id: data.partners.find((partner) => !partner.archived)?.id || '',
     amount: '',
     date: today(),
     notes: '',
   });
-  const yearRows = results.filter((row) => row.year === year);
+  const yearRows = yearSheet(year, results);
+  const previewRow = yearRows[monthIndex] || yearRows[0];
   const yearTotals = totalsOf(yearRows);
+  const allProfit = totalsOf(results).profit;
+  const leftover = remainingProfit(allProfit, data.cashouts);
+  const yearCashouts = data.cashouts
+    .filter((row) => row.date.startsWith(String(year)))
+    .reduce((sum, row) => sum + row.amount, 0);
   const partners = data.partners.filter((partner) => !partner.archived);
-  const caja = cashoutsByMonth(data.cashouts, partners, year);
+  const sharesReady = sharesAreComplete(partners);
+  const selectedPartner =
+    partners.find((partner) => partner.id === cashout.partner_id) ||
+    partners[0];
+  const partnerAvailable = cashoutLimit(
+    selectedPartner,
+    allProfit,
+    data.cashouts,
+    partners,
+  );
+  const balances = partnerBalances(allProfit, partners, data.cashouts);
+  const yearBalances = partnerBalances(
+    yearTotals.profit,
+    partners,
+    data.cashouts.filter((row) => row.date.startsWith(String(year))),
+  );
   const ledger = accountLedger(results, data.cashouts, data.partners);
   const yearLedger = ledger.filter((entry) =>
     entry.date.startsWith(String(year)),
@@ -88,17 +235,67 @@ export function AccountBoard({
       after?.();
     } catch (e) {
       E((e as Error).message);
+      throw e;
     } finally {
       B(false);
     }
   }
+  function saveMonth(month: string, kind: 'mkt' | 'comisiones', amount: number) {
+    return run({ action: 'month_expense', kind, month, amount });
+  }
+  const yearPick = (
+    <Pick
+      label="Año"
+      value={String(year)}
+      onChange={(value) => Y(Number(value))}
+      options={years.map((value) => ({
+        value: String(value),
+        label: String(value),
+      }))}
+    />
+  );
+  const monthPick = (
+    <Pick
+      label="Mes"
+      value={String(monthIndex)}
+      onChange={(value) => setMonthIndex(Number(value))}
+      options={MONTHS.map((label, index) => ({
+        value: String(index),
+        label,
+      }))}
+    />
+  );
+  if (view === 'resultados') {
+    return (
+      <div className="account-board">
+        <ErrorBox message={error} />
+        <section className="panel account-sheet">
+          <div className="panel-heading">
+            <h2>Resultados</h2>
+          </div>
+          <div className="result-tools result-tools-bar">{yearPick}</div>
+          <div className="result-months">
+            {yearRows.map((row) => (
+              <ResultMonth
+                key={row.month}
+                row={row}
+                money={money}
+                busy={busy}
+                onSave={(kind, amount) => saveMonth(row.month, kind, amount)}
+              />
+            ))}
+          </div>
+        </section>
+      </div>
+    );
+  }
   return (
     <div className="account-board">
       <p className="hint">
-        El resultado toma pedidos cerrados. Marketing y comisiones se cargan a
-        mano. La ganancia del mes es facturación menos costo, marketing y
-        comisiones. Los cashouts no se inventan: quedan registrados cuando los
-        cargas.
+        FACT es lo cobrado, aunque el pedido no esté facturado ni cerrado.
+        Ganancia es lo cobrado menos costo, MKT y comisiones, y se reparte
+        entre los socios según su %. Un cashout no puede superar lo que le
+        queda a ese socio después de su parte.
       </p>
       <ErrorBox message={error} />
       <div className="seg year-seg" role="tablist" aria-label="Año">
@@ -117,135 +314,79 @@ export function AccountBoard({
       </div>
       <div className="metrics">
         {[
-          ['Facturación', yearTotals.billed],
-          ['Costo', yearTotals.cost],
-          ['Ganancia', yearTotals.profit],
-          [
-            'Cashouts',
-            data.cashouts
-              .filter((row) => row.date.startsWith(String(year)))
-              .reduce((sum, row) => sum + row.amount, 0),
-          ],
-        ].map(([label, value]) => (
-          <article className="metric" key={String(label)}>
+          {
+            label: 'Facturación',
+            value: yearTotals.billed,
+            hint: `${yearTotals.orders} pedido${yearTotals.orders === 1 ? '' : 's'} cobrado${yearTotals.orders === 1 ? '' : 's'}`,
+          },
+          {
+            label: 'En cuenta',
+            value: leftover,
+            hint: sharesReady
+              ? 'Suma disponible de los socios'
+              : 'Definí los % en Configuración',
+          },
+          {
+            label: 'Ganancia',
+            value: yearTotals.profit,
+            hint: sharesReady
+              ? yearBalances
+                  .map(
+                    (row) =>
+                      `${row.partner.name.split(' ')[0]} ${shareLabel(row.partner.share)} ${money(row.assigned)}`,
+                  )
+                  .join(' · ')
+              : yearTotals.margin == null
+                ? 'Sin cobros en el año'
+                : `Margen ${yearTotals.margin}%`,
+          },
+          {
+            label: 'Cashouts',
+            value: yearCashouts,
+            hint: `${year}`,
+          },
+        ].map(({ label, value, hint }) => (
+          <article className="metric" key={label}>
             <p>{label}</p>
-            <strong className={Number(value) < 0 ? 'money-neg' : ''}>
-              {money(Number(value))}
+            <strong className={value < 0 ? 'money-neg' : ''}>
+              {money(value)}
             </strong>
-            <span>
-              {label === 'Ganancia'
-                ? yearTotals.margin == null
-                  ? 'Sin facturación en el año'
-                  : `Margen ${yearTotals.margin}%`
-                : `${year}`}
-            </span>
+            <span>{hint}</span>
           </article>
         ))}
       </div>
-      <div className="account-grid">
-        <section className="panel">
-          <div className="panel-heading">
-            <h2>Resultado {year}</h2>
-            <span>{yearTotals.orders} pedidos cerrados</span>
+      <section className="panel account-sheet">
+        <div className="panel-heading">
+          <h2>Resultados</h2>
+          <a href={`/tablero?vista=resultados&anio=${year}`}>
+            Ver todo <ArrowUpRight size={15} />
+          </a>
+        </div>
+        <div className="result-tools result-tools-bar">
+          {monthPick}
+          {yearPick}
+        </div>
+        {previewRow ? (
+          <div className="result-months result-preview">
+            <ResultMonth
+              row={previewRow}
+              money={money}
+              busy={busy}
+              onSave={(kind, amount) =>
+                saveMonth(previewRow.month, kind, amount)
+              }
+            />
           </div>
-          <div className="desktop-table">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Mes</TableHead>
-                  <TableHead>Facturación</TableHead>
-                  <TableHead>Costo</TableHead>
-                  <TableHead>MKT</TableHead>
-                  <TableHead>Comisiones</TableHead>
-                  <TableHead>Ganancia</TableHead>
-                  <TableHead>Margen</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {yearRows.length ? (
-                  yearRows.map((row) => (
-                    <TableRow key={row.month}>
-                      <TableCell>{row.label}</TableCell>
-                      <TableCell>{money(row.billed)}</TableCell>
-                      <TableCell>{money(row.cost)}</TableCell>
-                      <TableCell>{money(row.mkt)}</TableCell>
-                      <TableCell>{money(row.commissions)}</TableCell>
-                      <TableCell className={row.profit < 0 ? 'money-neg' : ''}>
-                        {money(row.profit)}
-                      </TableCell>
-                      <TableCell>
-                        {row.margin == null ? '—' : `${row.margin}%`}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={7}>
-                      No hay pedidos cerrados ni gastos en {year}.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {yearRows.length ? (
-                  <TableRow className="account-total">
-                    <TableCell>Total</TableCell>
-                    <TableCell>{money(yearTotals.billed)}</TableCell>
-                    <TableCell>{money(yearTotals.cost)}</TableCell>
-                    <TableCell>{money(yearTotals.mkt)}</TableCell>
-                    <TableCell>{money(yearTotals.commissions)}</TableCell>
-                    <TableCell
-                      className={yearTotals.profit < 0 ? 'money-neg' : ''}
-                    >
-                      {money(yearTotals.profit)}
-                    </TableCell>
-                    <TableCell>
-                      {yearTotals.margin == null
-                        ? '—'
-                        : `${yearTotals.margin}%`}
-                    </TableCell>
-                  </TableRow>
-                ) : null}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="record-card-list">
-            {yearRows.map((row) => (
-              <article className="record-card" key={row.month}>
-                <div className="record-card-top">
-                  <b>{row.label}</b>
-                  <span>{row.margin == null ? '—' : `${row.margin}%`}</span>
-                </div>
-                <dl className="record-card-facts">
-                  <div>
-                    <dt>Facturación</dt>
-                    <dd>{money(row.billed)}</dd>
-                  </div>
-                  <div>
-                    <dt>Costo</dt>
-                    <dd>{money(row.cost)}</dd>
-                  </div>
-                  <div>
-                    <dt>MKT</dt>
-                    <dd>{money(row.mkt)}</dd>
-                  </div>
-                  <div>
-                    <dt>Comisiones</dt>
-                    <dd>{money(row.commissions)}</dd>
-                  </div>
-                  <div>
-                    <dt>Ganancia</dt>
-                    <dd className={row.profit < 0 ? 'money-neg' : ''}>
-                      {money(row.profit)}
-                    </dd>
-                  </div>
-                </dl>
-              </article>
-            ))}
-          </div>
-        </section>
-        <section className="panel">
+        ) : null}
+      </section>
+      <section className="panel">
           <div className="panel-heading">
             <h2>Caja de socios</h2>
-            <span>{partners.length} socios</span>
+            <span>
+              {sharesReady
+                ? `${partners.length} socios`
+                : 'Faltan los %'}
+            </span>
           </div>
           {partners.length ? (
             <>
@@ -253,54 +394,55 @@ export function AccountBoard({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Mes</TableHead>
-                      {partners.map((partner) => (
-                        <TableHead key={partner.id}>{partner.name}</TableHead>
-                      ))}
-                      <TableHead>Cashout</TableHead>
-                      <TableHead>Fecha</TableHead>
+                      <TableHead>Socio</TableHead>
+                      <TableHead>%</TableHead>
+                      <TableHead>Ganancia</TableHead>
+                      <TableHead>Cashouts</TableHead>
+                      <TableHead>Disponible</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {caja.length ? (
-                      caja.map((row) => (
-                        <TableRow key={row.month}>
-                          <TableCell>{row.label}</TableCell>
-                          {partners.map((partner) => (
-                            <TableCell key={partner.id}>
-                              {row.byPartner[partner.id]
-                                ? money(row.byPartner[partner.id] || 0)
-                                : '—'}
-                            </TableCell>
-                          ))}
-                          <TableCell>{money(row.total)}</TableCell>
-                          <TableCell>{row.lastDate || '—'}</TableCell>
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={partners.length + 3}>
-                          Todavía no hay cashouts en {year}.
+                    {balances.map((row) => (
+                      <TableRow key={row.partner.id}>
+                        <TableCell>{row.partner.name}</TableCell>
+                        <TableCell>{shareLabel(row.partner.share)}</TableCell>
+                        <TableCell>{money(row.assigned)}</TableCell>
+                        <TableCell>
+                          {row.taken ? money(row.taken) : '—'}
+                        </TableCell>
+                        <TableCell
+                          className={row.available < 0 ? 'money-neg' : ''}
+                        >
+                          {money(row.available)}
                         </TableCell>
                       </TableRow>
-                    )}
+                    ))}
                   </TableBody>
                 </Table>
               </div>
-              <div className="record-card-list">
-                {caja.map((row) => (
-                  <article className="record-card" key={row.month}>
+              <div className="record-card-list partner-balance-cards">
+                {balances.map((row) => (
+                  <article className="record-card" key={row.partner.id}>
                     <div className="record-card-top">
-                      <b>{row.label}</b>
-                      <span>{money(row.total)}</span>
+                      <b>
+                        {row.partner.name}
+                        {row.partner.share
+                          ? ` · ${shareLabel(row.partner.share)}`
+                          : ''}
+                      </b>
+                      <span className={row.available < 0 ? 'money-neg' : ''}>
+                        {money(row.available)}
+                      </span>
                     </div>
                     <dl className="record-card-facts">
-                      {partners.map((partner) => (
-                        <div key={partner.id}>
-                          <dt>{partner.name}</dt>
-                          <dd>{money(row.byPartner[partner.id] || 0)}</dd>
-                        </div>
-                      ))}
+                      <div>
+                        <dt>Ganancia</dt>
+                        <dd>{money(row.assigned)}</dd>
+                      </div>
+                      <div>
+                        <dt>Cashouts</dt>
+                        <dd>{row.taken ? money(row.taken) : '—'}</dd>
+                      </div>
                     </dl>
                   </article>
                 ))}
@@ -308,15 +450,24 @@ export function AccountBoard({
             </>
           ) : (
             <p className="hint">
-              Agregá un socio para registrar cashouts a su nombre.
+              Agregá un socio en Configuración para registrar cashouts a su
+              nombre.
             </p>
           )}
         </section>
-      </div>
       <section className="panel">
         <div className="panel-heading">
           <h2>Movimientos {year}</h2>
-          <span>Ganancia y cashouts</span>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => {
+              E('');
+              setCashoutOpen(true);
+            }}
+          >
+            <Plus size={15} /> cashout
+          </button>
         </div>
         <div className="desktop-table">
           <Table>
@@ -378,139 +529,109 @@ export function AccountBoard({
           ))}
         </div>
       </section>
-      <div className="account-forms">
-        <form
-          className="panel"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(
-              {
-                action: 'expense',
-                kind: expense.kind,
-                amount: parseDecimal(expense.amount),
-                date: expense.date,
-                notes: expense.notes,
-              },
-              () => X({ ...expense, amount: '', notes: '' }),
-            );
-          }}
-        >
-          <h3>Registrar gasto</h3>
-          <div className="form-grid">
-            <Field label="Tipo *">
-              <Pick
-                label="Tipo de gasto"
-                value={expense.kind}
-                onChange={(v) => X({ ...expense, kind: v })}
-                options={[
-                  { value: 'mkt', label: 'Marketing' },
-                  { value: 'comisiones', label: 'Comisiones' },
-                ]}
-              />
-            </Field>
-            <Field label="Importe *">
-              <input
-                inputMode="decimal"
-                required
-                value={expense.amount}
-                onChange={(e) => X({ ...expense, amount: e.target.value })}
-              />
-            </Field>
-            <Field label="Fecha *">
-              <input
-                type="date"
-                required
-                value={expense.date}
-                onChange={(e) => X({ ...expense, date: e.target.value })}
-              />
-            </Field>
-            <Field label="Notas" wide>
-              <input
-                value={expense.notes}
-                onChange={(e) => X({ ...expense, notes: e.target.value })}
-              />
-            </Field>
-          </div>
-          <button className="primary" disabled={busy}>
-            {busy ? 'Guardando…' : 'Cargar gasto'}
-          </button>
-        </form>
-        <form
-          className="panel"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(
-              {
-                action: 'cashout',
-                partner_id: cashout.partner_id || partners[0]?.id,
-                amount: parseDecimal(cashout.amount),
-                date: cashout.date,
-                notes: cashout.notes,
-              },
-              () => C({ ...cashout, amount: '', notes: '' }),
-            );
-          }}
-        >
-          <h3>Registrar cashout</h3>
-          <div className="form-grid">
-            <Field label="Socio *">
-              <Pick
-                label="Socio"
-                value={cashout.partner_id || partners[0]?.id || ''}
-                onChange={(v) => C({ ...cashout, partner_id: v })}
-                options={partners.map((partner) => ({
-                  value: partner.id,
-                  label: partner.name,
-                }))}
-              />
-            </Field>
-            <Field label="Importe *">
-              <input
-                inputMode="decimal"
-                required
-                value={cashout.amount}
-                onChange={(e) => C({ ...cashout, amount: e.target.value })}
-              />
-            </Field>
-            <Field label="Fecha *">
-              <input
-                type="date"
-                required
-                value={cashout.date}
-                onChange={(e) => C({ ...cashout, date: e.target.value })}
-              />
-            </Field>
-            <Field label="Notas" wide>
-              <input
-                value={cashout.notes}
-                onChange={(e) => C({ ...cashout, notes: e.target.value })}
-              />
-            </Field>
-          </div>
-          <button className="primary" disabled={busy || !partners.length}>
-            {busy ? 'Guardando…' : 'Cargar cashout'}
-          </button>
-        </form>
-        <form
-          className="panel"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run({ action: 'partner', name: partnerName }, () => P(''));
-          }}
-        >
-          <h3>Nuevo socio</h3>
-          <Field label="Nombre *">
-            <input
-              required
-              value={partnerName}
-              onChange={(e) => P(e.target.value)}
-            />
-          </Field>
-          <button className="secondary" disabled={busy}>
-            {busy ? 'Guardando…' : 'Agregar socio'}
-          </button>
-        </form>
-      </div>
+      <Dialog
+        open={cashoutOpen}
+        onOpenChange={(open) => {
+          setCashoutOpen(open);
+          if (!open) E('');
+        }}
+      >
+        <DialogContent className="crm-dialog crm-dialog-cashout max-[767px]:top-0 max-[767px]:left-0 max-[767px]:right-0 max-[767px]:bottom-0 max-[767px]:translate-x-0 max-[767px]:translate-y-0 max-[767px]:w-full max-[767px]:max-w-none max-[767px]:h-dvh max-[767px]:max-h-dvh max-[767px]:rounded-none max-[767px]:animate-none">
+          <DialogHeader>
+            <DialogTitle>Registrar cashout</DialogTitle>
+            <DialogDescription>
+              {sharesReady && selectedPartner
+                ? `${selectedPartner.name} recibe ${shareLabel(selectedPartner.share)} de la ganancia. Puede retirar hasta ${money(partnerAvailable)}.`
+                : 'Definí los % de cada socio en Configuración para repartir la ganancia.'}
+            </DialogDescription>
+          </DialogHeader>
+          <ErrorBox message={error} />
+          {!partners.length ? (
+            <p className="hint">
+              Agregá un socio en Configuración para registrar cashouts a su
+              nombre.
+            </p>
+          ) : null}
+          <form
+            className="cashout-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              try {
+                const amount = parseDecimal(cashout.amount);
+                if (!sharesReady) {
+                  throw new Error(
+                    'Definí los porcentajes de los socios en Configuración.',
+                  );
+                }
+                if (amount > partnerAvailable) {
+                  throw new Error(
+                    partnerAvailable <= 0
+                      ? 'Este socio no tiene ganancia disponible para retirar.'
+                      : 'El cashout no puede superar la parte de este socio.',
+                  );
+                }
+                void run(
+                  {
+                    action: 'cashout',
+                    partner_id: cashout.partner_id || partners[0]?.id,
+                    amount,
+                    date: cashout.date,
+                    notes: cashout.notes,
+                  },
+                  () => {
+                    C({ ...cashout, amount: '', notes: '' });
+                    setCashoutOpen(false);
+                  },
+                );
+              } catch (err) {
+                E((err as Error).message);
+              }
+            }}
+          >
+            <div className="form-grid">
+              <Field label="Socio *">
+                <Pick
+                  label="Socio"
+                  value={cashout.partner_id || partners[0]?.id || ''}
+                  onChange={(v) => C({ ...cashout, partner_id: v })}
+                  options={partners.map((partner) => ({
+                    value: partner.id,
+                    label: partner.name,
+                  }))}
+                />
+              </Field>
+              <Field label="Importe *">
+                <input
+                  inputMode="decimal"
+                  required
+                  value={cashout.amount}
+                  onChange={(e) => C({ ...cashout, amount: e.target.value })}
+                />
+              </Field>
+              <Field label="Fecha *">
+                <input
+                  type="date"
+                  required
+                  value={cashout.date}
+                  onChange={(e) => C({ ...cashout, date: e.target.value })}
+                />
+              </Field>
+              <Field label="Notas" wide>
+                <input
+                  value={cashout.notes}
+                  onChange={(e) => C({ ...cashout, notes: e.target.value })}
+                />
+              </Field>
+            </div>
+            <button
+              className="primary"
+              disabled={busy || !partners.length || partnerAvailable <= 0}
+            >
+              {busy ? 'Guardando…' : 'Cargar cashout'}
+            </button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

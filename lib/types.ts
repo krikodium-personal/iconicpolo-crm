@@ -104,6 +104,7 @@ export type Movement = {
 export type Partner = {
   id: string;
   name: string;
+  share: number;
   archived: number;
   version: number;
 };

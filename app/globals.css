@@ -202,6 +202,17 @@ button:focus-visible {
   gap: 16px;
   margin-bottom: 30px;
 }
+.page-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.page-heading-row a {
+  flex: none;
+  color: #286152;
+  font-size: 14px;
+}
 .eyebrow {
   font-size: 12px;
   letter-spacing: 1.5px;
@@ -243,6 +254,10 @@ h3 {
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
 }
+.account-board .metrics {
+  gap: 20px;
+  margin-bottom: 28px;
+}
 .metric {
   background: white;
   padding: 24px;
@@ -261,9 +276,14 @@ h3 {
 }
 .metric span {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   font-size: 12px;
   color: #688077;
+}
+.account-board .metric span {
+  display: block;
+  line-height: 1.45;
 }
 @media (max-width: 800px) {
   .workspace {
@@ -528,11 +548,117 @@ h3 {
   background: #134c45;
   color: #fff;
 }
+.account-sheet {
+  margin-bottom: 28px;
+}
+.account-sheet th {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.result-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.result-tools-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 0 24px 18px;
+}
+.result-tools .picker {
+  min-width: 0;
+  width: 100%;
+}
+.result-months {
+  display: grid;
+  gap: 20px;
+  padding: 0 24px 24px;
+}
+.result-preview {
+  padding-top: 0;
+}
+.result-month {
+  border: 1px solid #e6ece4;
+  border-radius: 10px;
+  padding: 16px 18px 8px;
+}
+.result-month h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+.result-month dl {
+  display: grid;
+  grid-template-columns: 1fr;
+  margin: 0;
+}
+.result-month dl > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1px solid #eef1ee;
+}
+.result-month dt {
+  flex: none;
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6a7e72;
+}
+.result-month dd {
+  margin: 0;
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.result-month .sheet-amount {
+  width: auto;
+  max-width: 100%;
+  text-align: right;
+}
+.result-profit-row {
+  grid-column: auto;
+}
+.sheet-profit {
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.4px;
+}
+.sheet-amount {
+  width: 100%;
+  min-width: 72px;
+  text-align: right;
+  border: 0;
+  background: transparent;
+  padding: 4px 0;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.sheet-amount:focus {
+  outline: none;
+  background: #eef4ef;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.sheet-amount:disabled {
+  color: #75886a;
+}
+.sheet-margin {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 550;
+  color: #5e7268;
+}
 .account-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 24px;
+  margin-bottom: 24px;
 }
 .account-grid .panel,
 .account-board > .panel {
@@ -545,25 +671,67 @@ h3 {
 .money-neg {
   color: #ad3333;
 }
-.account-forms {
+.panel-heading .secondary {
+  flex-shrink: 0;
+}
+.crm-dialog-cashout {
+  max-width: 560px;
+}
+.cashout-form {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 16px;
+  gap: 18px;
 }
-.account-forms .panel {
-  padding: 22px;
+.cashout-form .primary {
+  justify-self: start;
 }
-.account-forms h3 {
-  margin-bottom: 16px;
+.settings-partners {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 18px;
+  padding: 0;
+  list-style: none;
 }
-.account-forms .primary,
-.account-forms .secondary {
-  margin-top: 18px;
+.settings-partners li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e6ece4;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.settings-partner-share {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #687a70;
+}
+.settings-partner-share input {
+  width: 72px;
+  text-align: right;
+}
+.settings-partners-total {
+  border-style: dashed;
+  color: #687a70;
+}
+.settings-partners-total.is-invalid {
+  color: #ad3333;
+}
+.settings-partner-form {
+  display: grid;
+  gap: 12px;
+}
+.settings-partner-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  gap: 12px;
+}
+.settings-partner-form .secondary {
+  justify-self: start;
 }
 @media (max-width: 1200px) {
-  .account-grid,
-  .account-forms {
+  .account-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -1786,6 +1954,10 @@ fieldset:disabled textarea {
   .metrics {
     gap: 10px;
   }
+  .account-board .metrics {
+    gap: 16px;
+    margin-bottom: 24px;
+  }
   .metric {
     padding: 18px;
   }
@@ -2078,9 +2250,6 @@ fieldset:disabled textarea {
   }
   .account-board .record-card-list {
     padding: 12px 0 0;
-  }
-  .account-forms .panel {
-    padding: 18px;
   }
   .mobile-tabbar {
     display: flex;

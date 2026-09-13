@@ -131,6 +131,7 @@ export const images = sqliteTable('images', {
 export const partners = sqliteTable('partners', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  share: integer('share').notNull().default(0),
   archived: integer('archived').notNull().default(0),
   version: integer('version').notNull().default(1),
 });
