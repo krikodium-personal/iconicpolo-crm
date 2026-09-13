@@ -16,7 +16,9 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Package, Upload, X } from 'lucide-react';
+import { Camera, Package, Upload, X } from 'lucide-react';
+import type { Order } from '@/lib/types';
+import { decimal, parseDecimal } from '@/lib/money';
 function selectFieldInput(e: { target: EventTarget }) {
   const input = e.target;
   if (!(input instanceof HTMLInputElement) || input.readOnly || input.disabled)
@@ -202,6 +204,203 @@ export function StatusMenu({
     </Sheet>
   );
 }
+function payStatus(order: Order) {
+  return order.paid === 0 && order.total > 0
+    ? 'no pagado'
+    : order.paid < order.total
+      ? 'pago parcial'
+      : 'pagado';
+}
+export function OrderPayMenu({
+  order,
+  onChange,
+}: {
+  order: Order;
+  onChange: (pay: string, paid?: number) => Promise<void>;
+}) {
+  const value = payStatus(order);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [amount, setAmount] = useState(decimal(order.paid));
+  const [error, setError] = useState('');
+  async function pick(option: string) {
+    setBusy(true);
+    setError('');
+    try {
+      await onChange(
+        option,
+        option === 'pago parcial' ? parseDecimal(amount) : undefined,
+      );
+      setOpen(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          setAmount(decimal(order.paid));
+          setError('');
+        }
+      }}
+    >
+      <button
+        type="button"
+        className={`status ${value.replaceAll(' ', '-')} status-pick`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`Cambiar pago: ${value}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+      >
+        {value}
+      </button>
+      <SheetContent side="bottom" className="status-sheet">
+        <SheetHeader>
+          <SheetTitle>Estado de pago</SheetTitle>
+          <SheetDescription>
+            Marcá si está cobrado. En un pago parcial, escribí el importe.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="status-sheet-options">
+          {['no pagado', 'pago parcial', 'pagado'].map((option) => (
+            <button
+              key={option}
+              type="button"
+              disabled={busy}
+              className={`status ${option.replaceAll(' ', '-')}${
+                option === value ? ' is-current' : ''
+              }`}
+              onClick={() => pick(option)}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+        <label className="status-sheet-amount">
+          Importe parcial
+          <input
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+        </label>
+        {error ? <p className="pending-text">{error}</p> : null}
+      </SheetContent>
+    </Sheet>
+  );
+}
+function cardDate(value: string) {
+  if (!value) return '';
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) return value;
+  return `${day}/${month}/${year}`;
+}
+export function OrderDeliveryMenu({
+  delivery,
+  onChange,
+}: {
+  delivery: string;
+  onChange: (delivery: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [value, setValue] = useState(delivery);
+  const [error, setError] = useState('');
+  const label = delivery
+    ? `Entrega · ${cardDate(delivery)}`
+    : 'Entrega · Sin definir';
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          setValue(delivery);
+          setError('');
+        }
+      }}
+    >
+      <button
+        type="button"
+        className={`status ${delivery ? 'entrega' : 'sin-definir'} status-pick`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`Cambiar entrega: ${label}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+      >
+        {label}
+      </button>
+      <SheetContent side="bottom" className="status-sheet">
+        <SheetHeader>
+          <SheetTitle>Fecha de entrega</SheetTitle>
+          <SheetDescription>
+            Definí el día o dejalo sin fecha.
+          </SheetDescription>
+        </SheetHeader>
+        <label className="status-sheet-amount">
+          Entrega
+          <input
+            type="date"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+          />
+        </label>
+        <div className="status-sheet-options">
+          <button
+            type="button"
+            disabled={busy}
+            className="status sin-definir"
+            onClick={async () => {
+              setBusy(true);
+              setError('');
+              try {
+                await onChange('');
+                setOpen(false);
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Sin definir
+          </button>
+          <button
+            type="button"
+            disabled={busy || !value}
+            className="status entrega"
+            onClick={async () => {
+              setBusy(true);
+              setError('');
+              try {
+                await onChange(value);
+                setOpen(false);
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Guardar fecha
+          </button>
+        </div>
+        {error ? <p className="pending-text">{error}</p> : null}
+      </SheetContent>
+    </Sheet>
+  );
+}
 export function ProductPhoto({ url, name }: { url?: string; name: string }) {
   return url ? (
     <Image
@@ -224,12 +423,14 @@ export function Photos({
   onError,
   onBusy,
   max = 10,
+  camera = false,
 }: {
   value: string[];
   onChange: (v: string[]) => void;
   onError: (v: string) => void;
   onBusy: (v: boolean) => void;
   max?: number;
+  camera?: boolean;
 }) {
   async function upload(files: FileList | null) {
     if (!files) return;
@@ -253,6 +454,18 @@ export function Photos({
       onBusy(false);
     }
   }
+  const pick = (multiple: boolean, capture?: 'environment') => (
+    <input
+      type="file"
+      accept={capture ? 'image/*' : 'image/jpeg,image/png,image/webp'}
+      capture={capture}
+      multiple={multiple}
+      onChange={(e) => {
+        void upload(e.target.files);
+        e.target.value = '';
+      }}
+    />
+  );
   return (
     <div className="photos">
       {value.map((url, i) => (
@@ -274,22 +487,29 @@ export function Photos({
           </button>
         </div>
       ))}
-      {value.length < max && (
+      {value.length < max && camera ? (
+        <>
+          <label className="upload">
+            <Camera size={20} />
+            <span>Sacar foto</span>
+            <small>Cámara del teléfono</small>
+            {pick(false, 'environment')}
+          </label>
+          <label className="upload">
+            <Upload size={20} />
+            <span>Subir foto</span>
+            <small>JPG, PNG, WebP · 5 MB</small>
+            {pick(max > 1)}
+          </label>
+        </>
+      ) : value.length < max ? (
         <label className="upload">
           <Upload size={20} />
           <span>Subir foto</span>
           <small>JPG, PNG, WebP · 5 MB</small>
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            multiple={max > 1}
-            onChange={(e) => {
-              void upload(e.target.files);
-              e.target.value = '';
-            }}
-          />
+          {pick(max > 1)}
         </label>
-      )}
+      ) : null}
     </div>
   );
 }

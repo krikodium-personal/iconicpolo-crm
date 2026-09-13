@@ -6,9 +6,11 @@ import {
   BOTA_MODELOS,
   KIND_TITLES,
   PRICED_GROUPS,
+  REFERENCE_PHOTO_GROUPS,
   botaModeloPriceId,
   configuredKindOf,
   configuredProductOf,
+  referencePhotoIds,
   type ConfiguredKind,
   type ConfiguredPricing,
 } from '@/lib/configure';
@@ -37,6 +39,30 @@ function splitModelo(kind: ConfiguredKind | null) {
     };
   }
   return null;
+}
+
+function OptionPhoto({
+  value,
+  onChange,
+  onError,
+  onBusy,
+}: {
+  value: string;
+  onChange: (url: string) => void;
+  onError: (message: string) => void;
+  onBusy: (busy: boolean) => void;
+}) {
+  return (
+    <div className="option-photo">
+      <Photos
+        value={value ? [value] : []}
+        max={1}
+        onChange={(photos) => onChange(photos[0] || '')}
+        onError={onError}
+        onBusy={onBusy}
+      />
+    </div>
+  );
 }
 
 export function TypeCards({
@@ -80,7 +106,6 @@ export function TypeCards({
         } as const;
         const copy = (
           <div className="type-card-copy">
-            <small>Producto configurable</small>
             <strong>{KIND_TITLES[kind]}</strong>
             <p>
               {pending
@@ -176,12 +201,13 @@ export function TypeConfigForm({
 }) {
   const kind = configuredKindOf(record);
   const split = splitModelo(kind);
+  const photoIds = kind ? referencePhotoIds(kind) : new Set<string>();
   const [f, set] = useState({
-    photos: record.photos,
     cost: record.cost ? decimal(record.cost) : '',
     price: record.price ? decimal(record.price) : '',
     ff_discount: decimal(record.ff_discount),
     ff_price: record.ff_price == null ? '' : decimal(record.ff_price),
+    photos: record.pricing?.photos || {},
     extras: Object.fromEntries(
       (kind ? PRICED_GROUPS[kind] : []).flatMap((group) =>
         group.options.map((option) => {
@@ -220,6 +246,24 @@ export function TypeConfigForm({
   const [busy, B] = useState(false);
   const [uploading, U] = useState(false);
   if (!kind) return <p className="hint">Este producto no es configurable.</p>;
+  const setPhoto = (id: string, url: string) =>
+    set({
+      ...f,
+      photos: url
+        ? { ...f.photos, [id]: url }
+        : Object.fromEntries(
+            Object.entries(f.photos).filter(([key]) => key !== id),
+          ),
+    });
+  const photoField = (id: string) =>
+    photoIds.has(id) ? (
+      <OptionPhoto
+        value={f.photos[id] || ''}
+        onChange={(url) => setPhoto(id, url)}
+        onError={E}
+        onBusy={U}
+      />
+    ) : null;
   return (
     <form
       onSubmit={async (e) => {
@@ -257,7 +301,7 @@ export function TypeConfigForm({
               };
             }
           }
-          const pricing: ConfiguredPricing = { extras };
+          const pricing: ConfiguredPricing = { extras, photos: f.photos };
           await save({
             action: 'product',
             id: record.id,
@@ -266,7 +310,7 @@ export function TypeConfigForm({
             sku: record.sku,
             category: record.category,
             supplier_id: record.supplier_id,
-            photos: f.photos,
+            photos: [],
             options: [],
             cost,
             price,
@@ -299,22 +343,16 @@ export function TypeConfigForm({
               : 'Estos precios se usan en cada pedido. Las variantes se suman al precio base; dejá 0 si esa opción no cambia el valor.'}
       </p>
       <section className="form-section">
-        <h3>Fotos</h3>
-        <Photos
-          value={f.photos}
-          onChange={(photos) => set({ ...f, photos })}
-          onError={E}
-          onBusy={U}
-        />
-      </section>
-      <section className="form-section">
         <h3>Opción base · {data.currency}</h3>
         {split ? (
           <div className="price-variant-list">
             {PRICED_GROUPS[kind]
               .find((group) => group.id === 'modelo')
               ?.options.map((option) => (
-                <div key={option.id} className="price-variant-row">
+                <div
+                  key={option.id}
+                  className={`price-variant-row${photoIds.has(option.id) ? ' has-photo' : ''}`}
+                >
                   <span>{option.label}</span>
                   <label>
                     Costo *
@@ -358,6 +396,7 @@ export function TypeConfigForm({
                       }
                     />
                   </label>
+                  {photoField(option.id)}
                 </div>
               ))}
           </div>
@@ -413,7 +452,10 @@ export function TypeConfigForm({
           <h3>{group.label}</h3>
           <div className="price-variant-list">
             {group.options.map((option) => (
-              <div key={option.id} className="price-variant-row">
+              <div
+                key={option.id}
+                className={`price-variant-row${photoIds.has(option.id) ? ' has-photo' : ''}`}
+              >
                 <span>{option.label}</span>
                 <label>
                   Costo extra
@@ -453,13 +495,34 @@ export function TypeConfigForm({
                         },
                       })
                     }
-                  />
+                    />
                 </label>
+                {photoField(option.id)}
               </div>
             ))}
           </div>
         </section>
       ))}
+      {REFERENCE_PHOTO_GROUPS[kind]
+        .filter(
+          (group) => !PRICED_GROUPS[kind].some((item) => item.id === group.id),
+        )
+        .map((group) => (
+          <section key={`foto-${group.id}`} className="form-section">
+            <h3>Fotos de referencia · {group.label}</h3>
+            <div className="price-variant-list">
+              {group.options.map((option) => (
+                <div
+                  key={option.id}
+                  className="price-variant-row has-photo photo-only"
+                >
+                  <span>{option.label}</span>
+                  {photoField(option.id)}
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
       <div className="form-footer">
         <button type="button" className="secondary" onClick={onStock}>
           Registrar stock

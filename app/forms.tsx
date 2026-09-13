@@ -20,6 +20,7 @@ import {
   lineTotals,
   promoPrice,
   friendsPrice,
+  orderDiscountPercent,
 } from '@/lib/money';
 import { closedFields, findVariantProduct, skuFields } from '@/lib/variants';
 import {
@@ -36,6 +37,8 @@ import {
   stockAtPlace,
   stockPlaceLabel,
   summarizeConfig,
+  describeConfigured,
+  selectedReferenceIds,
   type ProductConfig,
 } from '@/lib/configure';
 import { Configurator } from './configure-form';
@@ -47,6 +50,9 @@ import {
   Photos,
   ErrorBox,
   Status,
+  StatusMenu,
+  OrderPayMenu,
+  OrderDeliveryMenu,
   ProductPhoto,
 } from './ui';
 import {
@@ -980,18 +986,31 @@ export function ProductDetail({
           Registrar stock
         </button>
       </div>
-      <section className="form-section" style={{ borderTop: 0, marginTop: 0 }}>
-        <h3>Fotos</h3>
-        <div className="pdp-photos">
-          {(record.photos.length ? record.photos : ['']).map((url, i) => (
-            <ProductPhoto
-              key={url || i}
-              name={record.name}
-              url={url || undefined}
-            />
-          ))}
-        </div>
-      </section>
+      {isConfiguredProduct(record) ? (
+        Object.values(record.pricing.photos || {}).length ? (
+          <section className="form-section" style={{ borderTop: 0, marginTop: 0 }}>
+            <h3>Fotos de referencia</h3>
+            <div className="pdp-photos">
+              {Object.entries(record.pricing.photos).map(([id, url]) => (
+                <ProductPhoto key={id} name={record.name} url={url} />
+              ))}
+            </div>
+          </section>
+        ) : null
+      ) : (
+        <section className="form-section" style={{ borderTop: 0, marginTop: 0 }}>
+          <h3>Fotos</h3>
+          <div className="pdp-photos">
+            {(record.photos.length ? record.photos : ['']).map((url, i) => (
+              <ProductPhoto
+                key={url || i}
+                name={record.name}
+                url={url || undefined}
+              />
+            ))}
+          </div>
+        </section>
+      )}
       <section className="form-section">
         <h3>Identificación</h3>
         <div className="pdp-facts">
@@ -1137,6 +1156,9 @@ export function ProductDetail({
               : '';
           return (
             <div key={m.id} className="history-line">
+              {m.photos?.[0] ? (
+                <ProductPhoto name={record.name} url={m.photos[0]} />
+              ) : null}
               <div>
                 {m.reason || (m.quantity > 0 ? 'Stock' : 'Devolución')}
                 {m.location || m.supplier_id ? (
@@ -1149,7 +1171,9 @@ export function ProductDetail({
                       .join(' · ')}
                   </small>
                 ) : null}
-                {detail ? <small>{detail}</small> : null}
+                {detail ? (
+                  <small className="snapshot-copy">{detail}</small>
+                ) : null}
                 <small>{new Date(m.created_at).toLocaleString('es-AR')}</small>
               </div>
               <strong className={m.quantity > 0 ? 'positive' : 'negative'}>
@@ -1193,14 +1217,224 @@ function productFieldValues(
       .map((field) => [field.name, product.attributes[field.name]]),
   );
 }
+function formatOrderDate(value: string) {
+  if (!value) return 'Sin definir';
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) return value;
+  return `${day}/${month}/${year}`;
+}
+
+function itemDescription(item: Item, product?: Product) {
+  const configured = product
+    ? describeConfigured(product, item.selections.config)
+    : '';
+  if (configured) return configured;
+  const extras = item.selections.options.map((option) => option.name);
+  return extras.length ? [item.name, ...extras].join('\n') : item.name;
+}
+
+function itemPhoto(item: Item, product?: Product) {
+  if (!product) return undefined;
+  const kind = configuredKindOf(product);
+  if (kind && item.selections.config) {
+    try {
+      const config = parseConfig(kind, item.selections.config);
+      const url = selectedReferenceIds(kind, config)
+        .map((id) => product.pricing.photos[id])
+        .find(Boolean);
+      if (url) return url;
+    } catch {
+      /* use product photo */
+    }
+  }
+  return product.photos[0];
+}
+
+export function OrderDetail({
+  record,
+  data,
+  onEdit,
+  onPatch,
+  save,
+}: {
+  record: Order;
+  data: Data;
+  onEdit: () => void;
+  onPatch: (body: Record<string, unknown>) => Promise<void>;
+  save: Save;
+}) {
+  const [error, E] = useState('');
+  const customer = data.contacts.find((c) => c.id === record.customer_id);
+  const closed = record.status === 'cerrado';
+  const units = record.items.reduce((total, item) => total + item.quantity, 0);
+  return (
+    <div className="pdp">
+      <ErrorBox message={error} />
+      {closed ? (
+        <p className="hint">
+          Los precios y el stock están confirmados. Reabrí el pedido para
+          modificarlo; se devolverán las unidades al stock.
+        </p>
+      ) : null}
+      <section className="form-section" style={{ borderTop: 0, marginTop: 0 }}>
+        <article className="record-card order-detail-card">
+          <div className="record-card-top">
+            <div className="record-card-id">
+              <span className="record-link">
+                {customer?.name || 'Sin cliente'}
+              </span>
+              <small>
+                {record.number} · {formatOrderDate(record.date)}
+              </small>
+            </div>
+          </div>
+          <div className="record-card-status">
+            <StatusMenu
+              value={record.status}
+              title="Estado del pedido"
+              description="Elegí el estado. El cierre descuenta stock."
+              options={['nuevo', 'abierto', 'en producción', 'cerrado']}
+              onPick={(status) => onPatch({ status })}
+            />
+            <OrderPayMenu
+              order={record}
+              onChange={(pay, paid) => onPatch({ pay, paid })}
+            />
+            <OrderDeliveryMenu
+              delivery={record.delivery}
+              onChange={(delivery) => onPatch({ delivery })}
+            />
+            <StatusMenu
+              value={record.invoice ? 'factura emitida' : 'sin factura'}
+              title="Facturación"
+              description="Marcá si este pedido ya tiene factura."
+              options={['sin factura', 'factura emitida']}
+              onPick={(value) =>
+                onPatch({ invoice: value === 'factura emitida' ? 1 : 0 })
+              }
+            />
+          </div>
+          <dl className="record-card-facts">
+            <div>
+              <dt>Productos</dt>
+              <dd>{units === 1 ? '1 ud.' : `${units} uds.`}</dd>
+            </div>
+            <div>
+              <dt>Total</dt>
+              <dd className="amount">
+                {formatMoney(record.total, data.currency)}
+              </dd>
+              <small>
+                {`${orderDiscountPercent(record).toLocaleString('es-AR')}% dto.`}
+                {` · ${formatMoney(record.paid, data.currency)} cobrado`}
+              </small>
+            </div>
+            <div>
+              <dt>Ganancia</dt>
+              <dd className="amount">
+                {formatMoney(record.total - record.cost, data.currency)}
+              </dd>
+            </div>
+          </dl>
+        </article>
+      </section>
+      <section className="form-section">
+        <div className="section-heading">
+          <h3>Productos</h3>
+          <span>
+            {record.items.length}{' '}
+            {record.items.length === 1 ? 'ítem' : 'ítems'}
+          </span>
+        </div>
+        {record.items.length ? (
+          record.items.map((item) => {
+            const product = data.products.find((p) => p.id === item.product_id);
+            const supplier = data.contacts.find(
+              (c) => c.id === item.selections.supplier_id,
+            );
+            return (
+              <div className="stock-item" key={item.id}>
+                <div className="stock-item-copy">
+                  <ProductPhoto
+                    name={item.name}
+                    url={itemPhoto(item, product)}
+                  />
+                  <div>
+                    <b>{itemDescription(item, product)}</b>
+                    <small>
+                      {[
+                        `${item.quantity} ${item.quantity === 1 ? 'ud.' : 'uds.'}`,
+                        supplier?.name,
+                        item.selections.from_stock ? 'De stock' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </small>
+                  </div>
+                </div>
+                <div className="stock-item-side order-detail-money">
+                  <strong>
+                    {formatMoney(item.total, data.currency)}
+                  </strong>
+                  <small>
+                    {formatMoney(item.unit_price, data.currency)}
+                    {item.quantity > 1 ? ` × ${item.quantity}` : ''}
+                    {item.discount
+                      ? ` · −${(item.discount / 100).toFixed(2)}%`
+                      : ''}
+                  </small>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <p className="hint">Este pedido no tiene productos.</p>
+        )}
+      </section>
+      <section className="form-section">
+        <h3>Totales · {data.currency}</h3>
+        <div className="pdp-facts">
+          <Fact
+            label="Costo"
+            value={formatMoney(record.cost, data.currency)}
+          />
+          <Fact
+            label="Ganancia de Iconic"
+            value={formatMoney(record.total - record.cost, data.currency)}
+          />
+          <Fact
+            label="Total"
+            value={formatMoney(record.total, data.currency)}
+          />
+          <Fact
+            label="Saldo"
+            value={formatMoney(
+              Math.max(0, record.total - record.paid),
+              data.currency,
+            )}
+          />
+        </div>
+      </section>
+      {record.notes.trim() ? (
+        <section className="form-section">
+          <h3>Notas</h3>
+          <p className="order-detail-notes">{record.notes}</p>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 export function OrderForm({
   record,
   data,
   save,
+  onCancel,
 }: {
   record?: Order;
   data: Data;
   save: Save;
+  onCancel?: () => void;
 }) {
   const [f, set] = useState({
     customer_id: record?.customer_id || '',
@@ -1618,23 +1852,25 @@ export function OrderForm({
                 </div>
                 {i.snapshot ? (
                   <div className="snapshot">
-                    <b>{i.snapshot.name}</b>
+                    <b>{itemDescription(i.snapshot, p)}</b>
                     <small>
                       {i.snapshot.sku} · precio y costo guardados en este pedido
                     </small>
                     {supplierName(i, p) ? (
                       <span>Proveedor: {supplierName(i, p)}</span>
                     ) : null}
-                    {i.snapshot.selections.options.map((o) => (
-                      <span key={o.id}>
-                        {o.name} · +{formatMoney(o.price, data.currency)}
-                      </span>
-                    ))}
-                    {Object.entries(i.attributes).map(([k, v]) => (
-                      <span key={k}>
-                        {k}: {v}
-                      </span>
-                    ))}
+                    {!configuredKindOf(p) &&
+                      i.snapshot.selections.options.map((o) => (
+                        <span key={o.id}>
+                          {o.name} · +{formatMoney(o.price, data.currency)}
+                        </span>
+                      ))}
+                    {!configuredKindOf(p) &&
+                      Object.entries(i.attributes).map(([k, v]) => (
+                        <span key={k}>
+                          {k}: {v}
+                        </span>
+                      ))}
                   </div>
                 ) : selecting ? (
                   <OrderProductPicker
@@ -1803,16 +2039,15 @@ export function OrderForm({
                       Esta unidad ya está en stock. La combinación y el
                       proveedor no se modifican.
                     </small>
-                    {(configuredKindOf(p) && i.config
-                      ? Object.entries(
-                          configLabels(configuredKindOf(p)!, i.config),
-                        )
-                      : Object.entries(i.attributes)
-                    ).map(([k, v]) => (
-                      <span key={k}>
-                        {k}: {v}
-                      </span>
-                    ))}
+                    {configuredKindOf(p) && i.config ? (
+                      <b>{configLine(p, i.config)}</b>
+                    ) : (
+                      Object.entries(i.attributes).map(([k, v]) => (
+                        <span key={k}>
+                          {k}: {v}
+                        </span>
+                      ))
+                    )}
                   </div>
                   ) : (
                   <>
@@ -2006,6 +2241,13 @@ export function OrderForm({
         El descuento del ítem se aplica después del precio elegido y sus
         adicionales. El cierre descuenta stock; no hay reservas previas.
       </p>
+      {onCancel ? (
+        <div className="form-footer" style={{ borderTop: 0, marginTop: 0 }}>
+          <button type="button" className="secondary" onClick={onCancel}>
+            Volver al detalle
+          </button>
+        </div>
+      ) : null}
       {!closed && (
         <Footer
           busy={busy}
@@ -2016,14 +2258,9 @@ export function OrderForm({
   );
 }
 function configLine(record: Product, config: Record<string, unknown>) {
-  const kind = configuredKindOf(record);
-  if (!kind || !Object.keys(config || {}).length)
-    return 'Combinación sin detalle';
-  try {
-    return summarizeConfig(kind, config as ProductConfig);
-  } catch {
-    return 'Combinación sin detalle';
-  }
+  return (
+    describeConfigured(record, config) || 'Combinación sin detalle'
+  );
 }
 export function StockOverview({
   record,
@@ -2058,7 +2295,9 @@ export function StockOverview({
       {items.length ? (
         items.map((m) => (
           <div className="stock-item" key={m.id}>
-            <div>
+            <div className="stock-item-copy">
+              <ProductPhoto name={record.name} url={m.photos?.[0]} />
+              <div>
               <b>
                 {configuredKindOf(record)
                   ? configLine(record, m.config)
@@ -2072,6 +2311,7 @@ export function StockOverview({
                   .filter(Boolean)
                   .join(' · ')}
               </small>
+              </div>
             </div>
             <div className="stock-item-side">
               <strong>
@@ -2117,6 +2357,8 @@ export function StockForm({
       movement?.supplier_id || record.supplier_id || '',
     ),
     [reason, R] = useState(movement?.reason || ''),
+    [photos, setPhotos] = useState<string[]>(movement?.photos || []),
+    [uploading, U] = useState(false),
     [config, setConfig] = useState<ProductConfig>(() => {
       if (!configured) return defaultConfig('montura');
       if (movement?.config && Object.keys(movement.config).length) {
@@ -2157,6 +2399,7 @@ export function StockForm({
                   location: place,
                   supplier_id: supplier,
                   config: configured ? config : undefined,
+                  photos,
                 }
               : {
                   action: 'stock',
@@ -2166,6 +2409,7 @@ export function StockForm({
                   location: place,
                   supplier_id: supplier,
                   config: configured ? config : undefined,
+                  photos,
                 },
           );
         } catch (e) {
@@ -2263,6 +2507,16 @@ export function StockForm({
             placeholder="Opcional"
           />
         </Field>
+        <Field label="Foto de la unidad" wide>
+          <Photos
+            value={photos}
+            max={4}
+            camera
+            onChange={setPhotos}
+            onBusy={U}
+            onError={E}
+          />
+        </Field>
       </div>
       {editing ? null : (
         <p className="hint">
@@ -2278,6 +2532,9 @@ export function StockForm({
             .slice(0, 8)
             .map((m) => (
               <div className="history-line" key={m.id}>
+                {m.photos?.[0] ? (
+                  <ProductPhoto name={record.name} url={m.photos[0]} />
+                ) : null}
                 <span>
                   {m.reason || (m.quantity > 0 ? 'Stock' : 'Devolución')}
                   <small>
@@ -2299,7 +2556,7 @@ export function StockForm({
         </>
       )}
       <Footer
-        busy={busy}
+        busy={busy || uploading}
         label={editing ? 'Guardar cambios' : 'Registrar movimiento'}
       />
     </form>

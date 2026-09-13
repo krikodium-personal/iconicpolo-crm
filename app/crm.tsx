@@ -24,6 +24,7 @@ import {
   CircleDollarSign,
   Landmark,
   Check,
+  Pencil,
 } from 'lucide-react';
 import {
   SidebarProvider,
@@ -75,6 +76,7 @@ import {
   ProductDetail,
   ProductBulkBar,
   OrderForm,
+  OrderDetail,
   StockForm,
   StockOverview,
   SettingsForm,
@@ -84,25 +86,18 @@ import {
 import { AccountBoard } from './account';
 import {
   StatusMenu,
+  OrderPayMenu,
+  OrderDeliveryMenu,
   ProductPhoto,
   Pick,
   ErrorBox,
   SelectCheck,
 } from './ui';
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import {
-  decimal,
   formatMoney,
   friendsPrice,
   margin,
   orderDiscountPercent,
-  parseDecimal,
 } from '@/lib/money';
 import { isConfiguredCategory, isConfiguredProduct } from '@/lib/configure';
 import { TypeCards, TypeConfigForm } from './type-config';
@@ -140,7 +135,7 @@ const nav: { id: string; title: string; short: string; icon: LucideIcon }[] = [
 type Panel =
   | { type: 'supplier' | 'customer'; record?: Contact }
   | { type: 'product'; record?: Product; editing?: boolean }
-  | { type: 'order'; record?: Order }
+  | { type: 'order'; record?: Order; editing?: boolean }
   | { type: 'stock'; record: Product; movement?: Movement; back?: 'inventory' }
   | { type: 'inventory'; record: Product }
   | { type: 'settings' };
@@ -388,91 +383,17 @@ function discountLabel(order: Order) {
   const pct = orderDiscountPercent(order);
   return `${pct.toLocaleString('es-AR')}% dto.`;
 }
-function OrderPayMenu({
-  order,
-  onChange,
-}: {
-  order: Order;
-  onChange: (pay: string, paid?: number) => Promise<void>;
-}) {
-  const value = payStatus(order);
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [amount, setAmount] = useState(decimal(order.paid));
-  const [error, setError] = useState('');
-  async function pick(option: string) {
-    setBusy(true);
-    setError('');
-    try {
-      await onChange(
-        option,
-        option === 'pago parcial' ? parseDecimal(amount) : undefined,
-      );
-      setOpen(false);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <Sheet
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (next) {
-          setAmount(decimal(order.paid));
-          setError('');
-        }
-      }}
-    >
-      <button
-        type="button"
-        className={`status ${value.replaceAll(' ', '-')} status-pick`}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-label={`Cambiar pago: ${value}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen(true);
-        }}
-      >
-        {value}
-      </button>
-      <SheetContent side="bottom" className="status-sheet">
-        <SheetHeader>
-          <SheetTitle>Estado de pago</SheetTitle>
-          <SheetDescription>
-            Marcá si está cobrado. En un pago parcial, escribí el importe.
-          </SheetDescription>
-        </SheetHeader>
-        <div className="status-sheet-options">
-          {['no pagado', 'pago parcial', 'pagado'].map((option) => (
-            <button
-              key={option}
-              type="button"
-              disabled={busy}
-              className={`status ${option.replaceAll(' ', '-')}${
-                option === value ? ' is-current' : ''
-              }`}
-              onClick={() => pick(option)}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-        <label className="status-sheet-amount">
-          Importe parcial
-          <input
-            inputMode="decimal"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-          />
-        </label>
-        {error ? <p className="pending-text">{error}</p> : null}
-      </SheetContent>
-    </Sheet>
-  );
+function orderUnits(order: Order) {
+  return order.items.reduce((total, item) => total + item.quantity, 0);
+}
+function unitsLabel(quantity: number) {
+  return quantity === 1 ? '1 ud.' : `${quantity} uds.`;
+}
+function cardDate(value: string) {
+  if (!value) return '';
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) return value;
+  return `${day}/${month}/${year}`;
 }
 function OrderCard({
   order,
@@ -483,6 +404,7 @@ function OrderCard({
   onOpen,
   onStatus,
   onPay,
+  onDelivery,
 }: {
   order: Order;
   customerName: string;
@@ -492,20 +414,22 @@ function OrderCard({
   onOpen: () => void;
   onStatus: (status: string) => Promise<void>;
   onPay: (pay: string, paid?: number) => Promise<void>;
+  onDelivery: (delivery: string) => Promise<void>;
 }) {
+  const units = orderUnits(order);
   return (
     <article className="record-card clickable-row">
       <button
         type="button"
         className="row-hit"
-        aria-label={`Abrir ${order.number}`}
+        aria-label={`Abrir ${customerName || order.number}`}
         onClick={onOpen}
       />
       <div className="record-card-top">
         <div className="record-card-id">
-          <span className="record-link">{order.number}</span>
+          <span className="record-link">{customerName || 'Sin cliente'}</span>
           <small>
-            {customerName} · {order.date}
+            {order.number} · {cardDate(order.date) || order.date}
           </small>
         </div>
         <div className="record-card-meta record-card-meta-inline">
@@ -513,7 +437,7 @@ function OrderCard({
             {compact ? (
               <button
                 type="button"
-                aria-label={`Abrir ${order.number}`}
+                aria-label={`Abrir ${customerName || order.number}`}
                 className="icon-button"
                 onClick={onOpen}
               >
@@ -534,14 +458,13 @@ function OrderCard({
           onPick={onStatus}
         />
         <OrderPayMenu order={order} onChange={onPay} />
+        <OrderDeliveryMenu delivery={order.delivery} onChange={onDelivery} />
       </div>
       <dl className={`record-card-facts${compact ? ' facts-compact' : ''}`}>
-        {compact ? null : (
-          <div>
-            <dt>Entrega</dt>
-            <dd>{order.delivery || 'Sin definir'}</dd>
-          </div>
-        )}
+        <div>
+          <dt>Productos</dt>
+          <dd>{unitsLabel(units)}</dd>
+        </div>
         <div>
           <dt>Total</dt>
           <dd className="amount">{money(order.total)}</dd>
@@ -560,12 +483,6 @@ function OrderCard({
     </article>
   );
 }
-const payStatus = (o: Order) =>
-  o.paid === 0 && o.total > 0
-    ? 'no pagado'
-    : o.paid < o.total
-      ? 'pago parcial'
-      : 'pagado';
 async function post(body: Record<string, unknown>) {
   const r = await fetch('/api/crm', {
     method: 'POST',
@@ -576,6 +493,7 @@ async function post(body: Record<string, unknown>) {
     error?: string;
     updated?: number;
     skipped?: number;
+    id?: string;
   };
   if (!r.ok) throw new Error(result.error || 'No se pudo guardar.');
   return result;
@@ -685,17 +603,32 @@ export default function CRM({
         ...body,
       });
       N('Cambios guardados.');
-      await refresh();
+      const next = await refresh();
+      if (panel?.type === 'order' && panel.record?.id === order.id) {
+        const updated = next.orders.find((item) => item.id === order.id);
+        if (updated) P({ ...panel, record: updated });
+      }
     } catch (e) {
       E((e as Error).message);
       throw e;
     }
   }
   async function save(body: Record<string, unknown>) {
-    await post(body);
+    const result = await post(body);
     N('Cambios guardados.');
     try {
       const next = await refresh();
+      if (body.action === 'order' || body.action === 'reopen') {
+        const id =
+          (typeof result.id === 'string' && result.id) ||
+          (typeof body.id === 'string' && body.id) ||
+          '';
+        const updated = next.orders.find((order) => order.id === id);
+        if (updated) {
+          P({ type: 'order', record: updated });
+          return;
+        }
+      }
       if (body.action === 'product' && typeof body.id === 'string') {
         const updated = next.products.find((p) => p.id === body.id);
         if (updated && !isConfiguredProduct(updated)) {
@@ -835,10 +768,14 @@ export default function CRM({
   function renderArchiveButton({ entity, record }: Archived) {
     return (
       <button
+        type="button"
         className="icon-button"
         title={record.archived ? 'Restaurar' : 'Archivar'}
         aria-label={`${record.archived ? 'Restaurar' : 'Archivar'} ${'number' in record ? record.number : record.name}`}
-        onClick={() => C({ entity, record })}
+        onClick={(event) => {
+          event.stopPropagation();
+          C({ entity, record });
+        }}
       >
         {record.archived ? <RotateCcw size={16} /> : <Archive size={16} />}
       </button>
@@ -878,10 +815,9 @@ export default function CRM({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Pedido / cliente</TableHead>
+                <TableHead>Cliente</TableHead>
                 <TableHead>Estado</TableHead>
-                {!compact && <TableHead>Entrega</TableHead>}
-                <TableHead>Pago</TableHead>
+                <TableHead>Productos</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 {!compact && (
                   <TableHead className="text-right">Ganancia</TableHead>
@@ -899,34 +835,43 @@ export default function CRM({
                       className="record-link"
                       onClick={() => P({ type: 'order', record: o })}
                     >
-                      {o.number}
+                      {customer(o.customer_id) || 'Sin cliente'}
                     </button>
                     <small>
-                      {customer(o.customer_id)} · {o.date}
+                      {o.number} · {cardDate(o.date) || o.date}
                     </small>
                   </TableCell>
                   <TableCell>
-                    <StatusMenu
-                      value={o.status}
-                      title="Estado del pedido"
-                      description="Elegí el estado. El cierre descuenta stock."
-                      options={['nuevo', 'abierto', 'en producción', 'cerrado']}
-                      onPick={(status) => patchOrder(o, { status })}
-                    />
+                    <div className="record-card-status">
+                      <StatusMenu
+                        value={o.status}
+                        title="Estado del pedido"
+                        description="Elegí el estado. El cierre descuenta stock."
+                        options={[
+                          'nuevo',
+                          'abierto',
+                          'en producción',
+                          'cerrado',
+                        ]}
+                        onPick={(status) => patchOrder(o, { status })}
+                      />
+                      <OrderPayMenu
+                        order={o}
+                        onChange={(pay, paid) => patchOrder(o, { pay, paid })}
+                      />
+                      <OrderDeliveryMenu
+                        delivery={o.delivery}
+                        onChange={(delivery) => patchOrder(o, { delivery })}
+                      />
+                    </div>
                   </TableCell>
-                  {!compact && (
-                    <TableCell>{o.delivery || 'Sin definir'}</TableCell>
-                  )}
-                  <TableCell>
-                    <OrderPayMenu
-                      order={o}
-                      onChange={(pay, paid) => patchOrder(o, { pay, paid })}
-                    />
-                    {!compact && <small>{money(o.paid)} cobrado</small>}
-                  </TableCell>
+                  <TableCell>{unitsLabel(orderUnits(o))}</TableCell>
                   <TableCell className="text-right amount">
                     {money(o.total)}
-                    <small>{discountLabel(o)}</small>
+                    <small>
+                      {discountLabel(o)}
+                      {compact ? '' : ` · ${money(o.paid)} cobrado`}
+                    </small>
                   </TableCell>
                   {!compact && (
                     <TableCell className="text-right amount">
@@ -936,7 +881,7 @@ export default function CRM({
                   <TableCell>
                     {compact ? (
                       <button
-                        aria-label={`Abrir ${o.number}`}
+                        aria-label={`Abrir ${customer(o.customer_id) || o.number}`}
                         className="icon-button"
                         onClick={() => P({ type: 'order', record: o })}
                       >
@@ -966,6 +911,7 @@ export default function CRM({
               onOpen={() => P({ type: 'order', record: o })}
               onStatus={(status) => patchOrder(o, { status })}
               onPay={(pay, paid) => patchOrder(o, { pay, paid })}
+              onDelivery={(delivery) => patchOrder(o, { delivery })}
             />
           ))}
         </div>
@@ -978,7 +924,9 @@ export default function CRM({
       : panel?.type === 'stock' || panel?.type === 'inventory'
         ? `Stock · ${panel.record.name}`
         : panel?.type === 'order'
-          ? panel.record?.number || 'Nuevo pedido'
+          ? panel.record
+            ? customer(panel.record.customer_id) || panel.record.number
+            : 'Nuevo pedido'
           : panel?.type === 'product' &&
               panel.record &&
               isConfiguredProduct(panel.record)
@@ -1941,6 +1889,51 @@ export default function CRM({
                     Agregar stock
                   </button>
                 </div>
+              ) : panel?.type === 'order' && panel.record && !panel.editing ? (
+                <div className="stock-dialog-heading">
+                  <div>
+                    <DialogTitle>{panelTitle}</DialogTitle>
+                    <DialogDescription>
+                      Resumen del pedido, productos y cobros.
+                    </DialogDescription>
+                  </div>
+                  {(
+                    data?.orders.find((o) => o.id === panel.record?.id) ??
+                    panel.record
+                  ).status === 'cerrado' ? (
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => {
+                        const record =
+                          data?.orders.find((o) => o.id === panel.record?.id) ??
+                          panel.record;
+                        if (record)
+                          void save({
+                            action: 'reopen',
+                            id: record.id,
+                            version: record.version,
+                          });
+                      }}
+                    >
+                      Reabrir pedido
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => {
+                        const record =
+                          data?.orders.find((o) => o.id === panel.record?.id) ??
+                          panel.record;
+                        if (record)
+                          P({ type: 'order', record, editing: true });
+                      }}
+                    >
+                      <Pencil size={16} /> Editar
+                    </button>
+                  )}
+                </div>
               ) : (
                 <>
                   <DialogTitle>{panelTitle}</DialogTitle>
@@ -2034,7 +2027,59 @@ export default function CRM({
                   />
                 )
               ) : panel.type === 'order' ? (
-                <OrderForm record={panel.record} data={data} save={save} />
+                panel.record && !panel.editing ? (
+                  <OrderDetail
+                    key={
+                      (
+                        data.orders.find((o) => o.id === panel.record?.id) ??
+                        panel.record
+                      ).version
+                    }
+                    record={
+                      data.orders.find((o) => o.id === panel.record?.id) ??
+                      panel.record
+                    }
+                    data={data}
+                    onEdit={() => {
+                      const record =
+                        data.orders.find((o) => o.id === panel.record?.id) ??
+                        panel.record;
+                      if (record)
+                        P({ type: 'order', record, editing: true });
+                    }}
+                    onPatch={(body) => {
+                      const record =
+                        data.orders.find((o) => o.id === panel.record?.id) ??
+                        panel.record;
+                      if (!record) return Promise.resolve();
+                      return patchOrder(record, body);
+                    }}
+                    save={save}
+                  />
+                ) : (
+                  <OrderForm
+                    key={panel.record?.id || 'new'}
+                    record={
+                      panel.record
+                        ? (data.orders.find((o) => o.id === panel.record?.id) ??
+                          panel.record)
+                        : undefined
+                    }
+                    data={data}
+                    save={save}
+                    onCancel={
+                      panel.record
+                        ? () => {
+                            const record =
+                              data.orders.find(
+                                (o) => o.id === panel.record?.id,
+                              ) ?? panel.record;
+                            if (record) P({ type: 'order', record });
+                          }
+                        : undefined
+                    }
+                  />
+                )
               ) : panel.type === 'inventory' ? (
                 <StockOverview
                   record={

@@ -114,6 +114,7 @@ export const stockMovements = sqliteTable(
     configKey: text('config_key').notNull().default(''),
     location: text('location').notNull().default(''),
     supplierId: text('supplier_id').notNull().default(''),
+    photos: text('photos').notNull().default('[]'),
   },
   (t) => [
     index('idx_stock_product').on(t.productId),

@@ -14,8 +14,10 @@ import {
   parseMontura,
   parsePricing,
   parseRodillera,
+  selectedReferenceIds,
   stockByConfig,
   stockKey,
+  summarizeConfig,
 } from '../lib/configure.ts';
 
 test('montura defaults are valid and porta estribera starts off', () => {
@@ -91,6 +93,16 @@ test('order prices use configured extras and stay pending until saved', () => {
   assert.equal(totals.pending, false);
   assert.equal(totals.price, 2800);
   assert.equal(totals.cost, 1500);
+  const withPhoto = parsePricing({
+    extras: pricing.extras,
+    photos: {
+      tipo_bauti: '/api/images/abc123',
+      ignored: 'https://example.com/x.png',
+    },
+  });
+  assert.equal(withPhoto.photos.tipo_bauti, '/api/images/abc123');
+  assert.equal(withPhoto.photos.ignored, undefined);
+  assert.deepEqual(selectedReferenceIds('montura', config), ['tipo_bauti']);
 });
 
 test('stock by config keeps only combinations with units', () => {
@@ -167,6 +179,64 @@ test('montura labels list every selected option', () => {
   assert.ok(labels.Tamaño);
   assert.equal(labels['Acabado asiento'], 'Liso');
   assert.equal(labels.Corte, 'Tapita');
+});
+
+test('montura stock summary hides default faldin and porta estribera', () => {
+  const text = summarizeConfig('montura', {
+    ...defaultMontura(),
+    tipo: 'bauti',
+    material: 'cuero_forrado',
+    color: 'negro',
+    tamano: '19',
+    acabadoAsiento: 'liso',
+    materialAsiento: 'descarne',
+    corte: 'tapita',
+  });
+  assert.equal(
+    text,
+    'Montura Bauti cuero forrado negro 19\nAsiento: liso, descarne\nCorte: tapita',
+  );
+});
+
+test('montura stock summary shows non-default faldin and porta estribera', () => {
+  const text = summarizeConfig('montura', {
+    ...defaultMontura(),
+    faldin: false,
+    portaEstriberaIngles: true,
+  });
+  assert.match(text, /Sin faldín/);
+  assert.match(text, /Porta estribera inglés/);
+  assert.doesNotMatch(text, /Faldín: /);
+});
+
+test('rodillera stock summary hides matching protector color', () => {
+  const text = summarizeConfig('rodillera', {
+    ...defaultRodillera(),
+    modelo: 'premium',
+    tipo: 'doble_velcro',
+    color: 'chocolate',
+    protectorCentroColor: 'chocolate',
+    tamano: 'mediano',
+  });
+  assert.equal(
+    text,
+    'Rodillera premium doble velcro chocolate.\nTamaño: mediano',
+  );
+});
+
+test('rodillera stock summary shows a different protector color', () => {
+  const text = summarizeConfig('rodillera', {
+    ...defaultRodillera(),
+    modelo: 'premium',
+    tipo: 'doble_velcro',
+    color: 'chocolate',
+    protectorCentroColor: 'negro',
+    tamano: 'mediano',
+  });
+  assert.equal(
+    text,
+    'Rodillera premium doble velcro chocolate.\nTamaño: mediano\nProtector centro: negro',
+  );
 });
 
 test('rodillera defaults are valid and extras start off', () => {

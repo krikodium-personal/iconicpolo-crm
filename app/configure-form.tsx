@@ -36,13 +36,14 @@ import {
   configLabels,
   extraCharges,
   extraTotals,
+  selectedReferenceIds,
   fontStack,
   stockKey,
   stockForConfig,
 } from '@/lib/configure';
 import { formatMoney } from '@/lib/money';
 import type { Movement } from '@/lib/types';
-import { Field, Pick, Photos } from './ui';
+import { Field, Pick, Photos, ProductPhoto } from './ui';
 
 function ColorPicker({
   label,
@@ -74,6 +75,31 @@ function ColorPicker({
         <small>{selected?.name || 'Sin color'}</small>
       </div>
     </Field>
+  );
+}
+
+function ReferenceShots({
+  kind,
+  value,
+  pricing,
+}: {
+  kind: ConfiguredKind;
+  value: ProductConfig;
+  pricing: ConfiguredPricing;
+}) {
+  const shots = selectedReferenceIds(kind, value)
+    .map((id) => ({
+      id,
+      url: pricing.photos[id] || '',
+    }))
+    .filter((item) => item.url);
+  if (!shots.length) return null;
+  return (
+    <div className="reference-shots">
+      {shots.map((shot) => (
+        <ProductPhoto key={shot.id} name="Referencia" url={shot.url} />
+      ))}
+    </div>
   );
 }
 
@@ -222,6 +248,7 @@ export function Configurator({
     const set = (patch: Partial<MonturaConfig>) => onChange({ ...c, ...patch });
     return (
       <div className="configurator">
+        <ReferenceShots kind="montura" value={c} pricing={pricing} />
         <div className="form-grid">
           <Field label="Tipo *">
             <Pick
@@ -424,6 +451,7 @@ export function Configurator({
       onChange({ ...c, ...patch });
     return (
       <div className="configurator">
+        <ReferenceShots kind="rodillera" value={c} pricing={pricing} />
         <div className="form-grid">
           <Field label="Tipo *">
             <Pick
@@ -658,6 +686,7 @@ export function Configurator({
       });
     return (
       <div className="configurator">
+        <ReferenceShots kind="bota" value={c} pricing={pricing} />
         <div className="form-grid">
           <Field label="Modelo *">
             <Pick
@@ -888,6 +917,7 @@ export function Configurator({
   const set = (patch: Partial<CascoConfig>) => onChange({ ...c, ...patch });
   return (
     <div className="configurator">
+      <ReferenceShots kind="casco" value={c} pricing={pricing} />
       <div className="form-grid">
         <Field label="Modelo *">
           <Pick

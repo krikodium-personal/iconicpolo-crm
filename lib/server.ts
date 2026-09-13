@@ -64,6 +64,24 @@ export function photo(v: unknown) {
     throw new Error('Foto inválida.');
   return s;
 }
+function photos(v: unknown, required = false) {
+  if (v == null || v === '') return [];
+  const items =
+    typeof v === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(v);
+          } catch {
+            return null;
+          }
+        })()
+      : v;
+  if (!Array.isArray(items)) {
+    if (!required) return [];
+    throw new Error('Fotos inválidas.');
+  }
+  return list(items, 10).map(photo).filter(Boolean);
+}
 async function requireSupplier(id: unknown, keep?: string) {
   const supplier = str(id, 'Proveedor', true);
   const row = await stmt(
@@ -154,6 +172,13 @@ export async function ensureConfiguredCatalog() {
       ? [
           stmt(
             "ALTER TABLE stock_movements ADD supplier_id text NOT NULL DEFAULT ''",
+          ),
+        ]
+      : []),
+    ...(!movementNames.has('photos')
+      ? [
+          stmt(
+            "ALTER TABLE stock_movements ADD photos text NOT NULL DEFAULT '[]'",
           ),
         ]
       : []),
@@ -268,6 +293,7 @@ export async function allData() {
         location: typeof row.location === 'string' ? row.location : '',
         supplier_id:
           typeof row.supplier_id === 'string' ? row.supplier_id : '',
+        photos: photos(row.photos),
       };
     }),
     categories: cat.results.map((r) => decode<Category>(r, ['fields'])),
@@ -793,6 +819,30 @@ export async function patchOrder(b: Record<string, unknown>) {
     if (!result.meta.changes) throw new Error('Pedido no disponible.');
     return { ok: true };
   }
+  if (b.delivery !== undefined) {
+    const delivery = date(b.delivery);
+    if (delivery && delivery < existing.date)
+      throw new Error('La entrega no puede ser anterior al pedido.');
+    const result = await stmt(
+      'UPDATE orders SET delivery=?,version=? WHERE id=?',
+      delivery,
+      version,
+      id,
+    ).run();
+    if (!result.meta.changes) throw new Error('Pedido no disponible.');
+    return { ok: true };
+  }
+  if (b.invoice !== undefined) {
+    const invoice = integer(b.invoice, 'Facturación', 1);
+    const result = await stmt(
+      'UPDATE orders SET invoice=?,version=? WHERE id=?',
+      invoice,
+      version,
+      id,
+    ).run();
+    if (!result.meta.changes) throw new Error('Pedido no disponible.');
+    return { ok: true };
+  }
   const pay = choice(
     b.pay,
     ['no pagado', 'pago parcial', 'pagado'],
@@ -995,7 +1045,7 @@ export async function mutate(b: Record<string, unknown>) {
           );
       }
       await stmt(
-        'INSERT INTO stock_movements (id,product_id,quantity,reason,created_at,config,config_key,location,supplier_id) VALUES (?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO stock_movements (id,product_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos) VALUES (?,?,?,?,?,?,?,?,?,?)',
         crypto.randomUUID(),
         id,
         q,
@@ -1005,6 +1055,7 @@ export async function mutate(b: Record<string, unknown>) {
         key,
         location,
         supplier,
+        JSON.stringify(photos(b.photos)),
       ).run();
       return { ok: true };
     }
@@ -1075,13 +1126,14 @@ export async function mutate(b: Record<string, unknown>) {
       await d.batch([
         stmt('DROP TRIGGER IF EXISTS stock_immutable_update'),
         stmt(
-          'UPDATE stock_movements SET quantity=?,reason=?,config=?,config_key=?,location=?,supplier_id=? WHERE id=?',
+          'UPDATE stock_movements SET quantity=?,reason=?,config=?,config_key=?,location=?,supplier_id=?,photos=? WHERE id=?',
           q,
           typeof b.reason === 'string' ? str(b.reason, 'Motivo', false, 500) : '',
           configJson,
           key,
           location,
           supplier,
+          JSON.stringify(photos(b.photos)),
           movementId,
         ),
         stmt(

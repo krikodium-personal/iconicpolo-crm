@@ -98,6 +98,7 @@ export type Movement = {
   config_key: string;
   location: string;
   supplier_id: string;
+  photos: string[];
 };
 export type Partner = {
   id: string;

@@ -438,12 +438,90 @@ export type BotaMeasureId = (typeof BOTA_MEASURES)[number]['id'];
 
 export type PricePoint = { price: number; cost: number };
 export type ExtraCharge = PricePoint & { pending: boolean };
-export type ConfiguredPricing = { extras: Record<string, PricePoint> };
+export type ConfiguredPricing = {
+  extras: Record<string, PricePoint>;
+  photos: Record<string, string>;
+};
 
 export type PricedOption = { id: string; label: string };
 export type PricedGroup = { id: string; label: string; options: PricedOption[] };
 
-export const emptyPricing = (): ConfiguredPricing => ({ extras: {} });
+export const emptyPricing = (): ConfiguredPricing => ({
+  extras: {},
+  photos: {},
+});
+
+export const REFERENCE_PHOTO_GROUPS: Record<ConfiguredKind, PricedGroup[]> = {
+  montura: [
+    {
+      id: 'tipo',
+      label: 'Tipo',
+      options: [
+        { id: 'tipo_americana', label: 'Americana' },
+        { id: 'tipo_bauti', label: 'Bauti' },
+      ],
+    },
+  ],
+  casco: [
+    {
+      id: 'modelo',
+      label: 'Opción base',
+      options: [
+        { id: 'modelo_h1', label: 'H1 homologado' },
+        { id: 'modelo_standard', label: 'Standard sin homologar' },
+      ],
+    },
+  ],
+  rodillera: [
+    {
+      id: 'tipo',
+      label: 'Tipo',
+      options: RODILLERA_TIPOS.map((tipo) => ({
+        id: `tipo_${tipo.id}`,
+        label: tipo.label,
+      })),
+    },
+    {
+      id: 'modelo',
+      label: 'Modelo',
+      options: [
+        { id: 'modelo_standard', label: 'Standard' },
+        { id: 'modelo_premium', label: 'Premium' },
+      ],
+    },
+  ],
+  bota: [
+    {
+      id: 'modelo',
+      label: 'Opción base',
+      options: BOTA_MODELOS.map((modelo) => ({
+        id: botaModeloPriceId(modelo.id),
+        label: modelo.label,
+      })),
+    },
+  ],
+};
+
+export function referencePhotoIds(kind: ConfiguredKind) {
+  return new Set(
+    REFERENCE_PHOTO_GROUPS[kind].flatMap((group) =>
+      group.options.map((option) => option.id),
+    ),
+  );
+}
+
+export function selectedReferenceIds(
+  kind: ConfiguredKind,
+  raw: ProductConfig,
+) {
+  if (kind === 'montura') return [`tipo_${(raw as MonturaConfig).tipo}`];
+  if (kind === 'casco') return [`modelo_${(raw as CascoConfig).modelo}`];
+  if (kind === 'rodillera') {
+    const config = raw as RodilleraConfig;
+    return [`tipo_${config.tipo}`, `modelo_${config.modelo}`];
+  }
+  return [botaModeloPriceId((raw as BotaConfig).modelo)];
+}
 
 export const PRICED_GROUPS: Record<ConfiguredKind, PricedGroup[]> = {
   montura: [
@@ -582,6 +660,7 @@ function moneyAmount(value: unknown, label: string) {
 
 export function parsePricing(raw: unknown): ConfiguredPricing {
   const extras: Record<string, PricePoint> = {};
+  const photos: Record<string, string> = {};
   const source =
     raw && typeof raw === 'object'
       ? ((raw as { extras?: unknown }).extras ?? raw)
@@ -596,7 +675,17 @@ export function parsePricing(raw: unknown): ConfiguredPricing {
       };
     }
   }
-  return { extras };
+  const bag =
+    raw && typeof raw === 'object'
+      ? (raw as { photos?: unknown }).photos
+      : null;
+  if (bag && typeof bag === 'object' && !Array.isArray(bag)) {
+    for (const [id, value] of Object.entries(bag)) {
+      if (typeof value === 'string' && /^\/api\/images\/[a-z0-9-]+$/.test(value))
+        photos[id] = value;
+    }
+  }
+  return { extras, photos };
 }
 
 export function pricePoint(
@@ -1547,9 +1636,83 @@ export function stockByConfig(
     );
 }
 
+function lowerEs(value: string) {
+  return value.toLocaleLowerCase('es');
+}
+
+function summarizeMontura(raw: MonturaConfig) {
+  const tipo = raw.tipo === 'americana' ? 'Americana' : 'Bauti';
+  const material =
+    MONTURA_MATERIALS.find((item) => item.id === raw.material)?.label ||
+    raw.material;
+  const color = raw.color === 'negro' ? 'Negro' : 'Marrón';
+  const asiento =
+    raw.acabadoAsiento === 'perforado' ? 'Perforado' : 'Liso';
+  const asientoMaterial = {
+    descarne: 'Descarne',
+    cuero_forrado: 'Cuero forrado',
+    gamuza: 'Gamuza',
+    suela: 'Suela',
+  }[raw.materialAsiento];
+  const corte = raw.corte === 'tapita' ? 'Tapita' : 'Costura';
+  const lines = [
+    `Montura ${tipo} ${lowerEs(material)} ${lowerEs(color)} ${raw.tamano}`,
+    `Asiento: ${lowerEs(asiento)}, ${lowerEs(asientoMaterial)}`,
+    `Corte: ${lowerEs(corte)}`,
+  ];
+  if (!raw.faldin) lines.push('Sin faldín');
+  if (raw.portaEstriberaIngles) lines.push('Porta estribera inglés');
+  if (raw.iniciales && raw.inicialesTexto.trim()) {
+    lines.push(`Iniciales: ${raw.inicialesTexto.trim()}`);
+  }
+  return lines.join('\n');
+}
+
+function summarizeRodillera(raw: RodilleraConfig) {
+  const modelo =
+    RODILLERA_MODELOS.find((item) => item.id === raw.modelo)?.label ||
+    raw.modelo;
+  const tipo =
+    RODILLERA_TIPOS.find((item) => item.id === raw.tipo)?.label || raw.tipo;
+  const color =
+    RODILLERA_COLORS.find((item) => item.id === raw.color)?.label || raw.color;
+  const tamano =
+    RODILLERA_SIZES.find((item) => item.id === raw.tamano)?.label || raw.tamano;
+  const protector =
+    RODILLERA_COLORS.find((item) => item.id === raw.protectorCentroColor)
+      ?.label || raw.protectorCentroColor;
+  const lines = [
+    `Rodillera ${lowerEs(modelo)} ${lowerEs(tipo)} ${lowerEs(color)}.`,
+    `Tamaño: ${lowerEs(tamano)}`,
+  ];
+  if (raw.protectorCentroColor !== raw.color) {
+    lines.push(`Protector centro: ${lowerEs(protector)}`);
+  }
+  if (raw.iniciales && raw.inicialesTexto.trim()) {
+    lines.push(`Iniciales: ${raw.inicialesTexto.trim()}`);
+  }
+  if (raw.bordado) lines.push('Bordado');
+  return lines.join('\n');
+}
+
 export function summarizeConfig(kind: ConfiguredKind, raw: ProductConfig) {
+  if (kind === 'montura') return summarizeMontura(raw as MonturaConfig);
+  if (kind === 'rodillera') return summarizeRodillera(raw as RodilleraConfig);
   const labels = configLabels(kind, raw);
   return Object.entries(labels)
     .map(([key, value]) => `${key}: ${value}`)
     .join(' · ');
+}
+
+export function describeConfigured(
+  product: { kind?: string; category: string },
+  config: unknown,
+) {
+  const kind = configuredKindOf(product);
+  if (!kind || !config || typeof config !== 'object') return '';
+  try {
+    return summarizeConfig(kind, parseConfig(kind, config));
+  } catch {
+    return '';
+  }
 }
