@@ -6,27 +6,33 @@ import {
   promoPrice,
   increaseByPercent,
 } from './money';
-import type {
-  Product,
-  Item,
-  Order,
-  Contact,
-  Option,
-  Category,
-  Partner,
-  AccountExpense,
-  PartnerCashout,
+import {
+  ORDER_STATUSES,
+  orderIsDelivered,
+  orderIsLocked,
+  type Product,
+  type Item,
+  type Order,
+  type Contact,
+  type Option,
+  type Category,
+  type Partner,
+  type AccountExpense,
+  type PartnerCashout,
 } from './types';
 import { whatsappGroup } from './whatsapp';
 import {
   configuredKindOf,
   extraTotals,
   configLabels,
+  itemStockHold,
   parseConfig,
   parsePricing,
+  stockAvailability,
   stockKey,
   stockPlaceLabel,
   TEMPLATE_IDS,
+  type StockHold,
 } from './configure';
 export function obj(v: unknown): Record<string, unknown> {
   if (!v || typeof v !== 'object' || Array.isArray(v))
@@ -211,6 +217,8 @@ export async function ensureConfiguredCatalog() {
     stmt(
       `CREATE TRIGGER stock_no_negative BEFORE INSERT ON stock_movements WHEN NEW.quantity + COALESCE((SELECT SUM(quantity) FROM stock_movements WHERE product_id=NEW.product_id AND COALESCE(config_key,'')=COALESCE(NEW.config_key,'')),0) < 0 BEGIN SELECT RAISE(ABORT,'STOCK_NEGATIVE'); END`,
     ),
+    stmt('DROP TRIGGER IF EXISTS order_closed_stock'),
+    stmt('DROP TRIGGER IF EXISTS order_reopened_stock'),
     stmt(
       "INSERT OR IGNORE INTO products(id,name,sku,category,supplier_id,cost,price,ff_discount,ff_price,promo_kind,promo_value,photos,options,attributes,pricing,kind) VALUES ('cfg-montura','Montura','MONTURA','monturas',NULL,0,0,1500,NULL,'none',0,'[]','[]',?,'{}','configured')",
       pending,
@@ -231,6 +239,231 @@ export async function ensureConfiguredCatalog() {
       "UPDATE products SET kind='configured', version=version+1 WHERE id IN ('cfg-montura','cfg-casco','cfg-rodillera','cfg-bota') AND kind!='configured'",
     ),
   ]);
+}
+
+function usesWarehouseStock(item: Item, product?: Product) {
+  const kind = product ? configuredKindOf(product) : null;
+  if (!kind) return true;
+  return !!item.selections.from_stock;
+}
+
+function warehouseConfig(item: Item, product?: Product) {
+  const kind = product ? configuredKindOf(product) : null;
+  if (!kind || !item.selections.config) return { key: '', configJson: '{}' };
+  const config = parseConfig(kind, item.selections.config);
+  return { key: stockKey(kind, config), configJson: JSON.stringify(config) };
+}
+
+async function productsByIds(ids: string[]) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return new Map<string, Product>();
+  const rows = await stmt(
+    `SELECT * FROM products WHERE id IN (${unique.map(() => '?').join(',')})`,
+    ...unique,
+  ).all();
+  return new Map(
+    rows.results.map((row) => {
+      const product = decode<Product>(row, ['photos', 'options', 'attributes']);
+      product.kind = product.kind === 'configured' ? 'configured' : 'sku';
+      return [product.id, product] as const;
+    }),
+  );
+}
+
+function movementConfig(raw: unknown): Record<string, unknown> {
+  if (typeof raw === 'string' && raw) {
+    try {
+      return obj(JSON.parse(raw));
+    } catch {
+      return {};
+    }
+  }
+  if (raw && typeof raw === 'object') return obj(raw);
+  return {};
+}
+
+async function reservedHoldsForProducts(
+  productIds: string[],
+  exceptOrderId: string,
+) {
+  const unique = [...new Set(productIds.filter(Boolean))];
+  if (!unique.length) return [] as StockHold[];
+  const products = await productsByIds(unique);
+  const rows = await stmt(
+    `SELECT o.id AS order_id, o.number AS order_number, i.product_id, i.quantity, i.selections
+     FROM order_items i
+     JOIN orders o ON o.id = i.order_id
+     WHERE o.archived=0 AND o.status != 'entregado' AND o.id != ?
+     AND i.product_id IN (${unique.map(() => '?').join(',')})`,
+    exceptOrderId,
+    ...unique,
+  ).all<{
+    order_id: string;
+    order_number: string;
+    product_id: string;
+    quantity: number;
+    selections: string;
+  }>();
+  const holds: StockHold[] = [];
+  for (const row of rows.results) {
+    const selections =
+      typeof row.selections === 'string'
+        ? (JSON.parse(row.selections) as Item['selections'])
+        : row.selections;
+    const product = products.get(row.product_id);
+    const hold = itemStockHold(
+      { product_id: row.product_id, quantity: row.quantity, selections },
+      product ? configuredKindOf(product) : null,
+      { id: row.order_id, number: row.order_number },
+    );
+    if (hold) holds.push(hold);
+  }
+  return holds;
+}
+
+async function assertFromStockAvailable(orderId: string, items: Item[]) {
+  const fromStock = items.filter((item) => item.selections.from_stock);
+  if (!fromStock.length) return;
+  const productIds = [...new Set(fromStock.map((item) => item.product_id))];
+  const [products, holds, movementRows] = await Promise.all([
+    productsByIds(productIds),
+    reservedHoldsForProducts(productIds, orderId),
+    stmt(
+      `SELECT product_id, config_key, quantity, location, supplier_id, config
+       FROM stock_movements
+       WHERE product_id IN (${productIds.map(() => '?').join(',')})`,
+      ...productIds,
+    ).all<{
+      product_id: string;
+      config_key: string | null;
+      quantity: number;
+      location: string | null;
+      supplier_id: string | null;
+      config: unknown;
+    }>(),
+  ]);
+  const movements = movementRows.results.map((row) => ({
+    product_id: row.product_id,
+    config_key: row.config_key || '',
+    quantity: row.quantity,
+    location: row.location || '',
+    supplier_id: row.supplier_id || '',
+    config: movementConfig(row.config),
+  }));
+  const used = new Map<string, number>();
+  for (const item of fromStock) {
+    const product = products.get(item.product_id);
+    const hold = itemStockHold(
+      item,
+      product ? configuredKindOf(product) : null,
+      { id: orderId, number: '' },
+    );
+    if (!hold) continue;
+    const rows = stockAvailability(movements, holds, item.product_id);
+    const row = rows.find(
+      (candidate) =>
+        candidate.config_key === hold.configKey &&
+        (!hold.location || candidate.location === hold.location),
+    );
+    const key = `${hold.productId}\t${hold.configKey}\t${hold.location}`;
+    const taken = used.get(key) || 0;
+    if (item.quantity > (row?.available || 0) - taken)
+      throw new Error(
+        `Esa unidad de ${item.name} ya está reservada para otro pedido.`,
+      );
+    used.set(key, taken + item.quantity);
+  }
+}
+
+async function orderWarehouseMoves(
+  order: { id: string; number: string },
+  items: Item[],
+  direction: 'close' | 'reopen',
+) {
+  const now = new Date().toISOString();
+  if (direction === 'reopen') {
+    const closes = await stmt(
+      'SELECT product_id, quantity, config, config_key, location, supplier_id FROM stock_movements WHERE order_id=? AND quantity < 0',
+      order.id,
+    ).all<{
+      product_id: string;
+      quantity: number;
+      config: unknown;
+      config_key: string | null;
+      location: string | null;
+      supplier_id: string | null;
+    }>();
+    return closes.results.map((row) =>
+      stmt(
+        'INSERT INTO stock_movements (id,product_id,order_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        crypto.randomUUID(),
+        row.product_id,
+        order.id,
+        Math.abs(row.quantity),
+        `Reapertura ${order.number}`,
+        now,
+        typeof row.config === 'string'
+          ? row.config
+          : JSON.stringify(movementConfig(row.config)),
+        row.config_key || '',
+        row.location || '',
+        row.supplier_id || '',
+        '[]',
+      ),
+    );
+  }
+  const already = await stmt(
+    'SELECT id FROM stock_movements WHERE order_id=? AND quantity < 0 LIMIT 1',
+    order.id,
+  ).first();
+  if (already) return [];
+  const products = await productsByIds(items.map((item) => item.product_id));
+  const statements = [];
+  for (const item of items) {
+    const product = products.get(item.product_id);
+    if (!usesWarehouseStock(item, product)) continue;
+    const { key, configJson } = warehouseConfig(item, product);
+    const preferred = item.selections.location || '';
+    const have = await stmt(
+      preferred
+        ? "SELECT COALESCE(SUM(quantity),0) qty FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? AND COALESCE(location,'')=?"
+        : "SELECT COALESCE(SUM(quantity),0) qty FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=?",
+      item.product_id,
+      key,
+      ...(preferred ? [preferred] : []),
+    ).first<{ qty: number }>();
+    if ((have?.qty || 0) < item.quantity)
+      throw new Error(
+        `Stock insuficiente para ${item.name}. Registrá un ingreso de esa combinación antes de cerrar.`,
+      );
+    let location = preferred;
+    if (!location) {
+      const place = await stmt(
+        "SELECT location FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? GROUP BY location HAVING SUM(quantity) >= ? LIMIT 1",
+        item.product_id,
+        key,
+        item.quantity,
+      ).first<{ location: string }>();
+      location = place?.location || '';
+    }
+    statements.push(
+      stmt(
+        'INSERT INTO stock_movements (id,product_id,order_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        crypto.randomUUID(),
+        item.product_id,
+        order.id,
+        -item.quantity,
+        `Entrega ${order.number}`,
+        now,
+        configJson,
+        key,
+        location,
+        item.selections.supplier_id || '',
+        '[]',
+      ),
+    );
+  }
+  return statements;
 }
 
 export async function allData() {
@@ -526,7 +759,7 @@ export async function saveOrder(b: Record<string, unknown>) {
       ).first<Order>()
     : null;
   if (b.id && !existing) throw new Error('Pedido no disponible.');
-  if (existing?.status === 'cerrado')
+  if (existing && orderIsLocked(existing.status))
     throw new Error('Reabrí el pedido antes de editarlo.');
   const customer = await customerIdForOrder(b);
   const previous = existing
@@ -620,6 +853,9 @@ export async function saveOrder(b: Record<string, unknown>) {
             stock_qty: input.from_stock
               ? integer(input.stock_qty, 'Stock', 10000)
               : undefined,
+            location: input.from_stock
+              ? str(input.location || '', 'Ubicación', false, 40) || undefined
+              : undefined,
           },
           unit_price: integer(base + extras.price),
           unit_cost: integer(p.cost + extras.cost),
@@ -672,6 +908,9 @@ export async function saveOrder(b: Record<string, unknown>) {
             stock_qty: input.from_stock
               ? integer(input.stock_qty, 'Stock', 10000)
               : undefined,
+            location: input.from_stock
+              ? str(input.location || '', 'Ubicación', false, 40) || undefined
+              : undefined,
           },
           unit_price: integer(base + options.reduce((s, o) => s + o.price, 0)),
           unit_cost: integer(p.cost + options.reduce((s, o) => s + o.cost, 0)),
@@ -706,6 +945,7 @@ export async function saveOrder(b: Record<string, unknown>) {
       cost: totals.cost,
     });
   }
+  await assertFromStockAvailable(id, items);
   const total = integer(items.reduce((s, i) => s + i.total, 0));
   const cost = integer(items.reduce((s, i) => s + i.cost, 0));
   const paid = integer(b.paid, 'Cobrado');
@@ -714,11 +954,7 @@ export async function saveOrder(b: Record<string, unknown>) {
   const delivery = date(b.delivery);
   if (delivery && delivery < orderDate)
     throw new Error('La entrega no puede ser anterior al pedido.');
-  const status = choice(
-    b.status,
-    ['nuevo', 'abierto', 'en producción', 'cerrado'],
-    'Estado',
-  );
+  const status = choice(b.status, [...ORDER_STATUSES], 'Estado');
   const invoice = integer(b.invoice, 'Facturación', 1);
   const notes = str(b.notes, 'Notas', false, 2000);
   const currency =
@@ -785,7 +1021,7 @@ export async function saveOrder(b: Record<string, unknown>) {
         i.cost,
       ),
     );
-  if (status !== (existing?.status || 'nuevo'))
+  if (status !== (existing?.status || 'nuevo')) {
     statements.push(
       stmt(
         'UPDATE orders SET status=?,version=version+1 WHERE id=?',
@@ -793,6 +1029,23 @@ export async function saveOrder(b: Record<string, unknown>) {
         id,
       ),
     );
+    if (!orderIsDelivered(existing?.status || 'nuevo') && orderIsDelivered(status)) {
+      statements.push(
+        ...(await orderWarehouseMoves(
+          { id, number },
+          items,
+          'close',
+        )),
+      );
+    } else if (
+      orderIsDelivered(existing?.status || '') &&
+      !orderIsDelivered(status)
+    ) {
+      statements.push(
+        ...(await orderWarehouseMoves({ id, number }, items, 'reopen')),
+      );
+    }
+  }
   await d.batch(statements);
   return { id, number };
 }
@@ -805,18 +1058,31 @@ export async function patchOrder(b: Record<string, unknown>) {
   if (!existing) throw new Error('Pedido no disponible.');
   const version = integer(b.version, 'Versión') + 1;
   if (b.status !== undefined) {
-    const status = choice(
-      b.status,
-      ['nuevo', 'abierto', 'en producción', 'cerrado'],
-      'Estado',
-    );
-    const result = await stmt(
-      'UPDATE orders SET status=?,version=? WHERE id=?',
-      status,
-      version,
-      id,
-    ).run();
-    if (!result.meta.changes) throw new Error('Pedido no disponible.');
+    const status = choice(b.status, [...ORDER_STATUSES], 'Estado');
+    const statements = [
+      stmt(
+        'UPDATE orders SET status=?,version=? WHERE id=?',
+        status,
+        version,
+        id,
+      ),
+    ];
+    if (existing.status !== status) {
+      const items = (
+        await stmt('SELECT * FROM order_items WHERE order_id=?', id).all()
+      ).results.map((row) => decode<Item>(row, ['selections']));
+      if (!orderIsDelivered(existing.status) && orderIsDelivered(status)) {
+        statements.push(
+          ...(await orderWarehouseMoves(existing, items, 'close')),
+        );
+      } else if (orderIsDelivered(existing.status) && !orderIsDelivered(status)) {
+        statements.push(
+          ...(await orderWarehouseMoves(existing, items, 'reopen')),
+        );
+      }
+    }
+    const result = await db().batch(statements);
+    if (!result[0]?.meta.changes) throw new Error('Pedido no disponible.');
     return { ok: true };
   }
   if (b.delivery !== undefined) {
@@ -1154,9 +1420,9 @@ export async function mutate(b: Record<string, unknown>) {
           'SELECT * FROM orders WHERE id=?',
           id,
         ).first<Order>();
-        if (row && (row.status === 'cerrado' || row.paid > 0))
+        if (row && (orderIsLocked(row.status) || row.paid > 0))
           throw new Error(
-            'No se puede archivar un pedido cerrado o con cobros.',
+            'No se puede archivar un pedido cerrado, entregado o con cobros.',
           );
       }
       const r = await stmt(
@@ -1169,12 +1435,27 @@ export async function mutate(b: Record<string, unknown>) {
       return { ok: true };
     }
     case 'reopen': {
-      const r = await stmt(
-        "UPDATE orders SET status='abierto',version=? WHERE id=? AND status='cerrado' AND archived=0",
-        integer(b.version, 'Versión') + 1,
-        str(b.id, 'ID', true),
-      ).run();
-      if (!r.meta.changes) throw new Error('Pedido no disponible.');
+      const id = str(b.id, 'ID', true);
+      const existing = await stmt(
+        "SELECT * FROM orders WHERE id=? AND status IN ('cerrado','entregado') AND archived=0",
+        id,
+      ).first<Order>();
+      if (!existing) throw new Error('Pedido no disponible.');
+      const items = (
+        await stmt('SELECT * FROM order_items WHERE order_id=?', id).all()
+      ).results.map((row) => decode<Item>(row, ['selections']));
+      const statements = [
+        stmt(
+          "UPDATE orders SET status='abierto',version=? WHERE id=? AND status IN ('cerrado','entregado') AND archived=0",
+          integer(b.version, 'Versión') + 1,
+          id,
+        ),
+        ...(orderIsDelivered(existing.status)
+          ? await orderWarehouseMoves(existing, items, 'reopen')
+          : []),
+      ];
+      const r = await db().batch(statements);
+      if (!r[0]?.meta.changes) throw new Error('Pedido no disponible.');
       return { ok: true };
     }
     case 'currency': {

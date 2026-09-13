@@ -1,6 +1,7 @@
 'use client';
 import Image from 'next/image';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import useEmblaCarousel from 'embla-carousel-react';
 import type { LucideIcon } from 'lucide-react';
 import {
   LayoutDashboard,
@@ -17,6 +18,7 @@ import {
   RotateCcw,
   ArrowDownUp,
   MessageCircle,
+  ChevronLeft,
   ChevronRight,
   RefreshCw,
   TrendingUp,
@@ -101,7 +103,15 @@ import {
 } from '@/lib/money';
 import { isConfiguredCategory, isConfiguredProduct } from '@/lib/configure';
 import { TypeCards, TypeConfigForm } from './type-config';
-import type { Data, Contact, Product, Order, Movement } from '@/lib/types';
+import {
+  ORDER_STATUSES,
+  orderIsLocked,
+  type Data,
+  type Contact,
+  type Product,
+  type Order,
+  type Movement,
+} from '@/lib/types';
 
 const nav: { id: string; title: string; short: string; icon: LucideIcon }[] = [
   {
@@ -464,8 +474,8 @@ function OrderCard({
         <StatusMenu
           value={order.status}
           title="Estado del pedido"
-          description="Elegí el estado. El cierre descuenta stock."
-          options={['nuevo', 'abierto', 'en producción', 'cerrado']}
+          description="El stock reservado se descuenta cuando el pedido está entregado."
+          options={[...ORDER_STATUSES]}
           onPick={onStatus}
         />
         <OrderPayMenu order={order} onChange={onPay} />
@@ -480,20 +490,94 @@ function OrderCard({
           <dt>Total</dt>
           <dd className="amount">{money(order.total)}</dd>
         </div>
-        {compact ? null : (
-          <div>
-            <dt>Cobrado</dt>
-            <dd className="amount">{money(order.paid)}</dd>
-          </div>
-        )}
-        {compact ? null : (
-          <div>
-            <dt>Ganancia</dt>
-            <dd className="amount">{money(order.total - order.cost)}</dd>
-          </div>
-        )}
+        <div>
+          <dt>Cobrado</dt>
+          <dd className="amount">{money(order.paid)}</dd>
+        </div>
+        <div>
+          <dt>Ganancia</dt>
+          <dd className="amount">{money(order.total - order.cost)}</dd>
+        </div>
       </dl>
     </article>
+  );
+}
+function OpenOrdersCarousel({
+  orders,
+  renderCard,
+}: {
+  orders: Order[];
+  renderCard: (order: Order) => ReactNode;
+}) {
+  const [emblaRef, emblaApi] = useEmblaCarousel({
+    align: 'start',
+    containScroll: 'trimSnaps',
+  });
+  const [canPrev, setCanPrev] = useState(false);
+  const [canNext, setCanNext] = useState(false);
+  const sync = useCallback(() => {
+    if (!emblaApi) return;
+    setCanPrev(emblaApi.canScrollPrev());
+    setCanNext(emblaApi.canScrollNext());
+  }, [emblaApi]);
+  useEffect(() => {
+    if (!emblaApi) return;
+    sync();
+    emblaApi.on('reInit', sync);
+    emblaApi.on('select', sync);
+    return () => {
+      emblaApi.off('reInit', sync);
+      emblaApi.off('select', sync);
+    };
+  }, [emblaApi, sync]);
+  return (
+    <section className="panel open-orders">
+      <div className="panel-heading">
+        <h2>Pedidos activos</h2>
+        <div className="open-orders-tools">
+          {orders.length > 1 ? (
+            <div className="open-orders-nav">
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Ver pedido anterior"
+                disabled={!canPrev}
+                onClick={() => emblaApi?.scrollPrev()}
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Ver pedido siguiente"
+                disabled={!canNext}
+                onClick={() => emblaApi?.scrollNext()}
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          ) : null}
+          <a href="/pedidos">
+            Ver todos <ArrowUpRight size={15} />
+          </a>
+        </div>
+      </div>
+      {orders.length ? (
+        <div className="open-orders-viewport" ref={emblaRef}>
+          <div className="open-orders-track">
+            {orders.map((order) => (
+              <div className="open-orders-slide" key={order.id}>
+                {renderCard(order)}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="hint open-orders-empty">
+          No hay pedidos activos.
+        </p>
+      )}
+    </section>
   );
 }
 async function post(body: Record<string, unknown>) {
@@ -734,12 +818,31 @@ export default function CRM({
   const search = (...values: (string | undefined)[]) =>
     values.join(' ').toLowerCase().includes(query.toLowerCase());
   const activeOrders = data?.orders.filter((o) => !o.archived) || [];
-  const closed = activeOrders.filter((o) => o.status === 'cerrado');
-  const open = activeOrders.filter((o) => o.status !== 'cerrado');
-  const lowStock =
-    data?.products.filter(
-      (p) => !p.archived && !isConfiguredProduct(p) && p.stock <= 2,
-    ) || [];
+  const billed = activeOrders.reduce((sum, order) => sum + order.total, 0);
+  const collected = activeOrders.reduce((sum, order) => sum + order.paid, 0);
+  const outstanding = activeOrders.reduce(
+    (sum, order) => sum + Math.max(0, order.total - order.paid),
+    0,
+  );
+  const profit = activeOrders.reduce(
+    (sum, order) => sum + order.total - order.cost,
+    0,
+  );
+  const unpaidOrders = activeOrders.filter((order) => order.paid < order.total);
+  const openOrders = activeOrders
+    .filter((order) => !orderIsLocked(order.status))
+    .sort(
+      (a, b) =>
+        b.date.localeCompare(a.date) || b.number.localeCompare(a.number),
+    );
+  function latestOrder(customerId: string) {
+    return activeOrders
+      .filter((order) => order.customer_id === customerId)
+      .sort(
+        (a, b) =>
+          b.date.localeCompare(a.date) || b.number.localeCompare(a.number),
+      )[0];
+  }
   const customer = (id: string) =>
     data?.contacts.find((c) => c.id === id)?.name || 'Cliente';
   const contacts =
@@ -844,12 +947,8 @@ export default function CRM({
                 <TableHead>Estado</TableHead>
                 <TableHead>Productos</TableHead>
                 <TableHead className="text-right">Total</TableHead>
-                {!compact && (
-                  <TableHead className="text-right">Cobrado</TableHead>
-                )}
-                {!compact && (
-                  <TableHead className="text-right">Ganancia</TableHead>
-                )}
+                <TableHead className="text-right">Cobrado</TableHead>
+                <TableHead className="text-right">Ganancia</TableHead>
                 <TableHead>
                   <span className="sr-only">Acciones</span>
                 </TableHead>
@@ -875,13 +974,8 @@ export default function CRM({
                       <StatusMenu
                         value={o.status}
                         title="Estado del pedido"
-                        description="Elegí el estado. El cierre descuenta stock."
-                        options={[
-                          'nuevo',
-                          'abierto',
-                          'en producción',
-                          'cerrado',
-                        ]}
+                        description="El stock reservado se descuenta cuando el pedido está entregado."
+                        options={[...ORDER_STATUSES]}
                         onPick={(status) => patchOrder(o, { status })}
                       />
                       <OrderPayMenu
@@ -898,16 +992,12 @@ export default function CRM({
                   <TableCell className="text-right amount">
                     {money(o.total)}
                   </TableCell>
-                  {!compact && (
-                    <TableCell className="text-right amount">
-                      {money(o.paid)}
-                    </TableCell>
-                  )}
-                  {!compact && (
-                    <TableCell className="text-right amount">
-                      {money(o.total - o.cost)}
-                    </TableCell>
-                  )}
+                  <TableCell className="text-right amount">
+                    {money(o.paid)}
+                  </TableCell>
+                  <TableCell className="text-right amount">
+                    {money(o.total - o.cost)}
+                  </TableCell>
                   <TableCell>
                     {compact ? (
                       <button
@@ -1140,34 +1230,30 @@ export default function CRM({
                 <div className="metrics">
                   {[
                     {
-                      label: 'Ventas cerradas',
-                      value: money(closed.reduce((s, o) => s + o.total, 0)),
-                      hint: `${closed.length} pedidos cerrados`,
+                      label: 'Cobrado',
+                      value: money(collected),
+                      hint: `${activeOrders.filter((order) => order.paid > 0).length} pedidos con cobro`,
                       icon: CircleDollarSign,
                     },
                     {
                       label: 'Ganancia bruta',
-                      value: money(
-                        closed.reduce((s, o) => s + o.total - o.cost, 0),
-                      ),
+                      value: money(profit),
                       hint: 'Venta menos costo del producto',
                       icon: TrendingUp,
                     },
                     {
-                      label: 'Pedidos en curso',
-                      value: String(open.length).padStart(2, '0'),
-                      hint: `${money(open.reduce((s, o) => s + o.total, 0))} en cartera`,
-                      icon: ShoppingBag,
+                      label: 'Por cobrar',
+                      value: money(outstanding),
+                      hint: unpaidOrders.length
+                        ? `${unpaidOrders.length} pedido${unpaidOrders.length === 1 ? '' : 's'} con saldo`
+                        : 'Sin saldos pendientes',
+                      icon: Landmark,
                     },
                     {
-                      label: 'Clientes activos',
-                      value: String(
-                        data.contacts.filter(
-                          (c) => c.kind === 'customer' && !c.archived,
-                        ).length,
-                      ).padStart(2, '0'),
-                      hint: 'Relaciones para seguir creciendo',
-                      icon: Users,
+                      label: 'Ventas',
+                      value: money(billed),
+                      hint: `${activeOrders.length} pedido${activeOrders.length === 1 ? '' : 's'} activos`,
+                      icon: ShoppingBag,
                     },
                   ].map(({ label, value, hint, icon: Icon }) => (
                     <article className="metric" key={label}>
@@ -1181,71 +1267,31 @@ export default function CRM({
                   ))}
                 </div>
                 <div className="dashboard-grid">
-                  <section className="panel">
-                    <div className="panel-heading">
-                      <h2>Pedidos recientes</h2>
-                      <a href="/pedidos">
-                        Ver todos <ArrowUpRight size={15} />
-                      </a>
-                    </div>
-                    {activeOrders.length
-                      ? renderOrderTable({
-                          rows: activeOrders.slice(0, 6),
-                          compact: true,
-                        })
-                      : renderNoRows({
-                          text: 'Tu pr\u00f3ximo pedido empieza ac\u00e1',
-                        })}
-                  </section>
-                  <section className="attention">
-                    <div className="panel-heading">
-                      <h2>Para tener en cuenta</h2>
-                      <span className="count">{lowStock.length}</span>
-                    </div>
-                    <p className="hint">Productos con 2 unidades o menos</p>
-                    {lowStock.length ? (
-                      lowStock.slice(0, 5).map((p) => (
-                        <button
-                          className="attention-row"
-                          key={p.id}
-                          onClick={() => P({ type: 'stock', record: p })}
-                        >
-                          <ProductPhoto name={p.name} url={p.photos[0]} />
-                          <span>
-                            <b>{p.name}</b>
-                            <small>
-                              {isConfiguredProduct(p) ? 'Configurable' : p.sku}
-                            </small>
-                          </span>
-                          <strong>
-                            {p.stock}
-                            <small>uds.</small>
-                          </strong>
-                        </button>
-                      ))
-                    ) : (
-                      <p className="hint">No hay alertas de stock.</p>
+                  <OpenOrdersCarousel
+                    orders={openOrders}
+                    renderCard={(o) => (
+                      <OrderCard
+                        order={o}
+                        customerName={customer(o.customer_id)}
+                        money={money}
+                        compact
+                        archiveButton={null}
+                        onOpen={() => P({ type: 'order', record: o })}
+                        onStatus={(status) => patchOrder(o, { status })}
+                        onPay={(pay, paid) => patchOrder(o, { pay, paid })}
+                        onDelivery={(delivery) =>
+                          patchOrder(o, { delivery })
+                        }
+                      />
                     )}
-                    <div className="pending-money">
-                      <span>Pendiente de cobro</span>
-                      <strong>
-                        {money(
-                          activeOrders.reduce(
-                            (s, o) => s + o.total - o.paid,
-                            0,
-                          ),
-                        )}
-                      </strong>
-                      <p>De todos los pedidos activos</p>
-                    </div>
-                  </section>
+                  />
                   <section className="panel flow-panel">
                     <div className="panel-heading">
                       <h2>El recorrido de tus pedidos</h2>
                       <span>Estado actual</span>
                     </div>
                     <div className="pipeline">
-                      {['nuevo', 'abierto', 'en producción', 'cerrado'].map(
+                      {[...ORDER_STATUSES].map(
                         (s, i) => (
                           <a
                             href={`/pedidos?estado=${encodeURIComponent(s)}`}
@@ -1272,55 +1318,11 @@ export default function CRM({
                       )}
                     </div>
                   </section>
-                  <section className="panel followup">
-                    <div className="panel-heading">
-                      <h2>Seguimiento comercial</h2>
-                      <a href="/clientes" aria-label="Ver clientes">
-                        <ArrowUpRight size={17} />
-                      </a>
-                    </div>
-                    {data.contacts
-                      .filter((c) => c.kind === 'customer' && !c.archived)
-                      .slice(0, 3)
-                      .map((c) => {
-                        const last = closed.find((o) => o.customer_id === c.id);
-                        return (
-                          <button
-                            key={c.id}
-                            className="followup-row"
-                            onClick={() => P({ type: 'customer', record: c })}
-                          >
-                            <span className="avatar">
-                              {c.name
-                                .split(' ')
-                                .slice(0, 2)
-                                .map((w) => w[0])
-                                .join('')}
-                            </span>
-                            <span>
-                              <b>{c.name}</b>
-                              <small>
-                                {last
-                                  ? `Última compra ${last.date}`
-                                  : 'Primera compra por concretar'}
-                              </small>
-                            </span>
-                            <ChevronRight size={16} />
-                          </button>
-                        );
-                      })}
-                    {!data.contacts.some(
-                      (c) => c.kind === 'customer' && !c.archived,
-                    ) && (
-                      <p className="hint">
-                        Agregá clientes para iniciar el seguimiento.
-                      </p>
-                    )}
-                  </section>
                 </div>
                 <p className="report-note">
-                  Acumulado de todos los períodos · Ganancia bruta sin
-                  impuestos, comisiones ni gastos operativos.
+                  Pedidos no archivados · Cobrado y por cobrar según cada
+                  pedido · Ganancia bruta es venta menos costo, sin impuestos
+                  ni gastos.
                 </p>
               </>
             ) : module === 'tablero' ? (
@@ -1412,13 +1414,7 @@ export default function CRM({
                       label="Filtrar estado"
                       value={filter}
                       onChange={F}
-                      options={[
-                        'all',
-                        'nuevo',
-                        'abierto',
-                        'en producción',
-                        'cerrado',
-                      ].map((value) => ({
+                      options={['all', ...ORDER_STATUSES].map((value) => ({
                         value,
                         label: value === 'all' ? 'Todos los estados' : value,
                       }))}
@@ -1808,13 +1804,14 @@ export default function CRM({
                               <TableCell>
                                 {c.kind === 'supplier'
                                   ? `${data.products.filter((p) => p.supplier_id === c.id && !p.archived).length} productos`
-                                  : closed.find((o) => o.customer_id === c.id)
-                                      ?.date || 'Sin compras'}
+                                  : cardDate(latestOrder(c.id)?.date || '') ||
+                                    'Sin compras'}
                                 {c.kind === 'customer' && (
                                   <small>
                                     {
                                       data.orders.filter(
-                                        (o) => o.customer_id === c.id,
+                                        (o) =>
+                                          o.customer_id === c.id && !o.archived,
                                       ).length
                                     }{' '}
                                     pedidos
@@ -1842,12 +1839,11 @@ export default function CRM({
                               (p) => p.supplier_id === c.id && !p.archived,
                             ).length
                           }
-                          lastPurchase={
-                            closed.find((o) => o.customer_id === c.id)?.date
-                          }
+                          lastPurchase={cardDate(latestOrder(c.id)?.date || '')}
                           orderCount={
-                            data.orders.filter((o) => o.customer_id === c.id)
-                              .length
+                            data.orders.filter(
+                              (o) => o.customer_id === c.id && !o.archived,
+                            ).length
                           }
                           archiveButton={renderArchiveButton({
                             entity: 'contacts',
@@ -1933,10 +1929,12 @@ export default function CRM({
                       Resumen del pedido, productos y cobros.
                     </DialogDescription>
                   </div>
-                  {(
-                    data?.orders.find((o) => o.id === panel.record?.id) ??
-                    panel.record
-                  ).status === 'cerrado' ? (
+                  {orderIsLocked(
+                    (
+                      data?.orders.find((o) => o.id === panel.record?.id) ??
+                      panel.record
+                    ).status,
+                  ) ? (
                     <button
                       type="button"
                       className="secondary"
@@ -2134,6 +2132,7 @@ export default function CRM({
                       back: 'inventory',
                     })
                   }
+                  onOpenOrder={(order) => P({ type: 'order', record: order })}
                 />
               ) : panel.type === 'stock' ? (
                 <StockForm
@@ -2172,7 +2171,7 @@ export default function CRM({
               <AlertDialogDescription>
                 {confirm?.record.archived
                   ? 'El registro volverá a estar disponible.'
-                  : 'Se ocultará de los listados activos. Su historial se conserva y podés restaurarlo luego. Los pedidos cerrados o con cobros no se pueden archivar.'}
+                  : 'Se ocultará de los listados activos. Su historial se conserva y podés restaurarlo luego. Los pedidos cerrados, entregados o con cobros no se pueden archivar.'}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

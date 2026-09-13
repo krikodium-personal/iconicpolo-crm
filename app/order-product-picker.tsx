@@ -5,10 +5,12 @@ import {
   configuredKindOf,
   isConfiguredProduct,
   parseConfig,
-  stockByConfig,
+  reservedHolds,
+  stockAvailability,
   stockPlaceLabel,
   summarizeConfig,
   type ProductConfig,
+  type StockHold,
 } from '@/lib/configure';
 import { formatMoney, friendsPrice } from '@/lib/money';
 import type { Data, Product } from '@/lib/types';
@@ -35,25 +37,32 @@ function stockLabel(product: Product, config: Record<string, unknown>) {
 function OrderStockPicker({
   product,
   data,
+  held = [],
+  exceptOrderId,
   onPick,
   onBack,
   onCancel,
 }: {
   product: Product;
   data: Data;
+  held?: StockHold[];
+  exceptOrderId?: string;
   onPick: (
     product: Product,
     config?: ProductConfig,
     supplierId?: string,
     fromStock?: boolean,
     stockQty?: number,
+    location?: string,
   ) => void;
   onBack: () => void;
   onCancel: () => void;
 }) {
   const kind = configuredKindOf(product);
-  const rows = stockByConfig(data.movements, product.id).filter(
-    (row) => row.quantity > 0,
+  const rows = stockAvailability(
+    data.movements,
+    [...reservedHolds(data.orders, data.products, exceptOrderId), ...held],
+    product.id,
   );
   return (
     <div className="order-picker">
@@ -69,8 +78,8 @@ function OrderStockPicker({
         </div>
       </div>
       <p className="hint">
-        Elegí una unidad ya cargada. Queda en el pedido con esa combinación,
-        proveedor y stock. No se puede personalizar.
+        Elegí una unidad disponible. Las que ya están en otro pedido quedan
+        reservadas y no se pueden volver a asignar.
       </p>
       {rows.length ? (
         <div className="order-stock-list">
@@ -83,33 +92,64 @@ function OrderStockPicker({
                 config = undefined;
               }
             }
+            const copy = (
+              <div>
+                <b>{stockLabel(product, row.config)}</b>
+                <small>
+                  {[
+                    stockPlaceLabel(row.location),
+                    data.contacts.find((c) => c.id === row.supplier_id)?.name,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </small>
+                {row.reservations.length ? (
+                  <div className="stock-reserve-actions">
+                    <span className="reserved-badge">
+                      Reservado ({row.reserved})
+                    </span>
+                    {row.reservations.map((reservation) => (
+                      <span
+                        key={reservation.orderId}
+                        className="stock-order-link is-static"
+                      >
+                        {reservation.orderNumber}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            );
+            if (row.available <= 0) {
+              return (
+                <div
+                  key={row.key}
+                  className="stock-item order-stock-pick is-reserved"
+                >
+                  {copy}
+                  <strong>
+                    {row.quantity} <small>uds.</small>
+                  </strong>
+                </div>
+              );
+            }
             return (
               <button
                 key={row.key}
                 type="button"
-                className="stock-item order-stock-pick"
+                className={`stock-item order-stock-pick${row.reserved ? ' is-reserved' : ''}`}
                 onClick={() =>
                   onPick(
                     product,
                     config,
                     row.supplier_id,
                     true,
-                    row.quantity,
+                    row.available,
+                    row.location,
                   )
                 }
               >
-                <div>
-                  <b>{stockLabel(product, row.config)}</b>
-                  <small>
-                    {[
-                      stockPlaceLabel(row.location),
-                      data.contacts.find((c) => c.id === row.supplier_id)?.name,
-                      `${row.quantity} uds.`,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </small>
-                </div>
+                {copy}
                 <strong>
                   Elegir
                   <small>
@@ -129,16 +169,21 @@ function OrderStockPicker({
 
 export function OrderProductPicker({
   data,
+  held,
+  exceptOrderId,
   onPick,
   onCancel,
 }: {
   data: Data;
+  held?: StockHold[];
+  exceptOrderId?: string;
   onPick: (
     product: Product,
     config?: ProductConfig,
     supplierId?: string,
     fromStock?: boolean,
     stockQty?: number,
+    location?: string,
   ) => void;
   onCancel: () => void;
 }) {
@@ -158,6 +203,8 @@ export function OrderProductPicker({
       <OrderStockPicker
         product={stockOf}
         data={data}
+        held={held}
+        exceptOrderId={exceptOrderId}
         onPick={onPick}
         onBack={() => setStockOf(null)}
         onCancel={onCancel}

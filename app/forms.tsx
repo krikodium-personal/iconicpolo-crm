@@ -2,14 +2,16 @@
 /* eslint-disable react/react-compiler -- Compiler analysis crashes on dynamic order snapshots (Invariant phi predecessor); React Compiler is not enabled. */
 import Image from 'next/image';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type {
-  Contact,
-  Product,
-  Order,
-  Data,
-  Option,
-  Item,
-  Movement,
+import {
+  ORDER_STATUSES,
+  orderIsLocked,
+  type Contact,
+  type Product,
+  type Order,
+  type Data,
+  type Option,
+  type Item,
+  type Movement,
 } from '@/lib/types';
 import {
   decimal,
@@ -31,6 +33,9 @@ import {
   isConfiguredProduct,
   parseConfig,
   STOCK_PLACES,
+  itemStockHold,
+  reservedHolds,
+  stockAvailability,
   stockKey,
   stockForConfig,
   stockAtPlace,
@@ -39,6 +44,7 @@ import {
   describeConfigured,
   selectedReferenceIds,
   type ProductConfig,
+  type StockHold,
 } from '@/lib/configure';
 import { Configurator } from './configure-form';
 import { OrderProductPicker } from './order-product-picker';
@@ -265,7 +271,7 @@ export function ContactForm({
   const [busy, B] = useState(false);
   const [error, E] = useState('');
   const purchased = data.orders.filter(
-    (o) => o.customer_id === record?.id && o.status === 'cerrado',
+    (o) => o.customer_id === record?.id && orderIsLocked(o.status),
   );
   const bought = new Set(
     purchased.flatMap((o) => o.items.map((i) => i.product_id)),
@@ -1206,6 +1212,7 @@ type DraftItem = {
   supplier_id?: string;
   from_stock?: boolean;
   stock_qty?: number;
+  location?: string;
   snapshot?: Item;
 };
 function productFieldValues(
@@ -1267,15 +1274,16 @@ export function OrderDetail({
 }) {
   const [error, E] = useState('');
   const customer = data.contacts.find((c) => c.id === record.customer_id);
-  const closed = record.status === 'cerrado';
+  const closed = orderIsLocked(record.status);
   const units = record.items.reduce((total, item) => total + item.quantity, 0);
   return (
     <div className="pdp">
       <ErrorBox message={error} />
       {closed ? (
         <p className="hint">
-          Los precios y el stock están confirmados. Reabrí el pedido para
-          modificarlo; se devolverán las unidades al stock.
+          {record.status === 'entregado'
+            ? 'El pedido está entregado y el stock reservado ya se descontó. Reabrí para modificarlo y devolver las unidades.'
+            : 'El pedido está cerrado. El stock sigue reservado hasta que se entregue. Reabrí para modificarlo.'}
         </p>
       ) : null}
       <section className="form-section" style={{ borderTop: 0, marginTop: 0 }}>
@@ -1294,8 +1302,8 @@ export function OrderDetail({
             <StatusMenu
               value={record.status}
               title="Estado del pedido"
-              description="Elegí el estado. El cierre descuenta stock."
-              options={['nuevo', 'abierto', 'en producción', 'cerrado']}
+              description="El stock reservado se descuenta cuando el pedido está entregado."
+              options={[...ORDER_STATUSES]}
               onPick={(status) => onPatch({ status })}
             />
             <OrderPayMenu
@@ -1477,13 +1485,14 @@ export function OrderForm({
         undefined,
       from_stock: !!i.selections.from_stock,
       stock_qty: i.selections.stock_qty,
+      location: i.selections.location,
       snapshot: i,
     })) || [],
   );
   const [busy, B] = useState(false);
   const [error, E] = useState('');
   const [picking, setPicking] = useState<null | 'new' | string>(null);
-  const closed = record?.status === 'cerrado';
+  const closed = orderIsLocked(record?.status || '');
   const configBaselines = useRef<Record<string, string>>({});
   useEffect(() => {
     let dirty = false;
@@ -1500,6 +1509,28 @@ export function OrderForm({
   function update(key: string, change: Partial<DraftItem>) {
     I(items.map((i) => (i.key === key ? { ...i, ...change } : i)));
   }
+  function draftHolds(exceptKey?: string): StockHold[] {
+    const holds: StockHold[] = [];
+    for (const item of items) {
+      if (exceptKey && item.key === exceptKey) continue;
+      const product = data.products.find((p) => p.id === item.product_id);
+      const hold = itemStockHold(
+        {
+          product_id: item.product_id,
+          quantity: Number(item.quantity) || 0,
+          selections: {
+            from_stock: item.from_stock,
+            config: item.config,
+            location: item.location,
+          },
+        },
+        product ? configuredKindOf(product) : null,
+        { id: record?.id || 'draft', number: record?.number || 'borrador' },
+      );
+      if (hold) holds.push(hold);
+    }
+    return holds;
+  }
   function supplierName(item: DraftItem, product?: Product) {
     const id =
       item.supplier_id ||
@@ -1515,6 +1546,7 @@ export function OrderForm({
     supplierId?: string,
     fromStock = false,
     stockQty?: number,
+    location?: string,
   ) {
     const fields =
       data.categories.find((c) => c.id === product.category)?.fields || [];
@@ -1534,6 +1566,7 @@ export function OrderForm({
       supplier_id: supplierId || product.supplier_id || '',
       from_stock: fromStock,
       stock_qty: available,
+      location: fromStock ? location || '' : undefined,
       ...(fromStock ? { quantity: '1' } : {}),
     };
     if (key && items.some((i) => i.key === key)) {
@@ -1665,6 +1698,46 @@ export function OrderForm({
             throw new Error(
               'La cantidad no puede superar el stock de esa unidad.',
             );
+          const otherHolds = reservedHolds(
+            data.orders,
+            data.products,
+            record?.id,
+          );
+          const used = new Map<string, number>();
+          for (const item of items) {
+            if (!item.from_stock) continue;
+            const product = data.products.find((p) => p.id === item.product_id);
+            const hold = itemStockHold(
+              {
+                product_id: item.product_id,
+                quantity: Number(item.quantity) || 0,
+                selections: {
+                  from_stock: true,
+                  config: item.config,
+                  location: item.location,
+                },
+              },
+              product ? configuredKindOf(product) : null,
+              { id: record?.id || 'draft', number: record?.number || '' },
+            );
+            if (!hold) continue;
+            const row = stockAvailability(
+              data.movements,
+              otherHolds,
+              item.product_id,
+            ).find(
+              (candidate) =>
+                candidate.config_key === hold.configKey &&
+                (!hold.location || candidate.location === hold.location),
+            );
+            const key = `${hold.productId}\t${hold.configKey}\t${hold.location}`;
+            const taken = used.get(key) || 0;
+            if (hold.quantity > (row?.available || 0) - taken)
+              throw new Error(
+                `Esa unidad de ${product?.name || 'stock'} ya está reservada para otro pedido.`,
+              );
+            used.set(key, taken + hold.quantity);
+          }
           await save({
             action: 'order',
             ...f,
@@ -1687,6 +1760,7 @@ export function OrderForm({
               supplier_id: i.supplier_id,
               from_stock: i.from_stock,
               stock_qty: i.stock_qty,
+              location: i.location,
             })),
           });
         } catch (e) {
@@ -1699,10 +1773,15 @@ export function OrderForm({
       <ErrorBox message={error} />
       {closed && (
         <div className="note">
-          <b>Pedido cerrado</b>
+          <b>
+            {record?.status === 'entregado'
+              ? 'Pedido entregado'
+              : 'Pedido cerrado'}
+          </b>
           <p>
-            Los precios y el stock están confirmados. Reabrí el pedido para
-            modificarlo; se devolverán las unidades al stock.
+            {record?.status === 'entregado'
+              ? 'El stock reservado ya se descontó. Reabrí el pedido para modificarlo y devolver las unidades.'
+              : 'El stock sigue reservado hasta que el pedido esté entregado. Reabrí para modificarlo.'}
           </p>
           <button
             type="button"
@@ -1753,12 +1832,7 @@ export function OrderForm({
               label="Estado"
               value={f.status}
               onChange={(v) => set({ ...f, status: v })}
-              options={options([
-                'nuevo',
-                'abierto',
-                'en producción',
-                'cerrado',
-              ])}
+              options={options([...ORDER_STATUSES])}
             />
           </Field>
           <Field label="Fecha del pedido *">
@@ -1896,12 +1970,15 @@ export function OrderForm({
                 ) : selecting ? (
                   <OrderProductPicker
                     data={data}
+                    exceptOrderId={record?.id}
+                    held={draftHolds(i.key)}
                     onPick={(
                       product,
                       config,
                       supplierId,
                       fromStock,
                       stockQty,
+                      location,
                     ) =>
                       applyProduct(
                         product,
@@ -1910,6 +1987,7 @@ export function OrderForm({
                         supplierId,
                         fromStock,
                         stockQty,
+                        location,
                       )
                     }
                     onCancel={() => {
@@ -2200,7 +2278,16 @@ export function OrderForm({
           {!closed && picking === 'new' && (
             <OrderProductPicker
               data={data}
-              onPick={(product, config, supplierId, fromStock, stockQty) =>
+              exceptOrderId={record?.id}
+              held={draftHolds()}
+              onPick={(
+                product,
+                config,
+                supplierId,
+                fromStock,
+                stockQty,
+                location,
+              ) =>
                 applyProduct(
                   product,
                   undefined,
@@ -2208,6 +2295,7 @@ export function OrderForm({
                   supplierId,
                   fromStock,
                   stockQty,
+                  location,
                 )
               }
               onCancel={() => setPicking(null)}
@@ -2260,7 +2348,8 @@ export function OrderForm({
       </div>
       <p className="hint">
         El descuento del ítem se aplica después del precio elegido y sus
-        adicionales. El cierre descuenta stock; no hay reservas previas.
+        adicionales. Una unidad de stock queda reservada al asignarla a un
+        pedido. Se descuenta cuando el pedido está entregado.
       </p>
       {onCancel ? (
         <div className="form-footer" style={{ borderTop: 0, marginTop: 0 }}>
@@ -2287,22 +2376,33 @@ export function StockOverview({
   record,
   data,
   onEdit,
+  onOpenOrder,
 }: {
   record: Product;
   data: Data;
   onEdit: (movement: Movement) => void;
+  onOpenOrder?: (order: Order) => void;
 }) {
-  const items = data.movements.filter(
-    (m) => m.product_id === record.id && m.quantity > 0,
+  const rows = stockAvailability(
+    data.movements,
+    reservedHolds(data.orders, data.products),
+    record.id,
   );
+  const available = rows.reduce((sum, row) => sum + row.available, 0);
+  const reserved = rows.reduce((sum, row) => sum + row.reserved, 0);
   return (
     <div className="stock-overview">
       <div className="stock-current stock-summary">
         <div>
           <span>Disponible</span>
           <strong>
-            {record.stock} <small>unidades</small>
+            {available} <small>unidades</small>
           </strong>
+          {reserved ? (
+            <small className="stock-reserved-total">
+              {reserved} reservada{reserved === 1 ? '' : 's'}
+            </small>
+          ) : null}
         </div>
         <div className="stock-places">
           {STOCK_PLACES.map((place) => (
@@ -2313,43 +2413,83 @@ export function StockOverview({
           ))}
         </div>
       </div>
-      {items.length ? (
-        items.map((m) => (
-          <div className="stock-item" key={m.id}>
-            <div className="stock-item-copy">
-              <ProductPhoto name={record.name} url={m.photos?.[0]} />
-              <div>
-              <b>
-                {configuredKindOf(record)
-                  ? configLine(record, m.config)
-                  : record.name}
-              </b>
-              <small>
-                {[
-                  stockPlaceLabel(m.location),
-                  data.contacts.find((c) => c.id === m.supplier_id)?.name,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </small>
+      {rows.length ? (
+        rows.map((row) => {
+          const inbound = data.movements.find(
+            (movement) =>
+              movement.product_id === record.id &&
+              movement.quantity > 0 &&
+              (movement.config_key || '') === row.config_key &&
+              (movement.location || '') === row.location,
+          );
+          return (
+            <div
+              className={`stock-item${row.reserved ? ' is-reserved' : ''}`}
+              key={row.key}
+            >
+              <div className="stock-item-copy">
+                <ProductPhoto
+                  name={record.name}
+                  url={inbound?.photos?.[0] || record.photos[0]}
+                />
+                <div>
+                  <b>
+                    {configuredKindOf(record)
+                      ? configLine(record, row.config)
+                      : record.name}
+                  </b>
+                  <small>
+                    {[
+                      stockPlaceLabel(row.location),
+                      data.contacts.find((c) => c.id === row.supplier_id)?.name,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </small>
+                  {row.reservations.length ? (
+                    <div className="stock-reserve-actions">
+                      <span className="reserved-badge">
+                        Reservado ({row.reserved})
+                      </span>
+                      {row.reservations.map((reservation) => {
+                        const order = data.orders.find(
+                          (item) => item.id === reservation.orderId,
+                        );
+                        return (
+                          <button
+                            key={reservation.orderId}
+                            type="button"
+                            className="secondary stock-order-link"
+                            disabled={!order || !onOpenOrder}
+                            onClick={() => order && onOpenOrder?.(order)}
+                          >
+                            Ver {reservation.orderNumber}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              <div className="stock-item-side">
+                <strong>
+                  {row.quantity} <small>uds.</small>
+                </strong>
+                {inbound ? (
+                  <button
+                    type="button"
+                    className="icon-button"
+                    title="Editar registro"
+                    aria-label="Editar registro"
+                    onClick={() => onEdit(inbound)}
+                  >
+                    <Pencil size={16} />
+                  </button>
+                ) : null}
               </div>
             </div>
-            <div className="stock-item-side">
-              <strong>
-                {m.quantity} <small>uds.</small>
-              </strong>
-              <button
-                type="button"
-                className="icon-button"
-                title="Editar registro"
-                aria-label="Editar registro"
-                onClick={() => onEdit(m)}
-              >
-                <Pencil size={16} />
-              </button>
-            </div>
-          </div>
-        ))
+          );
+        })
       ) : (
         <p className="hint">Todavía no hay unidades cargadas.</p>
       )}

@@ -150,8 +150,15 @@ export function StatusMenu({
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setError('');
+      }}
+    >
       <button
         type="button"
         className={`status ${value.replaceAll(' ', '-')} status-pick`}
@@ -187,9 +194,12 @@ export function StatusMenu({
                   return;
                 }
                 setBusy(true);
+                setError('');
                 try {
                   await onPick(option);
                   setOpen(false);
+                } catch (e) {
+                  setError((e as Error).message);
                 } finally {
                   setBusy(false);
                 }
@@ -199,6 +209,7 @@ export function StatusMenu({
             </button>
           ))}
         </div>
+        {error ? <p className="status-sheet-error">{error}</p> : null}
         {extra}
       </SheetContent>
     </Sheet>

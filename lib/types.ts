@@ -57,6 +57,7 @@ export type Item = {
     supplier_id?: string;
     from_stock?: boolean;
     stock_qty?: number;
+    location?: string;
   };
   unit_price: number;
   unit_cost: number;
@@ -133,6 +134,20 @@ export type Data = {
   cashouts: PartnerCashout[];
   currency: string;
 };
+export const ORDER_STATUSES = [
+  'nuevo',
+  'abierto',
+  'en producción',
+  'cerrado',
+  'entregado',
+] as const;
+export type OrderStatus = (typeof ORDER_STATUSES)[number];
+export function orderIsDelivered(status: string) {
+  return status === 'entregado';
+}
+export function orderIsLocked(status: string) {
+  return status === 'cerrado' || status === 'entregado';
+}
 export const modules = [
   'dashboard',
   'tablero',

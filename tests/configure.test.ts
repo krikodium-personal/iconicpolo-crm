@@ -15,6 +15,8 @@ import {
   parsePricing,
   parseRodillera,
   selectedReferenceIds,
+  reservedHolds,
+  stockAvailability,
   stockByConfig,
   stockKey,
   summarizeConfig,
@@ -170,6 +172,151 @@ test('stock splits units between Ivan and Kriko', () => {
   assert.equal(rows.length, 2);
   assert.equal(rows.find((row) => row.location === 'ivan')?.quantity, 2);
   assert.equal(rows.find((row) => row.location === 'kriko')?.quantity, 1);
+});
+
+test('reserved stock stays listed and only leftover units can be picked', () => {
+  const key = stockKey('montura', defaultMontura());
+  const rows = stockAvailability(
+    [
+      {
+        product_id: 'm1',
+        config_key: key,
+        location: 'kriko',
+        quantity: 2,
+        config: defaultMontura(),
+      },
+    ],
+    [
+      {
+        orderId: 'o1',
+        orderNumber: 'IC-1',
+        productId: 'm1',
+        configKey: key,
+        location: 'kriko',
+        quantity: 1,
+      },
+    ],
+    'm1',
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].quantity, 2);
+  assert.equal(rows[0].reserved, 1);
+  assert.equal(rows[0].available, 1);
+  assert.equal(rows[0].reservations[0]?.orderNumber, 'IC-1');
+});
+
+test('a single reserved unit cannot be assigned to another order', () => {
+  const key = stockKey('montura', defaultMontura());
+  const rows = stockAvailability(
+    [
+      {
+        product_id: 'm1',
+        config_key: key,
+        location: 'ivan',
+        quantity: 1,
+        config: defaultMontura(),
+      },
+    ],
+    [
+      {
+        orderId: 'o1',
+        orderNumber: 'IC-1',
+        productId: 'm1',
+        configKey: key,
+        location: 'ivan',
+        quantity: 1,
+      },
+    ],
+    'm1',
+  );
+  assert.equal(rows[0].available, 0);
+  assert.equal(rows[0].reserved, 1);
+  assert.equal(rows[0].quantity, 1);
+});
+
+test('a reservation without location still locks that combination', () => {
+  const key = stockKey('montura', defaultMontura());
+  const rows = stockAvailability(
+    [
+      {
+        product_id: 'm1',
+        config_key: key,
+        location: 'kriko',
+        quantity: 1,
+        config: defaultMontura(),
+      },
+    ],
+    [
+      {
+        orderId: 'o1',
+        orderNumber: 'IC-1',
+        productId: 'm1',
+        configKey: key,
+        location: '',
+        quantity: 1,
+      },
+    ],
+    'm1',
+  );
+  assert.equal(rows[0].available, 0);
+  assert.equal(rows[0].reservations[0]?.orderId, 'o1');
+});
+
+test('delivered orders release the reservation and closed ones keep it', () => {
+  const config = defaultMontura();
+  const key = stockKey('montura', config);
+  const item = {
+    product_id: 'cfg-montura',
+    quantity: 1,
+    selections: {
+      from_stock: true,
+      config,
+      location: 'kriko',
+    },
+  };
+  const products = [
+    { id: 'cfg-montura', category: 'monturas', kind: 'configured' },
+  ];
+  const open = reservedHolds(
+    [
+      {
+        id: 'o1',
+        number: 'IC-1',
+        archived: 0,
+        status: 'abierto',
+        items: [item],
+      },
+    ],
+    products,
+  );
+  const closed = reservedHolds(
+    [
+      {
+        id: 'o1',
+        number: 'IC-1',
+        archived: 0,
+        status: 'cerrado',
+        items: [item],
+      },
+    ],
+    products,
+  );
+  const delivered = reservedHolds(
+    [
+      {
+        id: 'o1',
+        number: 'IC-1',
+        archived: 0,
+        status: 'entregado',
+        items: [item],
+      },
+    ],
+    products,
+  );
+  assert.equal(open[0]?.configKey, key);
+  assert.equal(open[0]?.quantity, 1);
+  assert.equal(closed[0]?.quantity, 1);
+  assert.equal(delivered.length, 0);
 });
 
 test('montura labels list every selected option', () => {

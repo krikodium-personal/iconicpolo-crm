@@ -340,9 +340,108 @@ h3 {
 }
 .dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
   gap: 24px;
   margin-top: 28px;
+}
+.open-orders-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.open-orders-nav {
+  display: flex;
+}
+.open-orders-nav .icon-button:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+.open-orders-viewport {
+  overflow: hidden;
+  padding: 0 0 24px;
+}
+.open-orders-track {
+  display: flex;
+  margin-left: 24px;
+  touch-action: pan-y pinch-zoom;
+}
+.open-orders-slide {
+  flex: 0 0 min(340px, 82%);
+  min-width: 0;
+  padding-right: 14px;
+}
+.open-orders-slide:last-child {
+  padding-right: 24px;
+}
+.open-orders-empty {
+  margin: 0;
+  padding: 0 24px 28px;
+}
+.open-orders .record-card {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  height: 100%;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #d7e0d6;
+  border-radius: 12px;
+  background: #fff;
+}
+.open-orders .record-card .row-hit {
+  z-index: 1;
+}
+.open-orders .record-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.open-orders .record-card-id {
+  min-width: 0;
+  flex: 1;
+}
+.open-orders .record-card-id .record-link {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 1.25;
+}
+.open-orders .record-card-id small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.open-orders .record-card-meta-inline {
+  flex: none;
+}
+.open-orders .record-card-facts,
+.open-orders .record-card-facts.facts-compact {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+  min-width: 0;
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid #e6ece4;
+}
+.open-orders .record-card-facts dt {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #6a7e72;
+}
+.open-orders .record-card-facts dd {
+  margin: 3px 0 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+@media (min-width: 900px) {
+  .open-orders-slide {
+    flex-basis: 320px;
+  }
 }
 .panel {
   border: 1px solid var(--border);
@@ -368,65 +467,9 @@ h3 {
   font-size: 12px;
   color: #718278;
 }
-.attention {
-  border: 1px solid #d5dfcb;
-  background: #f0f4e9;
-  border-radius: 11px;
-  padding: 0 24px 22px;
-}
-.attention .panel-heading {
-  padding: 24px 0 8px;
-}
-.attention h2 {
-  font-size: 17px;
-}
-.count {
-  background: #dfe9c9;
-  padding: 2px 8px;
-  border-radius: 5px;
-}
-.attention-row {
-  width: 100%;
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  text-align: left;
-  border-bottom: 1px solid #dbe3d4;
-  padding: 15px 0;
-}
-.attention-row b {
-  font-size: 14px;
-  font-weight: 500;
-}
-.attention-row strong {
-  margin-left: auto;
-  font-size: 20px;
-}
-.attention-row strong small {
-  font-size: 12px;
-  font-weight: 400;
-}
-.pending-money {
-  border-top: 1px solid #d5dfcb;
-  margin-top: 20px;
-  padding-top: 20px;
-}
-.pending-money span {
-  font-size: 14px;
-}
-.pending-money strong {
-  display: block;
-  font-size: 28px;
-  margin: 8px 0;
-  color: #234e3d;
-}
-.pending-money p {
-  font-size: 12px;
-  color: #6d7c6b;
-}
 .pipeline {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 24px;
   padding: 4px 24px 30px;
 }
@@ -453,25 +496,6 @@ h3 {
 }
 .pipeline a:last-child .pipeline-track div {
   background: #b7ce65;
-}
-.followup .panel-heading {
-  padding-bottom: 12px;
-}
-.followup-row {
-  display: flex;
-  text-align: left;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 24px;
-  width: 100%;
-  border-top: 1px solid #eef1ee;
-}
-.followup-row b {
-  font-size: 14px;
-  font-weight: 500;
-}
-.followup-row svg {
-  margin-left: auto;
 }
 .report-note {
   font-size: 12px;
@@ -774,6 +798,10 @@ small.pending-text {
 .status.pagado {
   background: #e4f0e5;
   color: #3e7144;
+}
+.status.entregado {
+  background: #dceee4;
+  color: #2f6a48;
 }
 .status.pago-parcial {
   background: #fcf1e2;
@@ -1457,6 +1485,49 @@ button.status-pick {
   font-size: 12px;
   font-weight: 500;
 }
+.stock-item.is-reserved {
+  opacity: 0.92;
+}
+.stock-reserved-total {
+  display: block;
+  margin-top: 6px;
+  color: #7a5a12;
+  font-size: 13px;
+  font-weight: 600;
+}
+.reserved-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #f3ead6;
+  color: #7a5a12;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.stock-reserve-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.stock-order-link {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.stock-order-link.is-static {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #d7e0d4;
+  border-radius: 8px;
+  color: #4d5c50;
+  background: #fff;
+}
 .order-detail-money {
   flex-direction: column;
   align-items: flex-end;
@@ -1685,18 +1756,7 @@ fieldset:disabled textarea {
   background: #f4f6f2;
   color: #75886a;
 }
-@media (min-width: 1600px) {
-  .dashboard-grid {
-    grid-template-columns: minmax(0, 1fr) 380px;
-  }
-}
 @media (max-width: 1200px) {
-  .dashboard-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .attention {
-    grid-row: 3;
-  }
   .metrics {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1984,14 +2044,6 @@ fieldset:disabled textarea {
   }
   .pipeline {
     grid-template-columns: 1fr 1fr;
-  }
-  .attention-row span,
-  .followup-row span:not(.avatar) {
-    min-width: 0;
-  }
-  .attention-row b,
-  .followup-row b {
-    overflow-wrap: anywhere;
   }
   .clickable-row .row-hit {
     min-height: 44px;
@@ -2382,11 +2434,24 @@ button.order-stock-pick {
 button.order-stock-pick:hover {
   background: #f7faf5;
 }
-button.order-stock-pick strong {
+button.order-stock-pick strong,
+.order-stock-pick strong {
   display: grid;
   justify-items: end;
   font-size: 13px;
   color: #134c45;
+}
+.order-stock-pick.is-reserved {
+  cursor: default;
+}
+.order-stock-pick.is-reserved strong {
+  color: #7a5a12;
+}
+.status-sheet-error {
+  margin: 0 16px 16px;
+  color: #9c3b2f;
+  font-size: 13px;
+  line-height: 1.45;
 }
 .order-picker-skus,
 .order-picker .record-card-list {

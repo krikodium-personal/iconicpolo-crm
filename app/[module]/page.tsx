@@ -1,5 +1,5 @@
 import CRM from '../crm';
-import { modules } from '@/lib/types';
+import { modules, ORDER_STATUSES } from '@/lib/types';
 import { notFound } from 'next/navigation';
 export default async function Page({
   params,
@@ -13,7 +13,7 @@ export default async function Page({
   const { estado } = await searchParams;
   const initialFilter =
     module === 'pedidos' &&
-    ['nuevo', 'abierto', 'en producción', 'cerrado'].includes(estado || '')
+    (ORDER_STATUSES as readonly string[]).includes(estado || '')
       ? estado
       : 'all';
   return (

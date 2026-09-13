@@ -1603,12 +1603,14 @@ export function stockByConfig(
       location: string;
       supplier_id: string;
       config: Record<string, unknown>;
+      config_key: string;
     }
   >();
   for (const movement of movements) {
     if (movement.product_id !== productId) continue;
     const location = movement.location || '';
-    const key = `${movement.config_key || ''}\t${location}`;
+    const config_key = movement.config_key || '';
+    const key = `${config_key}\t${location}`;
     const prev = rows.get(key);
     const config =
       movement.config && Object.keys(movement.config).length
@@ -1623,6 +1625,7 @@ export function stockByConfig(
       location,
       supplier_id,
       config,
+      config_key: config_key || prev?.config_key || '',
     });
   }
   return [...rows.entries()]
@@ -1634,6 +1637,152 @@ export function stockByConfig(
         a.location.localeCompare(b.location) ||
         a.key.localeCompare(b.key),
     );
+}
+
+export type StockReservation = {
+  orderId: string;
+  orderNumber: string;
+  quantity: number;
+};
+
+export type StockHold = {
+  orderId: string;
+  orderNumber: string;
+  productId: string;
+  configKey: string;
+  location: string;
+  quantity: number;
+};
+
+export type StockAvailabilityRow = {
+  key: string;
+  config_key: string;
+  quantity: number;
+  reserved: number;
+  available: number;
+  location: string;
+  supplier_id: string;
+  config: Record<string, unknown>;
+  reservations: StockReservation[];
+};
+
+export function itemStockHold(
+  item: {
+    product_id: string;
+    quantity: number;
+    selections: {
+      from_stock?: boolean;
+      config?: Record<string, unknown>;
+      location?: string;
+    };
+  },
+  kind: ConfiguredKind | null,
+  order: { id: string; number: string },
+): StockHold | null {
+  if (!item.selections.from_stock || item.quantity <= 0) return null;
+  let configKey = '';
+  if (kind && item.selections.config) {
+    try {
+      configKey = stockKey(kind, parseConfig(kind, item.selections.config));
+    } catch {
+      return null;
+    }
+  }
+  return {
+    orderId: order.id,
+    orderNumber: order.number,
+    productId: item.product_id,
+    configKey,
+    location: item.selections.location || '',
+    quantity: item.quantity,
+  };
+}
+
+export function reservedHolds(
+  orders: {
+    id: string;
+    number: string;
+    archived: number;
+    status: string;
+    items: {
+      product_id: string;
+      quantity: number;
+      selections: {
+        from_stock?: boolean;
+        config?: Record<string, unknown>;
+        location?: string;
+      };
+    }[];
+  }[],
+  products: { id: string; category: string; kind?: string }[],
+  exceptOrderId?: string,
+): StockHold[] {
+  const kinds = new Map(
+    products.map((product) => [product.id, configuredKindOf(product)]),
+  );
+  const holds: StockHold[] = [];
+  for (const order of orders) {
+    if (order.archived || order.status === 'entregado') continue;
+    if (exceptOrderId && order.id === exceptOrderId) continue;
+    for (const item of order.items) {
+      const hold = itemStockHold(
+        item,
+        kinds.get(item.product_id) ?? null,
+        order,
+      );
+      if (hold) holds.push(hold);
+    }
+  }
+  return holds;
+}
+
+export function stockAvailability(
+  movements: Parameters<typeof stockByConfig>[0],
+  holds: StockHold[],
+  productId: string,
+): StockAvailabilityRow[] {
+  const rows: StockAvailabilityRow[] = stockByConfig(movements, productId)
+    .filter((row) => row.quantity > 0)
+    .map((row) => ({
+      ...row,
+      reserved: 0,
+      available: row.quantity,
+      reservations: [],
+    }));
+  for (const hold of holds) {
+    if (hold.productId !== productId || hold.quantity <= 0) continue;
+    let remaining = hold.quantity;
+    const matches = rows
+      .filter((row) => {
+        if (row.config_key !== hold.configKey) return false;
+        if (hold.location && row.location !== hold.location) return false;
+        return true;
+      })
+      .sort((a, b) => b.available - a.available);
+    const addReservation = (row: StockAvailabilityRow, quantity: number) => {
+      row.reserved += quantity;
+      row.available = Math.max(0, row.quantity - row.reserved);
+      const existing = row.reservations.find(
+        (reservation) => reservation.orderId === hold.orderId,
+      );
+      if (existing) existing.quantity += quantity;
+      else
+        row.reservations.push({
+          orderId: hold.orderId,
+          orderNumber: hold.orderNumber,
+          quantity,
+        });
+    };
+    for (const row of matches) {
+      if (remaining <= 0) break;
+      const take = Math.min(Math.max(row.available, 0), remaining);
+      if (take <= 0) continue;
+      addReservation(row, take);
+      remaining -= take;
+    }
+    if (remaining > 0 && matches[0]) addReservation(matches[0], remaining);
+  }
+  return rows;
 }
 
 function lowerEs(value: string) {
