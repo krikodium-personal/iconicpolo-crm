@@ -1,7 +1,7 @@
 {
   "name": "iconic-crm",
   "account_id": "35d3d7c12fe5b8af53a25c64680d9422",
-  "compatibility_date": "2026-09-11",
+  "compatibility_date": "2026-05-22",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "not_found_handling": "none"
