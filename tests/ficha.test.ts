@@ -241,10 +241,13 @@ test('new casco ficha uses catalog swatches and the slot of each personalization
   });
   const labelOf = (label: string) =>
     ficha.swatches.find((swatch) => swatch.label === label);
-  assert.equal(labelOf('Casquete')?.name, firstCascoColor('cloth').nombre);
-  assert.equal(labelOf('Casquete')?.hex, firstCascoColor('cloth').hex);
+  assert.equal(labelOf('Casquete')?.name, firstCascoColor('softshell').nombre);
+  assert.equal(labelOf('Casquete')?.hex, firstCascoColor('softshell').hex);
   assert.ok(labelOf('Banda de visera'), 'la visera Argentina lleva banda');
-  assert.equal(labelOf('Barbijo'), undefined);
+  assert.equal(
+    labelOf('Correaje')?.name,
+    firstCascoColor(CASCO_PALETTE_IDS.barbijo).nombre,
+  );
   assert.equal(labelOf('Logo Iconic')?.name, hilo.nombre);
   assert.equal(ficha.initials?.text, 'MP');
   assert.equal(ficha.initials?.fontName, 'Didot');

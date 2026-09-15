@@ -549,9 +549,9 @@ function CascoConfiguratorNew({
         </>
       )}
       <div className="form-grid">
-        <Field label="Barbijo">
+        <Field label="Correaje">
           <Pick
-            label="Barbijo"
+            label="Correaje"
             value={value.colores.strap ? 'si' : 'no'}
             onChange={(v) =>
               onChange({
@@ -566,8 +566,8 @@ function CascoConfiguratorNew({
               })
             }
             options={[
-              { value: 'no', label: 'Sin barbijo' },
-              { value: 'si', label: 'Con barbijo' },
+              { value: 'no', label: 'Sin correaje' },
+              { value: 'si', label: 'Con correaje' },
             ]}
           />
           {value.colores.strap ? (
@@ -580,7 +580,7 @@ function CascoConfiguratorNew({
       </div>
       {value.colores.strap ? (
         <CatalogColorPicker
-          label="Color de barbijo *"
+          label="Color de correaje *"
           paletteId={CASCO_PALETTE_IDS.barbijo}
           value={value.colores.strap}
           onChange={(color) => onChange(setCascoColor(value, 'strap', color))}
@@ -1960,7 +1960,7 @@ function extraForLabel(
 ) {
   return extras.find((charge) => {
     if (EXTRA_LABEL[charge.id] === label) return true;
-    if (charge.id === 'correaje' && label === 'Barbijo') return true;
+    if (charge.id === 'correaje' && label === 'Correaje') return true;
     if (charge.id === 'logoPersonalizado' && label === 'Logo propio')
       return true;
     if (charge.id.startsWith('tipo_') && label === 'Tipo') return true;

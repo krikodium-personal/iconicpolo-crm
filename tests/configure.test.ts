@@ -144,24 +144,26 @@ test('casco argentina visor requires band color and lock does not', () => {
   assert.equal(lockKey.includes('colorBandaVicera'), true);
 });
 
-test('new casco defaults to Argentina visera, Tela and empty talle', () => {
+test('new casco defaults to Argentina visera, Softshell, correaje and empty talle', () => {
   const draft = defaultCasco();
   assert.equal(isNewCascoConfig(draft), true);
   assert.equal(draft.version, 2);
   assert.equal(draft.visera, 'argentine');
-  assert.equal(draft.material, 'cloth');
+  assert.equal(draft.material, 'softshell');
   assert.equal(draft.talle, '');
-  assert.equal(draft.colores.top?.palette, 'cloth');
+  assert.equal(draft.colores.top?.palette, 'softshell');
   assert.equal(draft.colores.peakBand?.nombre, draft.colores.top?.nombre);
+  assert.ok(draft.colores.strap);
+  assert.equal(draft.colores.strap?.palette, CASCO_PALETTE_IDS.barbijo);
   assert.throws(() => parseCasco(draft), /talle/i);
   const parsed = validCasco();
   assert.equal(isNewCascoConfig(parsed), true);
   assert.equal(parsed.talle.cm, 57);
   const labels = configLabels('casco', parsed);
   assert.equal(labels.Estilo, 'Argentina');
-  assert.equal(labels.Material, 'Tela');
+  assert.equal(labels.Material, 'Softshell');
   assert.equal(labels['Logo Iconic'], parsed.logoIconic.nombre);
-  assert.equal(labels.Barbijo, 'Sin barbijo');
+  assert.equal(labels.Correaje, parsed.colores.strap?.nombre);
 });
 
 test('new casco english visera drops the peak band', () => {
@@ -889,32 +891,34 @@ test('bota labels list the selected options and measures', () => {
 });
 
 test('changing casco material resets fabric colors to the new palette', () => {
-  const cloth = validCasco();
-  assert.equal(cloth.colores.top?.palette, 'cloth');
-  const leather = changeCascoMaterial(cloth, 'leather');
+  const softshell = validCasco();
+  assert.equal(softshell.colores.top?.palette, 'softshell');
+  const leather = changeCascoMaterial(softshell, 'leather');
   assert.equal(leather.colores.top?.palette, 'leather');
   assert.equal(leather.colores.peak?.palette, 'leather');
   assert.equal(leather.colores.underPeak?.palette, 'leather');
   assert.equal(leather.colores.peakBand?.palette, 'leather');
   assert.equal(leather.colores.airholes.palette, CASCO_PALETTE_IDS.ojales);
-  assert.equal(leather.colores.strap, undefined);
-  assert.notEqual(leather.colores.top?.hex, cloth.colores.top?.hex);
+  assert.deepEqual(leather.colores.strap, softshell.colores.strap);
+  assert.notEqual(leather.colores.top?.hex, softshell.colores.top?.hex);
   parseCasco({ ...leather, talle: talle57() });
   assert.throws(
-    () => parseCasco({ ...cloth, material: 'leather', talle: talle57() }),
+    () =>
+      parseCasco({ ...softshell, material: 'leather', talle: talle57() }),
     /paleta/i,
   );
 });
 
 test('prints mode hides fabric colors and keeps strap and airholes', () => {
-  const cloth = validCasco();
-  const printed = changeCascoMaterial(cloth, 'prints');
+  const softshell = validCasco();
+  const printed = changeCascoMaterial(softshell, 'prints');
   assert.equal(printed.material, 'prints');
   assert.equal(printed.estampado, 'topographic');
   assert.equal(printed.colores.top, undefined);
   assert.equal(printed.colores.peak, undefined);
   assert.equal(printed.colores.peakBand, undefined);
   assert.equal(printed.colores.underPeak, undefined);
+  assert.deepEqual(printed.colores.strap, softshell.colores.strap);
   assert.equal(printed.colores.airholes.palette, CASCO_PALETTE_IDS.ojales);
   const parsed = parseCasco({ ...printed, talle: talle57() });
   assert.equal(isNewCascoConfig(parsed) && parsed.estampado, 'topographic');

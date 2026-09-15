@@ -1070,9 +1070,10 @@ export function defaultCasco(): CascoConfigV2 {
     version: 2,
     modelo: 'h1',
     visera: 'argentine',
-    material: 'cloth',
+    material: 'softshell',
     colores: {
-      ...defaultCascoFabric('cloth'),
+      ...defaultCascoFabric('softshell'),
+      strap: firstCascoColor(CASCO_PALETTE_IDS.barbijo),
       airholes: firstCascoColor(CASCO_PALETTE_IDS.ojales),
     },
     logoIconic: firstCascoColor(CASCO_PALETTE_IDS.logoHilo),
@@ -1356,7 +1357,7 @@ function parseCascoV2(raw: unknown): CascoConfigV2 {
     colores.strap = parseChosenColor(
       coloresRaw.strap,
       CASCO_PALETTE_IDS.barbijo,
-      'Barbijo',
+      'Correaje',
     );
   let estampado: CascoEstampado | undefined;
   if (material === 'prints') {
@@ -1943,9 +1944,9 @@ export function configLabels(kind: ConfiguredKind, raw: ProductConfig) {
     if (c.visera === 'argentine' && c.colores.peakBand)
       labels['Banda de visera'] = c.colores.peakBand.nombre;
     if (c.colores.underPeak) labels['Bajo visera'] = c.colores.underPeak.nombre;
-    labels.Barbijo = c.colores.strap
+    labels.Correaje = c.colores.strap
       ? c.colores.strap.nombre
-      : 'Sin barbijo';
+      : 'Sin correaje';
     labels.Ojales = c.colores.airholes.nombre;
     labels['Logo Iconic'] = c.logoIconic.nombre;
     labels['Ubicación logo Iconic'] = 'Lado derecho';

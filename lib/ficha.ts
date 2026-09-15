@@ -250,7 +250,7 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
     if (c.visera === 'argentine')
       pushChosen('Banda de visera', c.colores.peakBand);
     pushChosen('Bajo visera', c.colores.underPeak);
-    pushChosen('Barbijo', c.colores.strap);
+    pushChosen('Correaje', c.colores.strap);
     pushChosen('Ojales', c.colores.airholes);
     pushChosen('Logo Iconic', c.logoIconic);
     if (c.iniciales) {
