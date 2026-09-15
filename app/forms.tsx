@@ -18,6 +18,8 @@ import {
 import {
   decimal,
   parseDecimal,
+  parsePercent,
+  percent,
   formatMoney,
   margin,
   markup,
@@ -523,7 +525,7 @@ export function ProductForm({
     supplier_id: record?.supplier_id || '',
     cost: decimal(record?.cost || 0),
     price: decimal(record?.price || 0),
-    ff_discount: decimal(record?.ff_discount ?? 1500),
+    ff_discount: percent(record?.ff_discount ?? 1500),
     ff_price: record?.ff_price == null ? '' : decimal(record.ff_price),
     promo_kind: record?.promo_kind || 'none',
     promo_value: decimal(record?.promo_value || 0),
@@ -550,7 +552,7 @@ export function ProductForm({
       price,
       ff: f.ff_price.trim()
         ? parseDecimal(f.ff_price)
-        : friendsPrice({ price, ff_discount: parseDecimal(f.ff_discount) }),
+        : friendsPrice({ price, ff_discount: parsePercent(f.ff_discount, 'F&F') }),
       promo: promoPrice({
         price,
         promo_kind: f.promo_kind,
@@ -590,7 +592,7 @@ export function ProductForm({
             ...f,
             cost: parseDecimal(f.cost),
             price: parseDecimal(f.price),
-            ff_discount: parseDecimal(f.ff_discount),
+            ff_discount: parsePercent(f.ff_discount, 'F&F'),
             ff_price: f.ff_price.trim() ? parseDecimal(f.ff_price) : null,
             promo_value: parseDecimal(f.promo_value),
             id: record?.id,
@@ -705,7 +707,7 @@ export function ProductForm({
           <Field label="Descuento Friends & Family (%)">
             <input
               required
-              inputMode="decimal"
+              inputMode="numeric"
               value={f.ff_discount}
               onChange={(e) => set({ ...f, ff_discount: e.target.value })}
             />

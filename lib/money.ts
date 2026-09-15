@@ -25,6 +25,13 @@ export function parseDecimal(value: string): number {
   );
 }
 export const decimal = (cents: number) => (cents / 100).toFixed(2);
+export const percent = (bp: number) => String(Math.round(bp / 100));
+export function parsePercent(value: string, label = 'Porcentaje'): number {
+  const normalized = value.trim();
+  if (!/^\d{1,3}$/.test(normalized))
+    throw new Error(`${label}: ingresá un número entero, sin decimales.`);
+  return integer(Number(normalized) * 100, label, 10000);
+}
 export function ratio(amount: number, rate: number): number {
   integer(amount);
   integer(rate, 'Porcentaje', 10000);

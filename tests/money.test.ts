@@ -10,6 +10,8 @@ import {
   orderDiscountPercent,
   parseDecimal,
   promoPrice,
+  parsePercent,
+  percent,
   ratio,
 } from '../lib/money.ts';
 
@@ -17,6 +19,9 @@ test('parses money and percentages into safe integer units', () => {
   assert.equal(parseDecimal('680000,50'), 68_000_050);
   assert.equal(parseDecimal('15'), 1_500);
   assert.throws(() => parseDecimal('1.234,50'));
+  assert.equal(percent(1_500), '15');
+  assert.equal(parsePercent('15'), 1_500);
+  assert.throws(() => parsePercent('15.00'));
 });
 
 test('uses half-up rounding for basis-point calculations', () => {

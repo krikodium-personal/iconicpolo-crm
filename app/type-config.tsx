@@ -14,7 +14,7 @@ import {
   type ConfiguredKind,
   type ConfiguredPricing,
 } from '@/lib/configure';
-import { decimal, formatMoney, parseDecimal } from '@/lib/money';
+import { decimal, formatMoney, parseDecimal, parsePercent, percent } from '@/lib/money';
 import type { Data, Product } from '@/lib/types';
 import { ErrorBox, Field, Photos } from './ui';
 import type { Save } from './forms';
@@ -205,7 +205,7 @@ export function TypeConfigForm({
   const [f, set] = useState({
     cost: record.cost ? decimal(record.cost) : '',
     price: record.price ? decimal(record.price) : '',
-    ff_discount: decimal(record.ff_discount),
+    ff_discount: percent(record.ff_discount),
     ff_price: record.ff_price == null ? '' : decimal(record.ff_price),
     photos: record.pricing?.photos || {},
     extras: Object.fromEntries(
@@ -314,7 +314,7 @@ export function TypeConfigForm({
             options: [],
             cost,
             price,
-            ff_discount: parseDecimal(f.ff_discount || '0'),
+            ff_discount: parsePercent(f.ff_discount || '0', 'F&F'),
             ff_price: ffPrice,
             promo_kind: record.promo_kind || 'none',
             promo_value: record.promo_value || 0,
@@ -430,7 +430,7 @@ export function TypeConfigForm({
           <Field label="Descuento Friends & Family (%)">
             <input
               required
-              inputMode="decimal"
+              inputMode="numeric"
               value={f.ff_discount}
               onChange={(e) => set({ ...f, ff_discount: e.target.value })}
             />
