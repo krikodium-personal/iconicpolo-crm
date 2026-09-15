@@ -146,6 +146,20 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
 export function orderIsDelivered(status: string) {
   return status === 'entregado';
 }
+export function todayInBuenosAires() {
+  return new Date().toLocaleDateString('en-CA', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+  });
+}
+export function orderPipelineStatus(
+  order: { status: string; delivery?: string },
+  today = todayInBuenosAires(),
+) {
+  return order.status === 'entregado' ||
+    !!(order.delivery && order.delivery <= today)
+    ? 'entregado'
+    : order.status;
+}
 export function orderIsLocked(status: string) {
   return status === 'cerrado' || status === 'entregado';
 }

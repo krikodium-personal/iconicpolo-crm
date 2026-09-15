@@ -106,6 +106,7 @@ import { TypeCards, TypeConfigForm } from './type-config';
 import {
   ORDER_STATUSES,
   orderIsLocked,
+  orderPipelineStatus,
   type Data,
   type Contact,
   type Product,
@@ -899,7 +900,7 @@ export default function CRM({
       (o) =>
         !!o.archived === archived &&
         search(o.number, customer(o.customer_id)) &&
-        (filter === 'all' || o.status === filter),
+        (filter === 'all' || orderPipelineStatus(o) === filter),
     ) || [];
   function renderArchiveButton({ entity, record }: Archived) {
     return (
@@ -1315,14 +1316,15 @@ export default function CRM({
                             </span>
                             <strong>
                               {
-                                activeOrders.filter((o) => o.status === s)
-                                  .length
+                                activeOrders.filter(
+                                  (o) => orderPipelineStatus(o) === s,
+                                ).length
                               }
                             </strong>
                             <div className="pipeline-track">
                               <div
                                 style={{
-                                  width: `${activeOrders.length ? (activeOrders.filter((o) => o.status === s).length / activeOrders.length) * 100 : 0}%`,
+                                  width: `${activeOrders.length ? (activeOrders.filter((o) => orderPipelineStatus(o) === s).length / activeOrders.length) * 100 : 0}%`,
                                 }}
                               />
                             </div>
@@ -1940,11 +1942,12 @@ export default function CRM({
                   </button>
                 </div>
               ) : panel?.type === 'order' && panel.record && !panel.editing ? (
-                <div className="stock-dialog-heading">
+                <div className="stock-dialog-heading order-dialog-heading">
                   <div>
+                    <p className="dialog-kicker">Pedido para:</p>
                     <DialogTitle>{panelTitle}</DialogTitle>
-                    <DialogDescription>
-                      Resumen del pedido, productos y cobros.
+                    <DialogDescription className="sr-only">
+                      Pedido para {panelTitle}.
                     </DialogDescription>
                   </div>
                   {orderIsLocked(

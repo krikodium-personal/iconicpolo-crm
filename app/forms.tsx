@@ -1374,10 +1374,13 @@ export function OrderDetail({
             return (
               <div className="stock-item" key={item.id}>
                 <div className="stock-item-copy">
-                  <ProductPhoto
-                    name={item.name}
-                    url={itemPhoto(item, product)}
-                  />
+                  <div className="stock-item-photo">
+                    <ProductPhoto
+                      name={item.name}
+                      url={itemPhoto(item, product)}
+                    />
+                    <span className="stock-item-qty">{item.quantity}</span>
+                  </div>
                   <div>
                     <div className="stock-item-heading">
                       <b>{itemDescription(item, product)}</b>
@@ -1387,7 +1390,6 @@ export function OrderDetail({
                     </div>
                     <small>
                       {[
-                        `${item.quantity} ${item.quantity === 1 ? 'ud.' : 'uds.'}`,
                         supplier?.name,
                         item.selections.from_stock ? 'De stock' : '',
                       ]
@@ -1414,26 +1416,34 @@ export function OrderDetail({
       </section>
       <section className="form-section">
         <h3>Totales · {data.currency}</h3>
-        <div className="pdp-facts">
-          <Fact
-            label="Costo"
-            value={formatMoney(record.cost, data.currency)}
-          />
-          <Fact
-            label="Ganancia de Iconic"
-            value={formatMoney(record.total - record.cost, data.currency)}
-          />
-          <Fact
-            label="Total"
-            value={formatMoney(record.total, data.currency)}
-          />
-          <Fact
-            label="Saldo"
-            value={formatMoney(
-              Math.max(0, record.total - record.paid),
-              data.currency,
-            )}
-          />
+        <div className="order-detail-totals">
+          <div className="order-detail-totals-row three">
+            <Fact
+              label="Total"
+              value={formatMoney(record.total, data.currency)}
+            />
+            <Fact
+              label="Costo"
+              value={formatMoney(record.cost, data.currency)}
+            />
+            <Fact
+              label="Ganancia"
+              value={formatMoney(record.total - record.cost, data.currency)}
+            />
+          </div>
+          <div className="order-detail-totals-row two">
+            <Fact
+              label="Cobrado"
+              value={formatMoney(record.paid, data.currency)}
+            />
+            <Fact
+              label="Saldo"
+              value={formatMoney(
+                Math.max(0, record.total - record.paid),
+                data.currency,
+              )}
+            />
+          </div>
         </div>
       </section>
       {record.notes.trim() ? (

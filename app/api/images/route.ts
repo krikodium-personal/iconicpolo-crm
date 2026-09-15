@@ -10,8 +10,7 @@ export async function POST(request: Request) {
     const file = form.get('file');
     if (!(file instanceof File) || file.size > 5_242_880 || !file.size)
       throw new Error('Seleccioná una foto de hasta 5 MB.');
-    const buffer = await file.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
+    const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
     const mime =
       bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
         ? 'image/jpeg'
@@ -23,7 +22,7 @@ export async function POST(request: Request) {
             : null;
     if (!mime) throw new Error('Usá fotos JPG, PNG o WebP.');
     const id = crypto.randomUUID();
-    await files().put(id, buffer, { httpMetadata: { contentType: mime } });
+    await files().put(id, file.stream(), { httpMetadata: { contentType: mime } });
     try {
       await stmt(
         'INSERT INTO images(id,name,mime,size,created_at) VALUES(?,?,?,?,?)',

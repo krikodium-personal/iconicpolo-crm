@@ -31,6 +31,45 @@ function selectFieldInput(e: { target: EventTarget }) {
     return;
   requestAnimationFrame(() => input.select());
 }
+
+const PHOTO_MAX_EDGE = 1600;
+const PHOTO_MAX_BYTES = 350_000;
+
+async function preparePhoto(file: File) {
+  if (file.size <= PHOTO_MAX_BYTES && file.type === 'image/jpeg') return file;
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(
+    1,
+    PHOTO_MAX_EDGE / Math.max(bitmap.width, bitmap.height),
+  );
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    bitmap.close();
+    throw new Error('No se pudo preparar la foto.');
+  }
+  context.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (next) =>
+        next
+          ? resolve(next)
+          : reject(new Error('No se pudo comprimir la foto.')),
+      'image/jpeg',
+      0.82,
+    );
+  });
+  return new File(
+    [blob],
+    file.name.replace(/\.[^.]+$/i, '.jpg'),
+    { type: 'image/jpeg' },
+  );
+}
 export function Field({
   label,
   children,
@@ -481,8 +520,9 @@ export function Photos({
         throw new Error(`Máximo ${max} fotos.`);
       const result = [...value];
       for (const file of Array.from(files)) {
+        const photo = await preparePhoto(file);
         const form = new FormData();
-        form.set('file', file);
+        form.set('file', photo);
         const r = await fetch('/api/images', { method: 'POST', body: form });
         const data = (await r.json()) as { error: string; url: string };
         if (!r.ok) throw new Error(data.error);
