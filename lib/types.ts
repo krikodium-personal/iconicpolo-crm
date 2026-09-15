@@ -135,6 +135,26 @@ export type AccountExpense = {
   notes: string;
   created_at: string;
 };
+export type AccountEntryConcept =
+  | 'pago_proveedor'
+  | 'gasto_publicitario'
+  | 'gastos_extras'
+  | 'otros';
+export type AccountEntry = {
+  id: string;
+  concept: AccountEntryConcept;
+  detail: string;
+  partner_id: string;
+  supplier_id?: string;
+  receipt?: string;
+  amount: number;
+  currency: 'ARS' | 'USD';
+  fx_rate?: number;
+  amount_ars?: number;
+  date: string;
+  created_at: string;
+  created_by?: string;
+};
 export type PartnerCashout = {
   id: string;
   partner_id: string;
@@ -153,6 +173,7 @@ export type Data = {
   partners: Partner[];
   expenses: AccountExpense[];
   cashouts: PartnerCashout[];
+  entries: AccountEntry[];
   currency: string;
 };
 export const ORDER_STATUSES = [

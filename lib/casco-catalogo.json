@@ -1,0 +1,1461 @@
+{
+ "_meta": {
+  "fuente": "configurador de casablancapolo.com",
+  "relevado": "2026-09-15",
+  "nota": "position es el orden de display en la grilla, agrupado por familia cromatica. Es unico dentro de cada paleta, no entre paletas."
+ },
+ "estilosVisera": [
+  {
+   "id": "argentine",
+   "nombre": "Argentina",
+   "default": true
+  },
+  {
+   "id": "english",
+   "nombre": "Inglesa",
+   "default": false
+  }
+ ],
+ "tiposMaterial": [
+  {
+   "id": "cloth",
+   "nombre": "Tela",
+   "default": true
+  },
+  {
+   "id": "leather",
+   "nombre": "Cuero",
+   "default": false
+  },
+  {
+   "id": "softshell",
+   "nombre": "Softshell",
+   "default": false
+  },
+  {
+   "id": "prints",
+   "nombre": "Estampado",
+   "default": false,
+   "sinColor": true
+  }
+ ],
+ "paletasTela": {
+  "cloth": [
+   {
+    "position": 1,
+    "hex": "#b8b5a8",
+    "nombre": "Gris Claro",
+    "nombreEn": "Light Grey"
+   },
+   {
+    "position": 2,
+    "hex": "#3f3f3f",
+    "nombre": "Gris Medio",
+    "nombreEn": "Medium Grey"
+   },
+   {
+    "position": 3,
+    "hex": "#000000",
+    "nombre": "Negro",
+    "nombreEn": "Black"
+   },
+   {
+    "position": 4,
+    "hex": "#06132b",
+    "nombre": "Azul Marino",
+    "nombreEn": "Marine Blue"
+   },
+   {
+    "position": 5,
+    "hex": "#3564a9",
+    "nombre": "Azul Clásico",
+    "nombreEn": "Classic Blue"
+   },
+   {
+    "position": 6,
+    "hex": "#4989bc",
+    "nombre": "Azul Pastel Oscuro",
+    "nombreEn": "Dark Pastel Blue"
+   },
+   {
+    "position": 7,
+    "hex": "#c5daeb",
+    "nombre": "Azul Pastel Claro",
+    "nombreEn": "Light Pastel Blue"
+   },
+   {
+    "position": 8,
+    "hex": "#7e96a2",
+    "nombre": "Azul Acero Claro",
+    "nombreEn": "Light Steel Blue"
+   },
+   {
+    "position": 9,
+    "hex": "#3db7bf",
+    "nombre": "Agua",
+    "nombreEn": "Aqua"
+   },
+   {
+    "position": 10,
+    "hex": "#7e6eac",
+    "nombre": "Violeta",
+    "nombreEn": "Violet"
+   },
+   {
+    "position": 11,
+    "hex": "#44377d",
+    "nombre": "Púrpura",
+    "nombreEn": "Purple"
+   },
+   {
+    "position": 12,
+    "hex": "#fdd6d6",
+    "nombre": "Rosa Pálido",
+    "nombreEn": "Blush"
+   },
+   {
+    "position": 13,
+    "hex": "#660a17",
+    "nombre": "Bordó Oscuro",
+    "nombreEn": "Dark Burgundy"
+   },
+   {
+    "position": 14,
+    "hex": "#e00505",
+    "nombre": "Rojo",
+    "nombreEn": "Red"
+   },
+   {
+    "position": 15,
+    "hex": "#ff6a00",
+    "nombre": "Naranja Fantasía",
+    "nombreEn": "Fantasy Orange"
+   },
+   {
+    "position": 16,
+    "hex": "#ffe998",
+    "nombre": "Amarillo Canario",
+    "nombreEn": "Canary Yellow"
+   },
+   {
+    "position": 17,
+    "hex": "#008035",
+    "nombre": "Verde Esmeralda",
+    "nombreEn": "Emerald Green"
+   },
+   {
+    "position": 18,
+    "hex": "#13452e",
+    "nombre": "Verde Cazador",
+    "nombreEn": "Hunter Green"
+   },
+   {
+    "position": 19,
+    "hex": "#808035",
+    "nombre": "Verde Oliva",
+    "nombreEn": "Olive Green"
+   },
+   {
+    "position": 20,
+    "hex": "#3d3c1a",
+    "nombre": "Verde Oliva Oscuro",
+    "nombreEn": "Dark Olive Green"
+   },
+   {
+    "position": 21,
+    "hex": "#a1997d",
+    "nombre": "Salvia",
+    "nombreEn": "Sage"
+   },
+   {
+    "position": 22,
+    "hex": "#f9f0ca",
+    "nombre": "Marfil",
+    "nombreEn": "Ivory"
+   },
+   {
+    "position": 23,
+    "hex": "#c5a780",
+    "nombre": "Café con Leche",
+    "nombreEn": "Cafe Au Lait"
+   },
+   {
+    "position": 24,
+    "hex": "#7a491d",
+    "nombre": "Cacao",
+    "nombreEn": "Cocoa"
+   },
+   {
+    "position": 25,
+    "hex": "#5e462f",
+    "nombre": "Marrón Nogal",
+    "nombreEn": "Walnut Brown"
+   }
+  ],
+  "leather": [
+   {
+    "position": 1,
+    "hex": "#6f6c70",
+    "nombre": "Gris Medio",
+    "nombreEn": "Medium Grey"
+   },
+   {
+    "position": 2,
+    "hex": "#000000",
+    "nombre": "Negro",
+    "nombreEn": "Black"
+   },
+   {
+    "position": 3,
+    "hex": "#102b40",
+    "nombre": "Azul Marino",
+    "nombreEn": "Navy Blue"
+   },
+   {
+    "position": 4,
+    "hex": "#042257",
+    "nombre": "Azul Oscuro",
+    "nombreEn": "Dark Blue"
+   },
+   {
+    "position": 5,
+    "hex": "#2e1a47",
+    "nombre": "Berenjena",
+    "nombreEn": "Aubergine"
+   },
+   {
+    "position": 6,
+    "hex": "#c5b4e3",
+    "nombre": "Lila",
+    "nombreEn": "Lilac"
+   },
+   {
+    "position": 7,
+    "hex": "#ebb5b5",
+    "nombre": "Rosa Viejo",
+    "nombreEn": "Old Pink"
+   },
+   {
+    "position": 8,
+    "hex": "#cc2967",
+    "nombre": "Magenta",
+    "nombreEn": "Magenta"
+   },
+   {
+    "position": 9,
+    "hex": "#5b1919",
+    "nombre": "Bordó Oscuro",
+    "nombreEn": "Dark Burgundy"
+   },
+   {
+    "position": 10,
+    "hex": "#b21c27",
+    "nombre": "Rojo Profundo",
+    "nombreEn": "Deep Red"
+   },
+   {
+    "position": 11,
+    "hex": "#3b8045",
+    "nombre": "Verde Bosque",
+    "nombreEn": "Forest Green"
+   },
+   {
+    "position": 12,
+    "hex": "#00332e",
+    "nombre": "Verde Oscuro",
+    "nombreEn": "Dark Green"
+   },
+   {
+    "position": 13,
+    "hex": "#6b7433",
+    "nombre": "Verde Oliva Claro",
+    "nombreEn": "Light Olive Green"
+   },
+   {
+    "position": 14,
+    "hex": "#3c4324",
+    "nombre": "Verde Cedro",
+    "nombreEn": "Cedar Green"
+   },
+   {
+    "position": 15,
+    "hex": "#e1cfb5",
+    "nombre": "Blanco Roto",
+    "nombreEn": "Off White"
+   },
+   {
+    "position": 16,
+    "hex": "#b09272",
+    "nombre": "Visón",
+    "nombreEn": "Mink"
+   },
+   {
+    "position": 17,
+    "hex": "#ca8f4c",
+    "nombre": "Camel",
+    "nombreEn": "Camel"
+   },
+   {
+    "position": 18,
+    "hex": "#814021",
+    "nombre": "Tostado",
+    "nombreEn": "Tan"
+   },
+   {
+    "position": 19,
+    "hex": "#2d1911",
+    "nombre": "Marrón Oscuro",
+    "nombreEn": "Dark Brown"
+   }
+  ],
+  "softshell": [
+   {
+    "position": 1,
+    "hex": "#c9cfca",
+    "nombre": "Gris Ceniza",
+    "nombreEn": "Ash Grey"
+   },
+   {
+    "position": 2,
+    "hex": "#444444",
+    "nombre": "Gris Oscuro",
+    "nombreEn": "Dark Grey"
+   },
+   {
+    "position": 3,
+    "hex": "#191919",
+    "nombre": "Negro",
+    "nombreEn": "Black"
+   },
+   {
+    "position": 4,
+    "hex": "#1b2638",
+    "nombre": "Azul Marino",
+    "nombreEn": "Navy Blue"
+   },
+   {
+    "position": 5,
+    "hex": "#244789",
+    "nombre": "Azul Rey",
+    "nombreEn": "Royal Blue"
+   },
+   {
+    "position": 6,
+    "hex": "#779ecb",
+    "nombre": "Azul Pastel Oscuro",
+    "nombreEn": "Dark Pastel Blue"
+   },
+   {
+    "position": 7,
+    "hex": "#b6e2ec",
+    "nombre": "Celeste Bebé",
+    "nombreEn": "Baby Blue"
+   },
+   {
+    "position": 8,
+    "hex": "#95c4f0",
+    "nombre": "Celeste",
+    "nombreEn": "Light Blue"
+   },
+   {
+    "position": 9,
+    "hex": "#67c6e0",
+    "nombre": "Azul Cielo",
+    "nombreEn": "Sky Blue"
+   },
+   {
+    "position": 10,
+    "hex": "#5cc1be",
+    "nombre": "Agua",
+    "nombreEn": "Aqua"
+   },
+   {
+    "position": 11,
+    "hex": "#7956b8",
+    "nombre": "Violeta",
+    "nombreEn": "Violet"
+   },
+   {
+    "position": 12,
+    "hex": "#5b254c",
+    "nombre": "Ciruela Oscuro",
+    "nombreEn": "Dark Plum"
+   },
+   {
+    "position": 13,
+    "hex": "#4e247f",
+    "nombre": "Púrpura",
+    "nombreEn": "Purple"
+   },
+   {
+    "position": 14,
+    "hex": "#ccb4e3",
+    "nombre": "Glicina",
+    "nombreEn": "Wisteria"
+   },
+   {
+    "position": 15,
+    "hex": "#ffcddc",
+    "nombre": "Rosa Pálido",
+    "nombreEn": "Blush"
+   },
+   {
+    "position": 16,
+    "hex": "#ff96b3",
+    "nombre": "Rosa Flamenco",
+    "nombreEn": "Flamingo Pink"
+   },
+   {
+    "position": 17,
+    "hex": "#d7387a",
+    "nombre": "Magenta",
+    "nombreEn": "Magenta"
+   },
+   {
+    "position": 18,
+    "hex": "#6d0f0f",
+    "nombre": "Bordó",
+    "nombreEn": "Burgundy"
+   },
+   {
+    "position": 19,
+    "hex": "#7a1010",
+    "nombre": "Bordó Oscuro",
+    "nombreEn": "Dark Burgundy"
+   },
+   {
+    "position": 20,
+    "hex": "#d10a00",
+    "nombre": "Rojo",
+    "nombreEn": "Red"
+   },
+   {
+    "position": 21,
+    "hex": "#ff6720",
+    "nombre": "Naranja Casablanca",
+    "nombreEn": "Casablanca Orange"
+   },
+   {
+    "position": 22,
+    "hex": "#feee76",
+    "nombre": "Amarillo Canario",
+    "nombreEn": "Canary Yellow"
+   },
+   {
+    "position": 23,
+    "hex": "#acce30",
+    "nombre": "Verde Lima Neón",
+    "nombreEn": "Neon Lime Green"
+   },
+   {
+    "position": 24,
+    "hex": "#cceb86",
+    "nombre": "Verde Menta",
+    "nombreEn": "Mint Green"
+   },
+   {
+    "position": 25,
+    "hex": "#62c68d",
+    "nombre": "Verde Mar",
+    "nombreEn": "Sea Green"
+   },
+   {
+    "position": 26,
+    "hex": "#8bc43f",
+    "nombre": "Verde Loro Claro",
+    "nombreEn": "Light Parrot Green"
+   },
+   {
+    "position": 27,
+    "hex": "#018535",
+    "nombre": "Verde Bosque",
+    "nombreEn": "Forest Green"
+   },
+   {
+    "position": 28,
+    "hex": "#115740",
+    "nombre": "Verde Cazador",
+    "nombreEn": "Hunter Green"
+   },
+   {
+    "position": 29,
+    "hex": "#454b21",
+    "nombre": "Verde Oliva Oscuro",
+    "nombreEn": "Dark Olive Green"
+   },
+   {
+    "position": 30,
+    "hex": "#2c3114",
+    "nombre": "Verde Militar",
+    "nombreEn": "Army Green"
+   },
+   {
+    "position": 31,
+    "hex": "#23251c",
+    "nombre": "Verde Militar Oscuro",
+    "nombreEn": "Dark Army Green"
+   },
+   {
+    "position": 32,
+    "hex": "#c3b2a2",
+    "nombre": "Topo",
+    "nombreEn": "Taupe"
+   },
+   {
+    "position": 33,
+    "hex": "#a9806a",
+    "nombre": "Café con Leche",
+    "nombreEn": "Cafe Au Lait"
+   },
+   {
+    "position": 34,
+    "hex": "#a45a2a",
+    "nombre": "Óxido",
+    "nombreEn": "Rust"
+   },
+   {
+    "position": 35,
+    "hex": "#291609",
+    "nombre": "Marrón Nogal",
+    "nombreEn": "Walnut Brown"
+   },
+   {
+    "position": null,
+    "hex": null,
+    "nombre": "Amarillo Girasol",
+    "nombreEn": "S Sunflower Yellow"
+   }
+  ]
+ },
+ "paletaBarbijo": [
+  {
+   "position": 1,
+   "hex": "#d3d3d3",
+   "nombre": "Gris Pálido",
+   "nombreEn": "Pale Grey"
+  },
+  {
+   "position": 2,
+   "hex": "#969696",
+   "nombre": "Gris Tiburón",
+   "nombreEn": "Shark Grey"
+  },
+  {
+   "position": 3,
+   "hex": "#53565a",
+   "nombre": "Gris Oscuro",
+   "nombreEn": "Dark Grey"
+  },
+  {
+   "position": 4,
+   "hex": "#000000",
+   "nombre": "Negro",
+   "nombreEn": "Black"
+  },
+  {
+   "position": 5,
+   "hex": "#06132b",
+   "nombre": "Azul Marino",
+   "nombreEn": "Marine Blue"
+  },
+  {
+   "position": 6,
+   "hex": "#0032a0",
+   "nombre": "Azul Brillante",
+   "nombreEn": "Bright Blue"
+  },
+  {
+   "position": 7,
+   "hex": "#a2b9de",
+   "nombre": "Azul Empolvado",
+   "nombreEn": "Powder Blue"
+  },
+  {
+   "position": 8,
+   "hex": "#b8ceef",
+   "nombre": "Azul Hielo",
+   "nombreEn": "Ice Blue"
+  },
+  {
+   "position": 9,
+   "hex": "#57b6ae",
+   "nombre": "Agua",
+   "nombreEn": "Aqua"
+  },
+  {
+   "position": 10,
+   "hex": "#160066",
+   "nombre": "Berenjena",
+   "nombreEn": "Aubergine"
+  },
+  {
+   "position": 11,
+   "hex": "#48195a",
+   "nombre": "Uva",
+   "nombreEn": "Grape"
+  },
+  {
+   "position": 12,
+   "hex": "#c5b4e3",
+   "nombre": "Glicina",
+   "nombreEn": "Wisteria"
+  },
+  {
+   "position": 13,
+   "hex": "#ffcada",
+   "nombre": "Rosa Pálido",
+   "nombreEn": "Blush"
+  },
+  {
+   "position": 14,
+   "hex": "#ffa3c9",
+   "nombre": "Rosa Claro",
+   "nombreEn": "Light Pink"
+  },
+  {
+   "position": 15,
+   "hex": "#f7cdde",
+   "nombre": "Rosa Suave",
+   "nombreEn": "Soft Pink"
+  },
+  {
+   "position": 16,
+   "hex": "#ff9674",
+   "nombre": "Durazno",
+   "nombreEn": "Peach"
+  },
+  {
+   "position": 17,
+   "hex": "#e0457b",
+   "nombre": "Magenta",
+   "nombreEn": "Magenta"
+  },
+  {
+   "position": 18,
+   "hex": "#882230",
+   "nombre": "Bordó",
+   "nombreEn": "Burgundy"
+  },
+  {
+   "position": 19,
+   "hex": "#e52421",
+   "nombre": "Escarlata",
+   "nombreEn": "Scarlet"
+  },
+  {
+   "position": 20,
+   "hex": "#ff5260",
+   "nombre": "Rojo Cereza",
+   "nombreEn": "Cherry Red"
+  },
+  {
+   "position": 21,
+   "hex": "#fe5000",
+   "nombre": "Naranja Casablanca",
+   "nombreEn": "Casablanca Orange"
+  },
+  {
+   "position": 22,
+   "hex": "#ff9e00",
+   "nombre": "Amarillo Caléndula",
+   "nombreEn": "Marigold Yellow"
+  },
+  {
+   "position": 23,
+   "hex": "#fcce30",
+   "nombre": "Amarillo Girasol",
+   "nombreEn": "Sunflower Yellow"
+  },
+  {
+   "position": 24,
+   "hex": "#fff2cc",
+   "nombre": "Amarillo Pálido",
+   "nombreEn": "Pale Yellow"
+  },
+  {
+   "position": 25,
+   "hex": "#e4ff9b",
+   "nombre": "Verde Menta",
+   "nombreEn": "Mint Green"
+  },
+  {
+   "position": 26,
+   "hex": "#356e03",
+   "nombre": "Verde Césped",
+   "nombreEn": "Grass Green"
+  },
+  {
+   "position": 27,
+   "hex": "#82bf43",
+   "nombre": "Verde Loro Claro",
+   "nombreEn": "Light Parrot Green"
+  },
+  {
+   "position": 28,
+   "hex": "#8bde37",
+   "nombre": "Verde Loro",
+   "nombreEn": "Parrot Green"
+  },
+  {
+   "position": 29,
+   "hex": "#186330",
+   "nombre": "Verde Cadmio",
+   "nombreEn": "Cadmium Green"
+  },
+  {
+   "position": 30,
+   "hex": "#445c1e",
+   "nombre": "Verde Oliva",
+   "nombreEn": "Olive Green"
+  },
+  {
+   "position": 31,
+   "hex": "#fff8e7",
+   "nombre": "Marfil Barbijo",
+   "nombreEn": "Strap Ivory"
+  },
+  {
+   "position": 32,
+   "hex": "#faebd7",
+   "nombre": "Blanco Antiguo",
+   "nombreEn": "Antique White"
+  },
+  {
+   "position": 33,
+   "hex": "#c89f77",
+   "nombre": "Dulce de Leche",
+   "nombreEn": "Dulce De Leche"
+  },
+  {
+   "position": 34,
+   "hex": "#b35739",
+   "nombre": "Óxido",
+   "nombreEn": "Rust"
+  },
+  {
+   "position": 35,
+   "hex": "#be8a00",
+   "nombre": "Mostaza",
+   "nombreEn": "Mustard"
+  },
+  {
+   "position": 36,
+   "hex": "#5e2e00",
+   "nombre": "Marrón",
+   "nombreEn": "Brown"
+  },
+  {
+   "position": 37,
+   "hex": "#2c160e",
+   "nombre": "Marrón Nogal",
+   "nombreEn": "Walnut Brown"
+  }
+ ],
+ "paletaOjales": [
+  {
+   "position": 1,
+   "hex": "#bbbcbc",
+   "nombre": "Gris Frío",
+   "nombreEn": "Cool Gray"
+  },
+  {
+   "position": 2,
+   "hex": "#53565a",
+   "nombre": "Gris Oscuro",
+   "nombreEn": "Dark Grey"
+  },
+  {
+   "position": 3,
+   "hex": "#000000",
+   "nombre": "Negro",
+   "nombreEn": "Black"
+  },
+  {
+   "position": 4,
+   "hex": "#06132b",
+   "nombre": "Azul Marino",
+   "nombreEn": "Marine Blue"
+  },
+  {
+   "position": 5,
+   "hex": "#24214a",
+   "nombre": "Azul Zafiro",
+   "nombreEn": "Sapphire Blue"
+  },
+  {
+   "position": 6,
+   "hex": "#292d69",
+   "nombre": "Azul Rey",
+   "nombreEn": "Royal Blue"
+  },
+  {
+   "position": 7,
+   "hex": "#0047ab",
+   "nombre": "Azul Cerúleo",
+   "nombreEn": "Cerulean Blue"
+  },
+  {
+   "position": 8,
+   "hex": "#a3bbe4",
+   "nombre": "Azul Hielo",
+   "nombreEn": "Ice Blue"
+  },
+  {
+   "position": 9,
+   "hex": "#008eaa",
+   "nombre": "Turquesa",
+   "nombreEn": "Turquoise"
+  },
+  {
+   "position": 10,
+   "hex": "#220044",
+   "nombre": "Púrpura",
+   "nombreEn": "Purple"
+  },
+  {
+   "position": 11,
+   "hex": "#c5b4e3",
+   "nombre": "Lila",
+   "nombreEn": "Lilac"
+  },
+  {
+   "position": 12,
+   "hex": "#fabbcb",
+   "nombre": "Rosa Suave",
+   "nombreEn": "Soft Pink"
+  },
+  {
+   "position": 13,
+   "hex": "#f99fc9",
+   "nombre": "Rosa Claro",
+   "nombreEn": "Light Pink"
+  },
+  {
+   "position": 14,
+   "hex": "#d93856",
+   "nombre": "Azalea",
+   "nombreEn": "Azalea"
+  },
+  {
+   "position": 15,
+   "hex": "#bb29bb",
+   "nombre": "Fucsia",
+   "nombreEn": "Fuchsia"
+  },
+  {
+   "position": 16,
+   "hex": "#4a0d1e",
+   "nombre": "Bordó Oscuro",
+   "nombreEn": "Dark Burgundy"
+  },
+  {
+   "position": 17,
+   "hex": "#c02e1a",
+   "nombre": "Escarlata",
+   "nombreEn": "Scarlet"
+  },
+  {
+   "position": 18,
+   "hex": "#db2941",
+   "nombre": "Rojo Cereza",
+   "nombreEn": "Cherry Red"
+  },
+  {
+   "position": 19,
+   "hex": "#fe5000",
+   "nombre": "Naranja Fantasía",
+   "nombreEn": "Fantasy Orange"
+  },
+  {
+   "position": 20,
+   "hex": "#ff7f1e",
+   "nombre": "Mandarina",
+   "nombreEn": "Tangerine"
+  },
+  {
+   "position": 21,
+   "hex": "#ffd700",
+   "nombre": "Amarillo Girasol",
+   "nombreEn": "Sunflower Yellow"
+  },
+  {
+   "position": 22,
+   "hex": "#c4d600",
+   "nombre": "Verde Lima",
+   "nombreEn": "Lime Green"
+  },
+  {
+   "position": 23,
+   "hex": "#059669",
+   "nombre": "Verde Mar",
+   "nombreEn": "Sea Green"
+  },
+  {
+   "position": 24,
+   "hex": "#8bde37",
+   "nombre": "Verde Loro",
+   "nombreEn": "Parrot Green"
+  },
+  {
+   "position": 25,
+   "hex": "#008542",
+   "nombre": "Verde Bosque",
+   "nombreEn": "Forest Green"
+  },
+  {
+   "position": 26,
+   "hex": "#115740",
+   "nombre": "Verde Cadmio",
+   "nombreEn": "Cadmium Green"
+  },
+  {
+   "position": 27,
+   "hex": "#3e4827",
+   "nombre": "Verde Oliva Oscuro",
+   "nombreEn": "Dark Olive Green"
+  },
+  {
+   "position": 28,
+   "hex": "#e0c6ad",
+   "nombre": "Topo",
+   "nombreEn": "Taupe"
+  },
+  {
+   "position": 29,
+   "hex": "#c09475",
+   "nombre": "Beige",
+   "nombreEn": "Beige"
+  },
+  {
+   "position": 30,
+   "hex": "#ad7c59",
+   "nombre": "Café con Leche",
+   "nombreEn": "Cafe Au Lait"
+  },
+  {
+   "position": 31,
+   "hex": "#4f2c1d",
+   "nombre": "Marrón Nogal",
+   "nombreEn": "Walnut Brown"
+  }
+ ],
+ "paletaLogoHilo": [
+  {
+   "position": 1,
+   "hex": "#8e918e",
+   "nombre": "Gris Claro",
+   "nombreEn": "Light Grey"
+  },
+  {
+   "position": 2,
+   "hex": "#545859",
+   "nombre": "Gris Medio",
+   "nombreEn": "Medium Grey"
+  },
+  {
+   "position": 3,
+   "hex": "#000000",
+   "nombre": "Negro",
+   "nombreEn": "Black"
+  },
+  {
+   "position": 4,
+   "hex": "#05266b",
+   "nombre": "Azul Zafiro",
+   "nombreEn": "Sapphire Blue"
+  },
+  {
+   "position": 5,
+   "hex": "#021236",
+   "nombre": "Azul Marino",
+   "nombreEn": "Marine Blue"
+  },
+  {
+   "position": 6,
+   "hex": "#1f48a0",
+   "nombre": "Azul Rey",
+   "nombreEn": "Royal Blue"
+  },
+  {
+   "position": 7,
+   "hex": "#105f9c",
+   "nombre": "Azul Eléctrico",
+   "nombreEn": "Electric Blue"
+  },
+  {
+   "position": 8,
+   "hex": "#2e79b6",
+   "nombre": "Azul Pastel Oscuro",
+   "nombreEn": "Dark Pastel Blue"
+  },
+  {
+   "position": 9,
+   "hex": "#87cefa",
+   "nombre": "Celeste Bebé",
+   "nombreEn": "Baby Blue"
+  },
+  {
+   "position": 10,
+   "hex": "#aecfe5",
+   "nombre": "Azul Hielo",
+   "nombreEn": "Ice Blue"
+  },
+  {
+   "position": 11,
+   "hex": "#00b0c7",
+   "nombre": "Turquesa",
+   "nombreEn": "Turquoise"
+  },
+  {
+   "position": 13,
+   "hex": "#7e6eac",
+   "nombre": "Violeta",
+   "nombreEn": "Violet"
+  },
+  {
+   "position": 14,
+   "hex": "#7b317d",
+   "nombre": "Ciruela",
+   "nombreEn": "Plum"
+  },
+  {
+   "position": 15,
+   "hex": "#803d91",
+   "nombre": "Malva",
+   "nombreEn": "Mauve"
+  },
+  {
+   "position": 16,
+   "hex": "#c5b4e3",
+   "nombre": "Lila",
+   "nombreEn": "Liliac"
+  },
+  {
+   "position": 17,
+   "hex": "#f4c2c2",
+   "nombre": "Rosa Pálido",
+   "nombreEn": "Blush"
+  },
+  {
+   "position": 18,
+   "hex": "#f589a3",
+   "nombre": "Rosa Bebé",
+   "nombreEn": "Baby Pink"
+  },
+  {
+   "position": 19,
+   "hex": "#e66fa7",
+   "nombre": "Rosa Flamenco",
+   "nombreEn": "Flamingo Pink"
+  },
+  {
+   "position": 20,
+   "hex": "#fca9a9",
+   "nombre": "Coral",
+   "nombreEn": "Coral"
+  },
+  {
+   "position": 21,
+   "hex": "#da1884",
+   "nombre": "Magenta",
+   "nombreEn": "Magenta"
+  },
+  {
+   "position": 22,
+   "hex": "#632730",
+   "nombre": "Bordó Oscuro",
+   "nombreEn": "Dark Burgundy"
+  },
+  {
+   "position": 23,
+   "hex": "#ba1d1d",
+   "nombre": "Rojo",
+   "nombreEn": "Red"
+  },
+  {
+   "position": 24,
+   "hex": "#cb333b",
+   "nombre": "Cabernet",
+   "nombreEn": "Cabarnet"
+  },
+  {
+   "position": 25,
+   "hex": "#fe5000",
+   "nombre": "Naranja Casablanca",
+   "nombreEn": "Casablanca Orange"
+  },
+  {
+   "position": 26,
+   "hex": "#fe5001",
+   "nombre": "Naranja Neón",
+   "nombreEn": "Neon Orange"
+  },
+  {
+   "position": 27,
+   "hex": "#ff7f1e",
+   "nombre": "Mandarina",
+   "nombreEn": "Tangerine"
+  },
+  {
+   "position": 28,
+   "hex": "#ffaa2c",
+   "nombre": "Amarillo Caléndula",
+   "nombreEn": "Marigold Yellow"
+  },
+  {
+   "position": 29,
+   "hex": "#ffc72c",
+   "nombre": "Amarillo Girasol",
+   "nombreEn": "Sunflower Yellow"
+  },
+  {
+   "position": 30,
+   "hex": "#ffd71f",
+   "nombre": "Amarillo Canario",
+   "nombreEn": "Canary Yellow"
+  },
+  {
+   "position": 31,
+   "hex": "#e3ff61",
+   "nombre": "Verde Lima Neón",
+   "nombreEn": "Neon Lime Green"
+  },
+  {
+   "position": 32,
+   "hex": "#ccff00",
+   "nombre": "Verde Neón",
+   "nombreEn": "Neon Green"
+  },
+  {
+   "position": 33,
+   "hex": "#b7bf10",
+   "nombre": "Apio",
+   "nombreEn": "Celery"
+  },
+  {
+   "position": 34,
+   "hex": "#addc91",
+   "nombre": "Verde Menta",
+   "nombreEn": "Mint Green"
+  },
+  {
+   "position": 35,
+   "hex": "#64b236",
+   "nombre": "Verde Césped Claro",
+   "nombreEn": "Light Grass Green"
+  },
+  {
+   "position": 36,
+   "hex": "#00bc47",
+   "nombre": "Verde Césped",
+   "nombreEn": "Grass Green"
+  },
+  {
+   "position": 37,
+   "hex": "#029c48",
+   "nombre": "Verde Bosque",
+   "nombreEn": "Forest Green"
+  },
+  {
+   "position": 38,
+   "hex": "#164a24",
+   "nombre": "Verde Cadmio",
+   "nombreEn": "Cadmium Green"
+  },
+  {
+   "position": 39,
+   "hex": "#00422b",
+   "nombre": "Verde Cazador",
+   "nombreEn": "Hunter Green"
+  },
+  {
+   "position": 40,
+   "hex": "#596b3d",
+   "nombre": "Verde Oliva Claro",
+   "nombreEn": "Light Olive Green"
+  },
+  {
+   "position": 41,
+   "hex": "#3e4e32",
+   "nombre": "Verde Oliva",
+   "nombreEn": "Olive Green"
+  },
+  {
+   "position": 42,
+   "hex": "#3c4027",
+   "nombre": "Verde Cedro",
+   "nombreEn": "Cedar Green"
+  },
+  {
+   "position": 43,
+   "hex": "#1e2b11",
+   "nombre": "Verde Militar Oscuro",
+   "nombreEn": "Dark Army Green"
+  },
+  {
+   "position": 45,
+   "hex": "#b0a196",
+   "nombre": "Blanco Antiguo",
+   "nombreEn": "Antique White"
+  },
+  {
+   "position": 46,
+   "hex": "#ae886b",
+   "nombre": "Dulce de Leche",
+   "nombreEn": "Dulce De Leche"
+  },
+  {
+   "position": 47,
+   "hex": "#653818",
+   "nombre": "Marrón Chocolate",
+   "nombreEn": "Chocolate Brown"
+  },
+  {
+   "position": 48,
+   "hex": "#413020",
+   "nombre": "Marrón Nogal",
+   "nombreEn": "Walnut Brown"
+  },
+  {
+   "position": 49,
+   "hex": "#aaa9ad",
+   "nombre": "Plata Metalizado",
+   "nombreEn": "Metallic Silver"
+  },
+  {
+   "position": 50,
+   "hex": "#b2b4b2",
+   "nombre": "Plata Mate",
+   "nombreEn": "Matt Silver"
+  },
+  {
+   "position": 51,
+   "hex": "#ffe599",
+   "nombre": "Oro Metalizado",
+   "nombreEn": "Metallic Yellow Gold"
+  },
+  {
+   "position": 52,
+   "hex": "#daaa00",
+   "nombre": "Oro Mate",
+   "nombreEn": "Matt Gold"
+  }
+ ],
+ "estampados": [
+  {
+   "id": "topographic",
+   "nombre": "Topográfico"
+  },
+  {
+   "id": "halftone",
+   "nombre": "Semitono"
+  },
+  {
+   "id": "lightning",
+   "nombre": "Rayo"
+  }
+ ],
+ "partesTela": [
+  {
+   "id": "top",
+   "nombre": "Casquete",
+   "obligatorio": true
+  },
+  {
+   "id": "peak",
+   "nombre": "Visera",
+   "obligatorio": true
+  },
+  {
+   "id": "peak_band",
+   "nombre": "Banda de visera",
+   "obligatorio": true
+  },
+  {
+   "id": "under_peak",
+   "nombre": "Bajo visera",
+   "obligatorio": true
+  },
+  {
+   "id": "peak_strip",
+   "nombre": "Tira de visera",
+   "obligatorio": false,
+   "detrasDeToggle": "agregarTiraVisera"
+  }
+ ],
+ "partesFijas": [
+  {
+   "id": "strap",
+   "nombre": "Barbijo",
+   "paleta": "paletaBarbijo"
+  },
+  {
+   "id": "airholes",
+   "nombre": "Ojales de ventilación",
+   "paleta": "paletaOjales"
+  }
+ ],
+ "posiciones": [
+  {
+   "id": "left_side",
+   "nombre": "Lateral izquierdo"
+  },
+  {
+   "id": "back",
+   "nombre": "Atrás"
+  }
+ ],
+ "tamanosIniciales": {
+  "left_side": [
+   {
+    "id": "S",
+    "nombre": "Chico",
+    "mm": 12
+   },
+   {
+    "id": "M",
+    "nombre": "Mediano",
+    "mm": 14
+   },
+   {
+    "id": "L",
+    "nombre": "Grande",
+    "mm": 16
+   }
+  ],
+  "back": [
+   {
+    "id": "S",
+    "nombre": "Chico",
+    "mm": 14
+   },
+   {
+    "id": "M",
+    "nombre": "Mediano",
+    "mm": 16
+   },
+   {
+    "id": "L",
+    "nombre": "Grande",
+    "mm": 18
+   }
+  ]
+ },
+ "tamanosLogo": [
+  {
+   "id": "S",
+   "nombre": "Chico"
+  },
+  {
+   "id": "M",
+   "nombre": "Mediano"
+  },
+  {
+   "id": "L",
+   "nombre": "Grande"
+  }
+ ],
+ "talles": [
+  {
+   "cm": 52,
+   "pulgadas": "20 1/2",
+   "talleUS": "6 3/8"
+  },
+  {
+   "cm": 53,
+   "pulgadas": "20 7/8",
+   "talleUS": "6 1/2"
+  },
+  {
+   "cm": 54,
+   "pulgadas": "21 1/4",
+   "talleUS": "6 5/8"
+  },
+  {
+   "cm": 55,
+   "pulgadas": "21 5/8",
+   "talleUS": "6 3/4"
+  },
+  {
+   "cm": 56,
+   "pulgadas": "22",
+   "talleUS": "6 7/8"
+  },
+  {
+   "cm": 57,
+   "pulgadas": "22 1/2",
+   "talleUS": "7"
+  },
+  {
+   "cm": 58,
+   "pulgadas": "22 7/8",
+   "talleUS": "7 1/8"
+  },
+  {
+   "cm": 59,
+   "pulgadas": "23 1/8",
+   "talleUS": "7 1/4"
+  },
+  {
+   "cm": 60,
+   "pulgadas": "23 5/8",
+   "talleUS": "7 3/8"
+  },
+  {
+   "cm": 61,
+   "pulgadas": "24",
+   "talleUS": "7 1/2"
+  },
+  {
+   "cm": 62,
+   "pulgadas": "24 1/2",
+   "talleUS": "7 5/8"
+  },
+  {
+   "cm": 63,
+   "pulgadas": "24 3/4",
+   "talleUS": "7 3/4"
+  }
+ ],
+ "vinchas": [
+  {
+   "id": "one",
+   "nombre": "Una (incluida)",
+   "extra": 0,
+   "default": true
+  },
+  {
+   "id": "extra_1",
+   "nombre": "Una adicional",
+   "extra": 1
+  },
+  {
+   "id": "extra_2",
+   "nombre": "Dos adicionales",
+   "extra": 2
+  },
+  {
+   "id": "extra_3",
+   "nombre": "Tres adicionales",
+   "extra": 3
+  },
+  {
+   "id": "extra_4",
+   "nombre": "Cuatro adicionales",
+   "extra": 4
+  },
+  {
+   "id": "extra_5",
+   "nombre": "Cinco adicionales",
+   "extra": 5
+  }
+ ],
+ "cantidades": [
+  1,
+  2,
+  3,
+  4,
+  5
+ ],
+ "paises": []
+}

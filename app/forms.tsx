@@ -40,6 +40,7 @@ import {
   defaultConfig,
   configLabels,
   extraTotals,
+  adjustedConfiguredPrices,
   isConfiguredCategory,
   isConfiguredProduct,
   parseConfig,
@@ -54,6 +55,7 @@ import {
   summarizeConfig,
   describeConfigured,
   selectedReferenceIds,
+  configDesignPhoto,
   type ProductConfig,
   type StockHold,
 } from '@/lib/configure';
@@ -77,7 +79,10 @@ import {
   MessageCircle,
   ArrowUpRight,
   Pencil,
+  FileText,
 } from 'lucide-react';
+import { buildFicha } from '@/lib/ficha';
+import { FichaView } from './ficha';
 import { whatsapp, whatsappGroup } from '@/lib/whatsapp';
 export type Save = (body: Record<string, unknown>) => Promise<void>;
 export { whatsapp, whatsappGroup };
@@ -1323,6 +1328,8 @@ function itemPhoto(
   if (kind && item.selections.config) {
     try {
       const config = parseConfig(kind, item.selections.config);
+      const design = configDesignPhoto(kind, config);
+      if (design) return design;
       const url = selectedReferenceIds(kind, config)
         .map((id) => product.pricing.photos[id])
         .find(Boolean);
@@ -1332,6 +1339,40 @@ function itemPhoto(
     }
   }
   return product.photos[0];
+}
+
+function draftPhoto(
+  item: DraftItem,
+  product?: Product,
+  movements: Movement[] = [],
+) {
+  if (!product) return undefined;
+  return itemPhoto(
+    {
+      id: item.id || item.key,
+      order_id: item.snapshot?.order_id || '',
+      product_id: item.product_id,
+      name: item.snapshot?.name || product.name,
+      sku: item.snapshot?.sku || product.sku,
+      quantity: Number(item.quantity) || 1,
+      discount: 0,
+      unit_price: item.snapshot?.unit_price || 0,
+      unit_cost: item.snapshot?.unit_cost || 0,
+      total: 0,
+      cost: 0,
+      selections: {
+        options: [],
+        attributes: item.attributes,
+        config: item.config,
+        supplier_id: item.supplier_id,
+        from_stock: item.from_stock,
+        stock_qty: item.stock_qty,
+        location: item.location,
+      },
+    },
+    product,
+    movements,
+  );
 }
 
 export function OrderDetail({
@@ -1348,12 +1389,40 @@ export function OrderDetail({
   save: Save;
 }) {
   const [error, E] = useState('');
+  const [fichaItem, setFichaItem] = useState<Item | null>(null);
   const closed = orderIsLocked(record.status);
   const units = record.items.reduce((total, item) => total + item.quantity, 0);
   const due = Math.max(0, record.total - record.paid);
+  if (fichaItem) {
+    const product = data.products.find((p) => p.id === fichaItem.product_id);
+    const supplier = data.contacts.find(
+      (c) => c.id === fichaItem.selections.supplier_id,
+    );
+    const customer = data.contacts.find((c) => c.id === record.customer_id);
+    return (
+      <FichaView
+        ficha={buildFicha({
+          order: record,
+          item: fichaItem,
+          product,
+          supplier,
+          customer,
+          photo: itemPhoto(fichaItem, product, data.movements),
+        })}
+        onBack={() => setFichaItem(null)}
+      />
+    );
+  }
   return (
     <div className="pdp">
       <ErrorBox message={error} />
+      {!closed ? (
+        <div className="pdp-actions">
+          <button className="primary" type="button" onClick={onEdit}>
+            <Pencil size={16} /> Editar
+          </button>
+        </div>
+      ) : null}
       {closed ? (
         <p className="hint">
           {record.status === 'entregado'
@@ -1472,6 +1541,14 @@ export function OrderDetail({
                         .filter(Boolean)
                         .join(' · ')}
                     </small>
+                    <button
+                      type="button"
+                      className="ghost ficha-open"
+                      onClick={() => setFichaItem(item)}
+                    >
+                      <FileText size={14} />
+                      Ficha técnica
+                    </button>
                   </div>
                 </div>
                 <div className="stock-item-side order-detail-money">
@@ -1548,26 +1625,38 @@ export function OrderForm({
     address: '',
   });
   const [items, I] = useState<DraftItem[]>(
-    record?.items.map((i) => ({
-      key: i.id,
-      id: i.id,
-      product_id: i.product_id,
-      quantity: String(i.quantity),
-      discount: decimal(i.discount),
-      price_mode: 'list',
-      manual_price: '0.00',
-      option_ids: i.selections.options.map((o) => o.id),
-      attributes: i.selections.attributes,
-      config: i.selections.config as ProductConfig | undefined,
-      supplier_id:
-        i.selections.supplier_id ||
-        data.products.find((p) => p.id === i.product_id)?.supplier_id ||
-        undefined,
-      from_stock: !!i.selections.from_stock,
-      stock_qty: i.selections.stock_qty,
-      location: i.selections.location,
-      snapshot: i,
-    })) || [],
+    record?.items.map((i) => {
+      const product = data.products.find((p) => p.id === i.product_id);
+      const kind = product ? configuredKindOf(product) : null;
+      let config = i.selections.config as ProductConfig | undefined;
+      if (kind && i.selections.config) {
+        try {
+          config = parseConfig(kind, i.selections.config);
+        } catch {
+          /* keep stored config */
+        }
+      }
+      return {
+        key: i.id,
+        id: i.id,
+        product_id: i.product_id,
+        quantity: String(i.quantity),
+        discount: decimal(i.discount),
+        price_mode: 'list',
+        manual_price: '0.00',
+        option_ids: i.selections.options.map((o) => o.id),
+        attributes: i.selections.attributes,
+        config,
+        supplier_id:
+          i.selections.supplier_id ||
+          product?.supplier_id ||
+          undefined,
+        from_stock: !!i.selections.from_stock,
+        stock_qty: i.selections.stock_qty,
+        location: i.selections.location,
+        snapshot: i,
+      };
+    }) || [],
   );
   const [busy, B] = useState(false);
   const [error, E] = useState('');
@@ -1676,6 +1765,34 @@ export function OrderForm({
         i.config || defaultConfig(configured),
       );
       const extras = extraTotals(configured, config, p.pricing);
+      if (i.snapshot) {
+        const adjusted = adjustedConfiguredPrices(
+          configured,
+          i.snapshot.selections.config,
+          config,
+          p.pricing,
+          i.snapshot.unit_price,
+          i.snapshot.unit_cost,
+        );
+        const price = adjusted.unit_price;
+        const cost = adjusted.unit_cost;
+        return {
+          ...lineTotals(
+            price,
+            cost,
+            Number(i.quantity),
+            parseDecimal(i.discount),
+          ),
+          price,
+          unitCost: cost,
+          sku: p.sku,
+          available: stockForConfig(
+            data.movements,
+            p.id,
+            stockKey(configured, config),
+          ),
+        };
+      }
       const base =
         i.price_mode === 'manual'
           ? parseDecimal(i.manual_price)
@@ -1684,8 +1801,8 @@ export function OrderForm({
             : i.price_mode === 'promo'
               ? promoPrice(p)
               : p.price;
-      const price = i.snapshot?.unit_price ?? base + extras.price;
-      const cost = i.snapshot?.unit_cost ?? p.cost + extras.cost;
+      const price = base + extras.price;
+      const cost = p.cost + extras.cost;
       return {
         ...lineTotals(
           price,
@@ -2010,6 +2127,8 @@ export function OrderForm({
               ? skuFields(category?.fields || [], data.products, p.category)
               : [];
             const selecting = !i.snapshot && (picking === i.key || !i.product_id);
+            const kind = configuredKindOf(p);
+            const canConfigure = !!kind && !i.from_stock && !selecting;
             return (
               <div className="order-line" key={i.key}>
                 <div className="section-heading">
@@ -2025,29 +2144,7 @@ export function OrderForm({
                     </button>
                   )}
                 </div>
-                {i.snapshot ? (
-                  <div className="snapshot">
-                    <b>{itemDescription(i.snapshot, p)}</b>
-                    <small>
-                      {i.snapshot.sku} · precio y costo guardados en este pedido
-                    </small>
-                    {supplierName(i, p) ? (
-                      <span>Proveedor: {supplierName(i, p)}</span>
-                    ) : null}
-                    {!configuredKindOf(p) &&
-                      i.snapshot.selections.options.map((o) => (
-                        <span key={o.id}>
-                          {o.name} · +{formatMoney(o.price, data.currency)}
-                        </span>
-                      ))}
-                    {!configuredKindOf(p) &&
-                      Object.entries(i.attributes).map(([k, v]) => (
-                        <span key={k}>
-                          {k}: {v}
-                        </span>
-                      ))}
-                  </div>
-                ) : selecting ? (
+                {selecting ? (
                   <OrderProductPicker
                     data={data}
                     exceptOrderId={record?.id}
@@ -2076,9 +2173,54 @@ export function OrderForm({
                       setPicking(null);
                     }}
                   />
+                ) : canConfigure ? (
+                  <div className="order-picked">
+                    <ProductPhoto
+                      name={p?.name || i.snapshot?.name || ''}
+                      url={draftPhoto(i, p, data.movements)}
+                    />
+                    <div className="order-picked-copy">
+                      <b>{p?.name || i.snapshot?.name || 'Producto'}</b>
+                      <small>
+                        {i.snapshot
+                          ? `${i.snapshot.sku} · precio y costo guardados en este pedido`
+                          : p
+                            ? `A configurar · ${p.stock} uds.`
+                            : 'Producto no disponible'}
+                      </small>
+                      {supplierName(i, p) ? (
+                        <small>Proveedor: {supplierName(i, p)}</small>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : i.snapshot ? (
+                  <div className="snapshot">
+                    <b>{itemDescription(i.snapshot, p)}</b>
+                    <small>
+                      {i.snapshot.sku} · precio y costo guardados en este pedido
+                    </small>
+                    {supplierName(i, p) ? (
+                      <span>Proveedor: {supplierName(i, p)}</span>
+                    ) : null}
+                    {!configuredKindOf(p) &&
+                      i.snapshot.selections.options.map((o) => (
+                        <span key={o.id}>
+                          {o.name} · +{formatMoney(o.price, data.currency)}
+                        </span>
+                      ))}
+                    {!configuredKindOf(p) &&
+                      Object.entries(i.attributes).map(([k, v]) => (
+                        <span key={k}>
+                          {k}: {v}
+                        </span>
+                      ))}
+                  </div>
                 ) : (
                   <div className="order-picked">
-                    <ProductPhoto name={p?.name || ''} url={p?.photos[0]} />
+                    <ProductPhoto
+                      name={p?.name || ''}
+                      url={draftPhoto(i, p, data.movements)}
+                    />
                     <div className="order-picked-copy">
                       <b>{p?.name || 'Producto'}</b>
                       <small>
@@ -2089,24 +2231,13 @@ export function OrderForm({
                                   ? ` · ${i.stock_qty} uds.`
                                   : ''
                               }`
-                            : isConfiguredProduct(p)
-                              ? `A configurar · ${p.stock} uds.`
-                              : `${p.sku} · ${p.stock} uds.`
+                            : `${p.sku} · ${p.stock} uds.`
                           : 'Producto no disponible'}
                       </small>
                       {supplierName(i, p) ? (
                         <small>Proveedor: {supplierName(i, p)}</small>
                       ) : null}
                     </div>
-                    {!closed && (
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => setPicking(i.key)}
-                      >
-                        Cambiar
-                      </button>
-                    )}
                   </div>
                 )}
                 {!selecting && (
@@ -2211,8 +2342,19 @@ export function OrderForm({
                     </>
                   )}
                 </div>
-                {!i.snapshot && p ? (
-                  i.from_stock ? (
+                {p && canConfigure ? (
+                  <Configurator
+                    kind={kind!}
+                    value={i.config || defaultConfig(kind!)}
+                    onChange={(config) => update(i.key, { config })}
+                    movements={data.movements}
+                    productId={p.id}
+                    pricing={p.pricing}
+                    currency={data.currency}
+                    onError={E}
+                    onBusy={B}
+                  />
+                ) : !i.snapshot && p && i.from_stock ? (
                   <div className="snapshot">
                     <small>
                       Esta unidad ya está en stock. La combinación y el
@@ -2228,19 +2370,7 @@ export function OrderForm({
                       ))
                     )}
                   </div>
-                  ) : (
-                  <>
-                    {configuredKindOf(p) ? (
-                      <Configurator
-                        kind={configuredKindOf(p)!}
-                        value={i.config || defaultConfig(configuredKindOf(p)!)}
-                        onChange={(config) => update(i.key, { config })}
-                        movements={data.movements}
-                        productId={p.id}
-                        pricing={p.pricing}
-                        currency={data.currency}
-                      />
-                    ) : (
+                ) : !i.snapshot && p ? (
                       <>
                         <div className="option-checks">
                           {p.options.map((o) => (
@@ -2338,9 +2468,6 @@ export function OrderForm({
                           <p className="pending-text">{lineError}</p>
                         ) : null}
                       </>
-                    )}
-                  </>
-                  )
                 ) : null}
                 {t && (
                   <div className="line-summary">

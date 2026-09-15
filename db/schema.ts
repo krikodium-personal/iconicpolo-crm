@@ -161,3 +161,24 @@ export const partnerCashouts = sqliteTable(
   },
   (t) => [index('idx_cashouts_partner_date').on(t.partnerId, t.date)],
 );
+export const accountEntries = sqliteTable(
+  'account_entries',
+  {
+    id: text('id').primaryKey(),
+    concept: text('concept').notNull(),
+    detail: text('detail').notNull().default(''),
+    partnerId: text('partner_id')
+      .notNull()
+      .references(() => partners.id),
+    supplierId: text('supplier_id').notNull().default(''),
+    receipt: text('receipt').notNull().default(''),
+    amount: integer('amount').notNull(),
+    currency: text('currency').notNull(),
+    fxRate: integer('fx_rate').notNull().default(0),
+    amountArs: integer('amount_ars').notNull().default(0),
+    date: text('date').notNull(),
+    createdAt: text('created_at').notNull(),
+    createdBy: text('created_by').notNull().default(''),
+  },
+  (t) => [index('idx_account_entries_date').on(t.date)],
+);

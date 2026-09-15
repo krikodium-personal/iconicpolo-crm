@@ -88,6 +88,7 @@ import {
   whatsapp,
   whatsappGroup,
 } from './forms';
+import { BUILD } from '@/lib/build';
 import { AccountBoard } from './account';
 import { AuthScreen } from './login';
 import {
@@ -1316,6 +1317,7 @@ export default function CRM({
             >
               <LogOut size={17} /> Salir
             </button>
+            <p className="sidebar-build">Build {BUILD}</p>
             <div className="sidebar-foot">
               <span className="avatar">{initials(user?.name || '')}</span>
               <span>

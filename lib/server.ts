@@ -5,6 +5,7 @@ import {
   discounted,
   promoPrice,
   increaseByPercent,
+  arsFromUsd,
 } from './money';
 import {
   ORDER_STATUSES,
@@ -18,6 +19,7 @@ import {
   type Category,
   type Partner,
   type AccountExpense,
+  type AccountEntry,
   type PartnerCashout,
 } from './types';
 import {
@@ -32,6 +34,7 @@ import { setPartnerAccess } from './auth';
 import {
   configuredKindOf,
   extraTotals,
+  adjustedConfiguredPrices,
   configLabels,
   itemStockHold,
   parseConfig,
@@ -146,6 +149,12 @@ export async function ensureAccountTables() {
     d.prepare(
       'CREATE INDEX IF NOT EXISTS idx_cashouts_partner_date ON partner_cashouts (partner_id, date)',
     ),
+    d.prepare(
+      "CREATE TABLE IF NOT EXISTS account_entries (id text PRIMARY KEY NOT NULL, concept text NOT NULL, detail text NOT NULL DEFAULT '', partner_id text NOT NULL, supplier_id text NOT NULL DEFAULT '', receipt text NOT NULL DEFAULT '', amount integer NOT NULL, currency text NOT NULL, fx_rate integer NOT NULL DEFAULT 0, amount_ars integer NOT NULL DEFAULT 0, date text NOT NULL, created_at text NOT NULL, created_by text NOT NULL DEFAULT '', FOREIGN KEY (partner_id) REFERENCES partners(id))",
+    ),
+    d.prepare(
+      'CREATE INDEX IF NOT EXISTS idx_account_entries_date ON account_entries (date)',
+    ),
   ]);
   const partnerCols = await stmt('PRAGMA table_info(partners)').all();
   const partnerNames = new Set(
@@ -157,6 +166,35 @@ export async function ensureAccountTables() {
     ).run();
   }
   await ensureActorColumns();
+  const entryNames = await columnNames('account_entries');
+  const entryAlters = [
+    await addColumn(
+      'account_entries',
+      entryNames,
+      'supplier_id',
+      "supplier_id text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'account_entries',
+      entryNames,
+      'receipt',
+      "receipt text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'account_entries',
+      entryNames,
+      'fx_rate',
+      'fx_rate integer NOT NULL DEFAULT 0',
+    ),
+    await addColumn(
+      'account_entries',
+      entryNames,
+      'amount_ars',
+      'amount_ars integer NOT NULL DEFAULT 0',
+    ),
+  ].filter(Boolean);
+  if (entryAlters.length)
+    await d.batch(entryAlters as ReturnType<typeof stmt>[]);
 }
 
 async function addColumn(
@@ -584,7 +622,8 @@ export async function allData() {
   await ensureAccountTables();
   await ensureConfiguredCatalog();
   const d = db();
-  const [c, p, o, i, m, cat, s, partners, expenses, cashouts] = await d.batch([
+  const [c, p, o, i, m, cat, s, partners, expenses, cashouts, entries] =
+    await d.batch([
     d.prepare('SELECT * FROM contacts ORDER BY name'),
     d.prepare(
       'SELECT p.*,COALESCE((SELECT SUM(quantity) FROM stock_movements m WHERE m.product_id=p.id),0) stock FROM products p ORDER BY name',
@@ -600,6 +639,9 @@ export async function allData() {
     ),
     d.prepare(
       'SELECT * FROM partner_cashouts ORDER BY date DESC, created_at DESC',
+    ),
+    d.prepare(
+      'SELECT * FROM account_entries ORDER BY date DESC, created_at DESC',
     ),
   ]);
   const items = i.results.map((r) => decode<Item>(r, ['selections']));
@@ -663,6 +705,7 @@ export async function allData() {
     }),
     expenses: expenses.results as AccountExpense[],
     cashouts: cashouts.results as PartnerCashout[],
+    entries: entries.results as AccountEntry[],
     currency: s.results[0] ? obj(s.results[0]).currency : 'ARS',
   };
 }
@@ -919,22 +962,63 @@ export async function saveOrder(
       'product_id' | 'name' | 'sku' | 'selections' | 'unit_price' | 'unit_cost'
     >;
     if (old) {
+      const supplier_id = old.selections.from_stock
+        ? old.selections.supplier_id ||
+          (await requireSupplier(
+            input.supplier_id || old.selections.supplier_id,
+            old.selections.supplier_id,
+          ))
+        : await requireSupplier(
+            input.supplier_id || old.selections.supplier_id,
+            old.selections.supplier_id,
+          );
       snapshot = {
         ...old,
         selections: {
           ...old.selections,
-          supplier_id: old.selections.from_stock
-            ? old.selections.supplier_id ||
-              (await requireSupplier(
-                input.supplier_id || old.selections.supplier_id,
-                old.selections.supplier_id,
-              ))
-            : await requireSupplier(
-                input.supplier_id || old.selections.supplier_id,
-                old.selections.supplier_id,
-              ),
+          supplier_id,
         },
       };
+      if (!old.selections.from_stock) {
+        const row = await stmt(
+          'SELECT * FROM products WHERE id=?',
+          old.product_id,
+        ).first();
+        if (row) {
+          const rawProduct = obj(row);
+          const p = decode<Product>(
+            { ...rawProduct, pricing: rawProduct.pricing ?? '{}' },
+            ['options', 'attributes', 'photos', 'pricing'],
+          );
+          p.kind = p.kind === 'configured' ? 'configured' : 'sku';
+          p.pricing = parsePricing(p.pricing);
+          const configured = configuredKindOf(p);
+          if (configured) {
+            const config = parseConfig(configured, input.config);
+            const prices = adjustedConfiguredPrices(
+              configured,
+              old.selections.config,
+              config,
+              p.pricing,
+              old.unit_price,
+              old.unit_cost,
+            );
+            snapshot = {
+              product_id: old.product_id,
+              name: old.name,
+              sku: old.sku,
+              selections: {
+                options: [],
+                attributes: configLabels(configured, config),
+                config,
+                supplier_id,
+              },
+              unit_price: integer(prices.unit_price),
+              unit_cost: integer(prices.unit_cost),
+            };
+          }
+        }
+      }
     } else {
       const row = await stmt(
         'SELECT * FROM products WHERE id=? AND archived=0',
@@ -1780,6 +1864,55 @@ export async function mutate(
         amount,
         date(b.date, true),
         str(b.notes || '', 'Notas'),
+        new Date().toISOString(),
+        actor.id,
+      ).run();
+      return { ok: true };
+    }
+    case 'account_entry': {
+      await ensureAccountTables();
+      const concept = choice(
+        b.concept,
+        ['pago_proveedor', 'gasto_publicitario', 'gastos_extras', 'otros'],
+        'Concepto',
+      );
+      const detail = str(
+        b.detail || '',
+        'Concepto',
+        concept === 'otros' || concept === 'pago_proveedor',
+        160,
+      );
+      const partnerId = str(b.partner_id, 'Pagado por', true);
+      if (
+        !(await stmt(
+          'SELECT id FROM partners WHERE id=? AND archived=0',
+          partnerId,
+        ).first())
+      )
+        throw new Error('Socio no disponible.');
+      const supplierId =
+        concept === 'pago_proveedor' ? await requireSupplier(b.supplier_id) : '';
+      const amount = integer(b.amount, 'Monto');
+      if (!amount) throw new Error('Monto: debe ser mayor a cero.');
+      const currency = choice(b.currency, ['ARS', 'USD'], 'Moneda');
+      const receipt = photo(b.receipt || '');
+      const fxRate =
+        currency === 'USD' ? integer(b.fx_rate, 'Tipo de cambio') : 0;
+      const amountArs =
+        currency === 'USD' ? arsFromUsd(amount, fxRate) : amount;
+      await stmt(
+        'INSERT INTO account_entries(id,concept,detail,partner_id,supplier_id,receipt,amount,currency,fx_rate,amount_ars,date,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        crypto.randomUUID(),
+        concept,
+        detail,
+        partnerId,
+        supplierId,
+        receipt,
+        amount,
+        currency,
+        fxRate,
+        amountArs,
+        date(b.date, true),
         new Date().toISOString(),
         actor.id,
       ).run();

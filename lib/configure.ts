@@ -1,3 +1,67 @@
+import {
+  CASCO_ESTAMPADOS,
+  CASCO_MATERIAL_PRICE_KEY,
+  CASCO_PALETTE_IDS,
+  CASCO_POSICIONES,
+  CASCO_TAMANOS_INICIALES,
+  CASCO_TAMANOS_LOGO,
+  CASCO_TALLES,
+  CASCO_VISERAS,
+  chosenCascoColor,
+  estampadoLabel,
+  firstCascoColor,
+  inicialesMm,
+  logoTamanoLabel,
+  materialLabel,
+  posicionLabel,
+  talleLabel,
+  viseraLabel,
+  type CascoEstampado,
+  type CascoMaterialTipo,
+  type CascoPosicion,
+  type CascoTamano,
+  type CascoTalle,
+  type CascoVisera,
+  type ColorElegido,
+} from './casco-catalog.ts';
+
+export {
+  CASCO_ESTAMPADOS,
+  CASCO_FABRIC_PARTS,
+  CASCO_MATERIAL_PRICE_KEY,
+  CASCO_MATERIALES,
+  CASCO_PALETA_BARBIJO,
+  CASCO_PALETA_LOGO_HILO,
+  CASCO_PALETA_OJALES,
+  CASCO_PALETAS_TELA,
+  CASCO_PALETTE_IDS,
+  CASCO_POSICIONES,
+  CASCO_TAMANOS_INICIALES,
+  CASCO_TAMANOS_LOGO,
+  CASCO_TALLES,
+  CASCO_VISERAS,
+  cascoPalette,
+  chosenCascoColor,
+  estampadoLabel,
+  findCascoTalle,
+  firstCascoColor,
+  inicialesMm,
+  inicialesTamanoLabel,
+  logoTamanoLabel,
+  materialLabel,
+  posicionLabel,
+  talleLabel,
+  viseraLabel,
+  type CascoEstampado,
+  type CascoMaterialTipo,
+  type CascoPosicion,
+  type CascoTamano,
+  type CascoTalle,
+  type CascoVisera,
+  type CatalogColor,
+  type ColorElegido,
+} from './casco-catalog.ts';
+
 export const COUNTRIES = [
   'Afganistán',
   'Albania',
@@ -769,6 +833,16 @@ export function selectedPriceKeys(
     ];
   }
   const config = raw as CascoConfig;
+  if (isNewCascoConfig(config)) {
+    return [
+      ...(config.modelo === 'h1' ? ['modelo_h1'] : []),
+      CASCO_MATERIAL_PRICE_KEY[config.material],
+      ...(config.colores.strap ? ['correaje'] : []),
+      ...(config.iniciales ? ['iniciales'] : []),
+      ...(config.bandera ? ['bandera'] : []),
+      ...(config.logoPropio ? ['logoPersonalizado'] : []),
+    ];
+  }
   return [
     ...(config.modelo === 'h1' ? ['modelo_h1'] : []),
     `material_${config.materialExterno}`,
@@ -809,7 +883,7 @@ export type MonturaConfig = {
   portaEstriberaIngles: boolean;
 };
 
-export type CascoConfig = {
+export type CascoConfigLegacy = {
   modelo: 'h1' | 'standard';
   vicera: 'lock' | 'argentina';
   tamano: string;
@@ -837,7 +911,89 @@ export type CascoConfig = {
   logoPersonalizadoPosicion: 'derecha' | 'izquierda' | 'frente' | 'atras';
   logoPersonalizadoTamano: 'chico' | 'mediano' | 'grande';
   logoPersonalizadoImagen: string;
+  /** First reference photo; kept in sync with `disenoImagenes[0]` for legacy configs. */
+  disenoImagen: string;
+  disenoImagenes: string[];
 };
+
+export type CascoColores = {
+  top?: ColorElegido;
+  peak?: ColorElegido;
+  peakBand?: ColorElegido;
+  underPeak?: ColorElegido;
+  strap?: ColorElegido;
+  airholes: ColorElegido;
+};
+
+export type CascoSlotKind = 'iniciales' | 'bandera' | 'logoPropio';
+
+export const CASCO_SLOT_FULL_MESSAGE =
+  'Tenés que quitar una personalización para agregar esta';
+
+export type CascoConfigV2 = {
+  version: 2;
+  modelo: 'h1' | 'standard';
+  visera: CascoVisera;
+  material: CascoMaterialTipo;
+  estampado?: CascoEstampado;
+  colores: CascoColores;
+  logoIconic: ColorElegido;
+  iniciales?: {
+    posicion: CascoPosicion;
+    texto: string;
+    tamano: CascoTamano;
+    colorHilo: ColorElegido;
+    tipografia: string;
+  };
+  bandera?: {
+    posicion: CascoPosicion;
+    pais: string;
+  };
+  logoPropio?: {
+    posicion: CascoPosicion;
+    imagen: string;
+    tamano: CascoTamano;
+  };
+  talle: CascoTalle | '';
+  disenoImagen: string;
+  disenoImagenes: string[];
+};
+
+export type CascoConfig = CascoConfigLegacy | CascoConfigV2;
+
+export function isNewCascoConfig(raw: unknown): raw is CascoConfigV2 {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const value = raw as Record<string, unknown>;
+  if (value.version === 2) return true;
+  return typeof value.visera === 'string' && !('vicera' in value);
+}
+
+export function cascoKindAtSlot(
+  config: CascoConfigV2,
+  slot: CascoPosicion,
+): CascoSlotKind | null {
+  if (config.iniciales?.posicion === slot) return 'iniciales';
+  if (config.bandera?.posicion === slot) return 'bandera';
+  if (config.logoPropio?.posicion === slot) return 'logoPropio';
+  return null;
+}
+
+export function cascoFreeSlots(
+  config: CascoConfigV2,
+  kind?: CascoSlotKind,
+): CascoPosicion[] {
+  return CASCO_POSICIONES.map((item) => item.id).filter((slot) => {
+    const occupant = cascoKindAtSlot(config, slot);
+    return occupant == null || occupant === kind;
+  });
+}
+
+export function cascoCanEnableKind(
+  config: CascoConfigV2,
+  kind: CascoSlotKind,
+): boolean {
+  return cascoFreeSlots(config, kind).length > 0;
+}
 
 export type RodilleraConfig = {
   tipo: 'velcro' | 'doble_velcro' | 'hebilla';
@@ -899,35 +1055,79 @@ export function defaultMontura(): MonturaConfig {
   };
 }
 
-export function defaultCasco(): CascoConfig {
+function defaultCascoFabric(material: Exclude<CascoMaterialTipo, 'prints'>) {
+  const color = firstCascoColor(material);
   return {
+    top: color,
+    peak: color,
+    peakBand: color,
+    underPeak: color,
+  };
+}
+
+export function defaultCasco(): CascoConfigV2 {
+  return {
+    version: 2,
     modelo: 'h1',
-    vicera: 'lock',
-    tamano: '57',
-    materialExterno: 'softshell',
-    colorCasco: 'negro',
-    colorViceraArriba: 'negro',
-    colorViceraAbajo: 'negro',
-    colorBandaVicera: 'negro',
-    colorTapones: 'negro',
-    correaje: false,
-    correajeColor: 'negro',
-    iniciales: false,
-    inicialesTexto: '',
-    inicialesColor: 'negro',
-    inicialesTipografia: 'trajan',
-    inicialesUbicacion: 'derecha',
-    inicialesTamano: '16',
-    bandera: false,
-    banderaUbicacion: 'derecha',
-    banderaPais: 'Argentina',
-    logoIcUbicacion: 'derecha',
-    logoIcColorPersonalizado: false,
-    logoIcColor: 'negro',
-    logoPersonalizado: false,
-    logoPersonalizadoPosicion: 'izquierda',
-    logoPersonalizadoTamano: 'mediano',
-    logoPersonalizadoImagen: '',
+    visera: 'argentine',
+    material: 'cloth',
+    colores: {
+      ...defaultCascoFabric('cloth'),
+      airholes: firstCascoColor(CASCO_PALETTE_IDS.ojales),
+    },
+    logoIconic: firstCascoColor(CASCO_PALETTE_IDS.logoHilo),
+    talle: '',
+    disenoImagen: '',
+    disenoImagenes: [],
+  };
+}
+
+export function changeCascoMaterial(
+  config: CascoConfigV2,
+  material: CascoMaterialTipo,
+): CascoConfigV2 {
+  if (material === 'prints') {
+    return {
+      ...config,
+      material,
+      estampado: config.estampado || 'topographic',
+      colores: {
+        strap: config.colores.strap,
+        airholes: config.colores.airholes,
+      },
+    };
+  }
+  const fabric = defaultCascoFabric(material);
+  return {
+    ...config,
+    material,
+    estampado: undefined,
+    colores: {
+      ...fabric,
+      peakBand: config.visera === 'argentine' ? fabric.peakBand : undefined,
+      strap: config.colores.strap,
+      airholes: config.colores.airholes,
+    },
+  };
+}
+
+export function changeCascoVisera(
+  config: CascoConfigV2,
+  visera: CascoVisera,
+): CascoConfigV2 {
+  if (visera === 'english') {
+    const { peakBand: _peakBand, ...colores } = config.colores;
+    return { ...config, visera, colores };
+  }
+  if (config.material === 'prints') return { ...config, visera };
+  const peakBand =
+    config.colores.peakBand?.palette === config.material
+      ? config.colores.peakBand
+      : firstCascoColor(config.material);
+  return {
+    ...config,
+    visera,
+    colores: { ...config.colores, peakBand },
   };
 }
 
@@ -1075,9 +1275,190 @@ export function parseMontura(raw: unknown): MonturaConfig {
 }
 
 export function parseCasco(raw: unknown): CascoConfig {
+  if (isNewCascoConfig(raw)) return parseCascoV2(raw);
+  return parseCascoLegacy(raw);
+}
+
+function parseChosenColor(
+  raw: unknown,
+  palette: string,
+  label: string,
+): ColorElegido {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+    throw new Error(`Elegí ${label}.`);
+  const value = raw as Record<string, unknown>;
+  const storedPalette = typeof value.palette === 'string' ? value.palette : '';
+  if (storedPalette && storedPalette !== palette)
+    throw new Error(`${label}: color de otra paleta.`);
+  const position = Number(value.position);
+  const color = chosenCascoColor(palette, position);
+  if (!color) throw new Error(`${label}: color inválido.`);
+  return color;
+}
+
+function parseCascoPosicion(raw: unknown, label: string): CascoPosicion {
+  return oneOf(
+    raw,
+    CASCO_POSICIONES.map((item) => item.id),
+    `Posición de ${label}`,
+  );
+}
+
+function parseCascoTalle(raw: unknown): CascoTalle {
+  if (raw === '' || raw == null) throw new Error('Elegí el talle.');
+  const value =
+    raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const cm = Number(value.cm);
+  const talle = CASCO_TALLES.find((item) => item.cm === cm);
+  if (!talle) throw new Error('Elegí el talle.');
+  return {
+    cm: talle.cm,
+    pulgadas: talle.pulgadas,
+    talleUS: talle.talleUS,
+  };
+}
+
+function occupyCascoSlot(
+  slots: Partial<Record<CascoPosicion, CascoSlotKind>>,
+  kind: CascoSlotKind,
+  posicion: CascoPosicion,
+) {
+  if (slots[posicion]) throw new Error(CASCO_SLOT_FULL_MESSAGE);
+  slots[posicion] = kind;
+}
+
+function parseCascoV2(raw: unknown): CascoConfigV2 {
   const b =
     raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  const config: CascoConfig = {
+  const disenoImagenes = parseCascoDesignPhotos(b);
+  const visera = oneOf(
+    b.visera,
+    CASCO_VISERAS.map((item) => item.id),
+    'Estilo',
+  );
+  const material = oneOf(
+    b.material,
+    ['cloth', 'leather', 'softshell', 'prints'] as const,
+    'Material',
+  );
+  const coloresRaw =
+    b.colores && typeof b.colores === 'object' && !Array.isArray(b.colores)
+      ? (b.colores as Record<string, unknown>)
+      : {};
+  const colores: CascoColores = {
+    airholes: parseChosenColor(
+      coloresRaw.airholes,
+      CASCO_PALETTE_IDS.ojales,
+      'Ojales',
+    ),
+  };
+  if (coloresRaw.strap)
+    colores.strap = parseChosenColor(
+      coloresRaw.strap,
+      CASCO_PALETTE_IDS.barbijo,
+      'Barbijo',
+    );
+  let estampado: CascoEstampado | undefined;
+  if (material === 'prints') {
+    estampado = oneOf(
+      b.estampado,
+      CASCO_ESTAMPADOS.map((item) => item.id),
+      'Estampado',
+    );
+  } else {
+    colores.top = parseChosenColor(coloresRaw.top, material, 'Casquete');
+    colores.peak = parseChosenColor(coloresRaw.peak, material, 'Visera');
+    colores.underPeak = parseChosenColor(
+      coloresRaw.underPeak,
+      material,
+      'Bajo visera',
+    );
+    if (visera === 'argentine') {
+      colores.peakBand = parseChosenColor(
+        coloresRaw.peakBand,
+        material,
+        'Banda de visera',
+      );
+    }
+  }
+  const config: CascoConfigV2 = {
+    version: 2,
+    modelo: oneOf(b.modelo, ['h1', 'standard'], 'Modelo'),
+    visera,
+    material,
+    estampado,
+    colores,
+    logoIconic: parseChosenColor(
+      b.logoIconic,
+      CASCO_PALETTE_IDS.logoHilo,
+      'Logo Iconic',
+    ),
+    talle: parseCascoTalle(b.talle),
+    disenoImagen: disenoImagenes[0] || '',
+    disenoImagenes,
+  };
+  const slots: Partial<Record<CascoPosicion, CascoSlotKind>> = {};
+  if (b.iniciales) {
+    const rawIniciales = b.iniciales as Record<string, unknown>;
+    const posicion = parseCascoPosicion(rawIniciales.posicion, 'iniciales');
+    const texto = text(rawIniciales.texto).trim();
+    if (!texto) throw new Error('Escribí las iniciales.');
+    if (texto.length > 24)
+      throw new Error('Iniciales: máximo 24 caracteres.');
+    occupyCascoSlot(slots, 'iniciales', posicion);
+    config.iniciales = {
+      posicion,
+      texto,
+      tamano: oneOf(
+        rawIniciales.tamano,
+        CASCO_TAMANOS_INICIALES[posicion].map((item) => item.id),
+        'Tamaño de iniciales',
+      ),
+      colorHilo: parseChosenColor(
+        rawIniciales.colorHilo,
+        CASCO_PALETTE_IDS.logoHilo,
+        'Color de hilo',
+      ),
+      tipografia: oneOf(
+        rawIniciales.tipografia || 'trajan',
+        FONTS.map((font) => font.id),
+        'Tipografía',
+      ),
+    };
+  }
+  if (b.bandera) {
+    const rawBandera = b.bandera as Record<string, unknown>;
+    const pais = text(rawBandera.pais).trim();
+    if (!(COUNTRIES as readonly string[]).includes(pais))
+      throw new Error('Seleccioná el país de la bandera.');
+    const posicion = parseCascoPosicion(rawBandera.posicion, 'bandera');
+    occupyCascoSlot(slots, 'bandera', posicion);
+    config.bandera = { posicion, pais };
+  }
+  if (b.logoPropio) {
+    const rawLogo = b.logoPropio as Record<string, unknown>;
+    const posicion = parseCascoPosicion(rawLogo.posicion, 'logo propio');
+    const imagen = text(rawLogo.imagen).trim();
+    requireImage(imagen, 'logo propio');
+    occupyCascoSlot(slots, 'logoPropio', posicion);
+    config.logoPropio = {
+      posicion,
+      imagen,
+      tamano: oneOf(
+        rawLogo.tamano,
+        CASCO_TAMANOS_LOGO.map((item) => item.id),
+        'Tamaño del logo propio',
+      ),
+    };
+  }
+  return config;
+}
+
+function parseCascoLegacy(raw: unknown): CascoConfigLegacy {
+  const b =
+    raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const disenoImagenes = parseCascoDesignPhotos(b);
+  const config: CascoConfigLegacy = {
     modelo: oneOf(b.modelo, ['h1', 'standard'], 'Modelo'),
     vicera: oneOf(b.vicera, ['lock', 'argentina'], 'Tipo de vicera'),
     tamano: oneOf(
@@ -1137,6 +1518,8 @@ export function parseCasco(raw: unknown): CascoConfig {
       'Tamaño del logo personalizado',
     ),
     logoPersonalizadoImagen: text(b.logoPersonalizadoImagen).trim(),
+    disenoImagen: disenoImagenes[0] || '',
+    disenoImagenes,
   };
   if (config.vicera === 'argentina')
     colorId(config.colorBandaVicera, 'Color de banda vicera');
@@ -1189,6 +1572,47 @@ function requireImage(value: string, label: string) {
   if (!value) throw new Error(`Subí la imagen de ${label}.`);
   if (!/^\/api\/images\/[a-z0-9-]+$/.test(value))
     throw new Error(`Imagen de ${label} inválida.`);
+}
+
+function optionalImage(value: unknown, label: string) {
+  const s = text(value).trim();
+  if (!s) return '';
+  requireImage(s, label);
+  return s;
+}
+
+export const CASCO_DISENO_MAX = 10;
+
+function optionalImages(value: unknown, label: string, max: number): string[] {
+  if (value == null) return [];
+  const list = Array.isArray(value) ? value : [value];
+  const urls: string[] = [];
+  for (const item of list) {
+    const url = optionalImage(item, label);
+    if (url && !urls.includes(url)) urls.push(url);
+  }
+  if (urls.length > max) throw new Error(`${label}: máximo ${max} fotos.`);
+  return urls;
+}
+
+function parseCascoDesignPhotos(b: Record<string, unknown>): string[] {
+  const fromArray = Array.isArray(b.disenoImagenes)
+    ? optionalImages(b.disenoImagenes, 'referencia del diseño', CASCO_DISENO_MAX)
+    : [];
+  if (fromArray.length) return fromArray;
+  return optionalImages(b.disenoImagen, 'referencia del diseño', CASCO_DISENO_MAX);
+}
+
+export function configDesignPhotos(kind: ConfiguredKind, raw: ProductConfig) {
+  if (kind !== 'casco') return [];
+  const config = raw as CascoConfig;
+  if (Array.isArray(config.disenoImagenes) && config.disenoImagenes.length)
+    return config.disenoImagenes.filter(Boolean);
+  return config.disenoImagen ? [config.disenoImagen] : [];
+}
+
+export function configDesignPhoto(kind: ConfiguredKind, raw: ProductConfig) {
+  return configDesignPhotos(kind, raw)[0];
 }
 
 function measureValue(value: unknown, label: string) {
@@ -1371,6 +1795,27 @@ export function stockKey(kind: ConfiguredKind, raw: ProductConfig) {
     });
   }
   const c = raw as CascoConfig;
+  if (isNewCascoConfig(c)) {
+    const colorRef = (color?: ColorElegido) =>
+      color ? `${color.palette}:${color.position}` : '';
+    return JSON.stringify({
+      version: 2,
+      modelo: c.modelo,
+      visera: c.visera,
+      material: c.material,
+      talle: c.talle && typeof c.talle === 'object' ? c.talle.cm : '',
+      estampado: c.material === 'prints' ? c.estampado || '' : '',
+      top: colorRef(c.colores.top),
+      peak: colorRef(c.colores.peak),
+      peakBand:
+        c.visera === 'argentine' && c.material !== 'prints'
+          ? colorRef(c.colores.peakBand)
+          : '',
+      underPeak: colorRef(c.colores.underPeak),
+      strap: colorRef(c.colores.strap),
+      airholes: colorRef(c.colores.airholes),
+    });
+  }
   return JSON.stringify({
     modelo: c.modelo,
     vicera: c.vicera,
@@ -1486,6 +1931,45 @@ export function configLabels(kind: ConfiguredKind, raw: ProductConfig) {
     return labels;
   }
   const c = raw as CascoConfig;
+  if (isNewCascoConfig(c)) {
+    labels.Modelo =
+      c.modelo === 'h1' ? 'H1 homologado' : 'Standard sin homologar';
+    labels.Estilo = viseraLabel(c.visera);
+    labels.Material = materialLabel(c.material);
+    if (c.material === 'prints' && c.estampado)
+      labels.Estampado = estampadoLabel(c.estampado);
+    if (c.colores.top) labels.Casquete = c.colores.top.nombre;
+    if (c.colores.peak) labels.Visera = c.colores.peak.nombre;
+    if (c.visera === 'argentine' && c.colores.peakBand)
+      labels['Banda de visera'] = c.colores.peakBand.nombre;
+    if (c.colores.underPeak) labels['Bajo visera'] = c.colores.underPeak.nombre;
+    labels.Barbijo = c.colores.strap
+      ? c.colores.strap.nombre
+      : 'Sin barbijo';
+    labels.Ojales = c.colores.airholes.nombre;
+    labels['Logo Iconic'] = c.logoIconic.nombre;
+    labels['Ubicación logo Iconic'] = 'Lado derecho';
+    labels.Talle =
+      c.talle && typeof c.talle === 'object' ? talleLabel(c.talle) : 'Sin elegir';
+    if (c.iniciales) {
+      labels.Iniciales = `${c.iniciales.texto} · ${inicialesMm(c.iniciales.posicion, c.iniciales.tamano)} mm`;
+      labels['Ubicación iniciales'] = posicionLabel(c.iniciales.posicion);
+      labels['Color de hilo'] = c.iniciales.colorHilo.nombre;
+      labels.Tipografía = fontName(c.iniciales.tipografia);
+    }
+    if (c.bandera) {
+      labels.Bandera = c.bandera.pais;
+      labels['Ubicación bandera'] = posicionLabel(c.bandera.posicion);
+    }
+    if (c.logoPropio) {
+      labels['Logo propio'] =
+        `${logoTamanoLabel(c.logoPropio.tamano)} · ${posicionLabel(c.logoPropio.posicion)}`;
+    }
+    const designCount = configDesignPhotos('casco', c).length;
+    if (designCount === 1) labels.Diseño = 'Imagen adjunta';
+    else if (designCount > 1) labels.Diseño = `${designCount} imágenes adjuntas`;
+    return labels;
+  }
   labels.Modelo =
     c.modelo === 'h1' ? 'H1 homologado' : 'Standard sin homologar';
   labels['Tipo de vicera'] =
@@ -1530,6 +2014,9 @@ export function configLabels(kind: ConfiguredKind, raw: ProductConfig) {
       atras: 'Atrás',
     }[c.logoPersonalizadoPosicion];
   }
+  const designCount = configDesignPhotos('casco', c).length;
+  if (designCount === 1) labels.Diseño = 'Imagen adjunta';
+  else if (designCount > 1) labels.Diseño = `${designCount} imágenes adjuntas`;
   return labels;
 }
 
@@ -1558,6 +2045,27 @@ export function extraTotals(
     }),
     { price: 0, cost: 0, pending: false },
   );
+}
+
+export function adjustedConfiguredPrices(
+  kind: ConfiguredKind,
+  previousRaw: unknown,
+  next: ProductConfig,
+  pricing: ConfiguredPricing,
+  unitPrice: number,
+  unitCost: number,
+) {
+  const nextExtras = extraTotals(kind, next, pricing);
+  let previousExtras = { price: 0, cost: 0, pending: false };
+  try {
+    previousExtras = extraTotals(kind, parseConfig(kind, previousRaw), pricing);
+  } catch {
+    return { unit_price: unitPrice, unit_cost: unitCost };
+  }
+  return {
+    unit_price: Math.max(0, unitPrice + nextExtras.price - previousExtras.price),
+    unit_cost: Math.max(0, unitCost + nextExtras.cost - previousExtras.cost),
+  };
 }
 
 export const STOCK_PLACES = [

@@ -9,6 +9,7 @@ import {
   defaultRodillera,
   extraCharges,
   extraTotals,
+  adjustedConfiguredPrices,
   parseBota,
   parseCasco,
   parseMontura,
@@ -20,7 +21,62 @@ import {
   stockByConfig,
   stockKey,
   summarizeConfig,
+  configDesignPhoto,
+  configDesignPhotos,
+  changeCascoMaterial,
+  cascoCanEnableKind,
+  cascoFreeSlots,
+  cascoKindAtSlot,
+  firstCascoColor,
+  isNewCascoConfig,
+  CASCO_DISENO_MAX,
+  CASCO_PALETTE_IDS,
+  CASCO_SLOT_FULL_MESSAGE,
 } from '../lib/configure.ts';
+
+const LEGACY_CASCO = {
+  modelo: 'h1' as const,
+  vicera: 'lock' as const,
+  tamano: '57',
+  materialExterno: 'softshell' as const,
+  colorCasco: 'negro',
+  colorViceraArriba: 'negro',
+  colorViceraAbajo: 'negro',
+  colorBandaVicera: 'negro',
+  colorTapones: 'negro',
+  correaje: false,
+  correajeColor: 'negro',
+  iniciales: false,
+  inicialesTexto: '',
+  inicialesColor: 'negro',
+  inicialesTipografia: 'trajan',
+  inicialesUbicacion: 'derecha' as const,
+  inicialesTamano: '16' as const,
+  bandera: false,
+  banderaUbicacion: 'derecha' as const,
+  banderaPais: 'Argentina',
+  logoIcUbicacion: 'derecha' as const,
+  logoIcColorPersonalizado: false,
+  logoIcColor: 'negro',
+  logoPersonalizado: false,
+  logoPersonalizadoPosicion: 'izquierda' as const,
+  logoPersonalizadoTamano: 'mediano' as const,
+  logoPersonalizadoImagen: '',
+  disenoImagen: '',
+  disenoImagenes: [] as string[],
+};
+
+function talle57() {
+  return { cm: 57, pulgadas: '22 1/2', talleUS: '7' };
+}
+
+function validCasco(patch: Record<string, unknown> = {}) {
+  return parseCasco({
+    ...defaultCasco(),
+    talle: talle57(),
+    ...patch,
+  });
+}
 
 test('montura defaults are valid and porta estribera starts off', () => {
   const config = parseMontura(defaultMontura());
@@ -74,10 +130,10 @@ test('montura initials require text', () => {
 });
 
 test('casco argentina visor requires band color and lock does not', () => {
-  const lock = parseCasco(defaultCasco());
+  const lock = parseCasco(LEGACY_CASCO);
   assert.equal(lock.vicera, 'lock');
   const argentina = parseCasco({
-    ...defaultCasco(),
+    ...LEGACY_CASCO,
     vicera: 'argentina',
     colorBandaVicera: 'rojo',
   });
@@ -86,6 +142,96 @@ test('casco argentina visor requires band color and lock does not', () => {
   const argKey = stockKey('casco', argentina);
   assert.notEqual(lockKey, argKey);
   assert.equal(lockKey.includes('colorBandaVicera'), true);
+});
+
+test('new casco defaults to Argentina visera, Tela and empty talle', () => {
+  const draft = defaultCasco();
+  assert.equal(isNewCascoConfig(draft), true);
+  assert.equal(draft.version, 2);
+  assert.equal(draft.visera, 'argentine');
+  assert.equal(draft.material, 'cloth');
+  assert.equal(draft.talle, '');
+  assert.equal(draft.colores.top?.palette, 'cloth');
+  assert.equal(draft.colores.peakBand?.nombre, draft.colores.top?.nombre);
+  assert.throws(() => parseCasco(draft), /talle/i);
+  const parsed = validCasco();
+  assert.equal(isNewCascoConfig(parsed), true);
+  assert.equal(parsed.talle.cm, 57);
+  const labels = configLabels('casco', parsed);
+  assert.equal(labels.Estilo, 'Argentina');
+  assert.equal(labels.Material, 'Tela');
+  assert.equal(labels['Logo Iconic'], parsed.logoIconic.nombre);
+  assert.equal(labels.Barbijo, 'Sin barbijo');
+});
+
+test('new casco english visera drops the peak band', () => {
+  const argentina = validCasco();
+  assert.ok(argentina.colores.peakBand);
+  const english = validCasco({ visera: 'english', colores: {
+    ...argentina.colores,
+    peakBand: undefined,
+  } });
+  assert.equal(english.visera, 'english');
+  assert.equal(english.colores.peakBand, undefined);
+  assert.notEqual(stockKey('casco', argentina), stockKey('casco', english));
+});
+
+test('casco design reference images are optional, multiple, and ignored by stock', () => {
+  const base = validCasco();
+  assert.deepEqual(base.disenoImagenes, []);
+  assert.equal(base.disenoImagen, '');
+  assert.equal(configDesignPhoto('casco', base), undefined);
+  assert.deepEqual(configDesignPhotos('casco', base), []);
+  const legacy = validCasco({
+    disenoImagen: '/api/images/abc123',
+  });
+  assert.deepEqual(legacy.disenoImagenes, ['/api/images/abc123']);
+  assert.equal(legacy.disenoImagen, '/api/images/abc123');
+  assert.equal(configDesignPhoto('casco', legacy), '/api/images/abc123');
+  const many = validCasco({
+    disenoImagenes: ['/api/images/abc123', '/api/images/def456'],
+  });
+  assert.deepEqual(many.disenoImagenes, [
+    '/api/images/abc123',
+    '/api/images/def456',
+  ]);
+  assert.equal(many.disenoImagen, '/api/images/abc123');
+  assert.deepEqual(configDesignPhotos('casco', many), many.disenoImagenes);
+  assert.equal(stockKey('casco', base), stockKey('casco', legacy));
+  assert.equal(stockKey('casco', base), stockKey('casco', many));
+  assert.equal(configLabels('casco', legacy).Diseño, 'Imagen adjunta');
+  assert.equal(configLabels('casco', many).Diseño, '2 imágenes adjuntas');
+  assert.equal(configLabels('casco', base).Diseño, undefined);
+  assert.throws(
+    () =>
+      parseCasco({
+        ...defaultCasco(),
+        talle: talle57(),
+        disenoImagen: 'https://example.com/x.png',
+      }),
+    /imagen/i,
+  );
+  assert.throws(
+    () =>
+      parseCasco({
+        ...defaultCasco(),
+        talle: talle57(),
+        disenoImagenes: ['/api/images/abc123', 'https://example.com/x.png'],
+      }),
+    /imagen/i,
+  );
+  assert.throws(
+    () =>
+      parseCasco({
+        ...defaultCasco(),
+        talle: talle57(),
+        disenoImagenes: Array.from(
+          { length: CASCO_DISENO_MAX + 1 },
+          (_, i) => `/api/images/${i.toString().padStart(8, '0')}`,
+        ),
+      }),
+    /máximo/i,
+  );
 });
 
 test('personalization extras do not change the stock key', () => {
@@ -491,12 +637,96 @@ test('rodillera personalization does not change the stock key', () => {
   );
 });
 
+test('configured line prices keep the saved amount and apply extras delta', () => {
+  const previous = validCasco();
+  const withInitials = validCasco({
+    iniciales: {
+      posicion: 'left_side',
+      texto: 'MP',
+      tamano: 'M',
+      colorHilo: firstCascoColor(CASCO_PALETTE_IDS.logoHilo),
+      tipografia: 'didot',
+    },
+  });
+  const withPhoto = validCasco({
+    disenoImagen: '/api/images/abc123',
+  });
+  const visera = validCasco({ visera: 'english' });
+  const pricing = parsePricing({
+    extras: {
+      modelo_h1: { cost: 3000, price: 5000 },
+      iniciales: { cost: 800, price: 2000 },
+    },
+  });
+  const savedPrice = 10000;
+  const savedCost = 4000;
+  const same = adjustedConfiguredPrices(
+    'casco',
+    previous,
+    previous,
+    pricing,
+    savedPrice,
+    savedCost,
+  );
+  assert.equal(same.unit_price, savedPrice);
+  assert.equal(same.unit_cost, savedCost);
+  const added = adjustedConfiguredPrices(
+    'casco',
+    previous,
+    withInitials,
+    pricing,
+    savedPrice,
+    savedCost,
+  );
+  assert.equal(added.unit_price, 12000);
+  assert.equal(added.unit_cost, 4800);
+  const photo = adjustedConfiguredPrices(
+    'casco',
+    previous,
+    withPhoto,
+    pricing,
+    savedPrice,
+    savedCost,
+  );
+  assert.equal(photo.unit_price, savedPrice);
+  assert.equal(photo.unit_cost, savedCost);
+  const vis = adjustedConfiguredPrices(
+    'casco',
+    previous,
+    visera,
+    pricing,
+    savedPrice,
+    savedCost,
+  );
+  assert.equal(vis.unit_price, savedPrice);
+  assert.equal(vis.unit_cost, savedCost);
+  const removed = adjustedConfiguredPrices(
+    'casco',
+    withInitials,
+    previous,
+    pricing,
+    12000,
+    4800,
+  );
+  assert.equal(removed.unit_price, savedPrice);
+  assert.equal(removed.unit_cost, savedCost);
+  const broken = adjustedConfiguredPrices(
+    'casco',
+    { garbage: true },
+    withInitials,
+    pricing,
+    savedPrice,
+    savedCost,
+  );
+  assert.equal(broken.unit_price, savedPrice);
+  assert.equal(broken.unit_cost, savedCost);
+});
+
 test('casco h1 adds its price over standard', () => {
-  const standard = parseCasco({
-    ...defaultCasco(),
+  const standard = validCasco({
     modelo: 'standard',
   });
-  const h1 = parseCasco(defaultCasco());
+  const h1 = validCasco();
   const pricing = parsePricing({
     extras: {
       modelo_h1: { cost: 3000, price: 5000 },
@@ -657,3 +887,186 @@ test('bota labels list the selected options and measures', () => {
   assert.equal(labels.Parche, 'Con');
   assert.equal(labels.Engrasado, 'Sí');
 });
+
+test('changing casco material resets fabric colors to the new palette', () => {
+  const cloth = validCasco();
+  assert.equal(cloth.colores.top?.palette, 'cloth');
+  const leather = changeCascoMaterial(cloth, 'leather');
+  assert.equal(leather.colores.top?.palette, 'leather');
+  assert.equal(leather.colores.peak?.palette, 'leather');
+  assert.equal(leather.colores.underPeak?.palette, 'leather');
+  assert.equal(leather.colores.peakBand?.palette, 'leather');
+  assert.equal(leather.colores.airholes.palette, CASCO_PALETTE_IDS.ojales);
+  assert.equal(leather.colores.strap, undefined);
+  assert.notEqual(leather.colores.top?.hex, cloth.colores.top?.hex);
+  parseCasco({ ...leather, talle: talle57() });
+  assert.throws(
+    () => parseCasco({ ...cloth, material: 'leather', talle: talle57() }),
+    /paleta/i,
+  );
+});
+
+test('prints mode hides fabric colors and keeps strap and airholes', () => {
+  const cloth = validCasco();
+  const printed = changeCascoMaterial(cloth, 'prints');
+  assert.equal(printed.material, 'prints');
+  assert.equal(printed.estampado, 'topographic');
+  assert.equal(printed.colores.top, undefined);
+  assert.equal(printed.colores.peak, undefined);
+  assert.equal(printed.colores.peakBand, undefined);
+  assert.equal(printed.colores.underPeak, undefined);
+  assert.equal(printed.colores.airholes.palette, CASCO_PALETTE_IDS.ojales);
+  const parsed = parseCasco({ ...printed, talle: talle57() });
+  assert.equal(isNewCascoConfig(parsed) && parsed.estampado, 'topographic');
+  const labels = configLabels('casco', parsed);
+  assert.equal(labels.Estampado, 'Topográfico');
+  assert.equal(labels.Casquete, undefined);
+});
+
+test('legacy casco configs still parse and keep their labels', () => {
+  const config = parseCasco(LEGACY_CASCO);
+  assert.equal(isNewCascoConfig(config), false);
+  assert.equal(config.vicera, 'lock');
+  assert.equal(config.materialExterno, 'softshell');
+  const labels = configLabels('casco', config);
+  assert.equal(labels['Tipo de vicera'], 'Lock / English');
+  assert.equal(labels['Material externo'], 'Softshell');
+  assert.equal(labels['Color casco'], 'Negro');
+});
+
+function inicialesAt(posicion: 'left_side' | 'back', patch = {}) {
+  return {
+    posicion,
+    texto: 'IC',
+    tamano: 'M' as const,
+    colorHilo: firstCascoColor(CASCO_PALETTE_IDS.logoHilo),
+    tipografia: 'trajan',
+    ...patch,
+  };
+}
+
+test('new casco stock key ignores photos and personalization', () => {
+  const base = validCasco();
+  const personalized = validCasco({
+    iniciales: inicialesAt('left_side'),
+    bandera: { posicion: 'back', pais: 'Argentina' },
+    disenoImagenes: ['/api/images/abc123'],
+    logoIconic: firstCascoColor(CASCO_PALETTE_IDS.logoHilo),
+  });
+  assert.equal(stockKey('casco', base), stockKey('casco', personalized));
+  const charges = extraCharges('casco', personalized);
+  assert.equal(charges.some((c) => c.id === 'iniciales'), true);
+  assert.equal(charges.some((c) => c.id === 'bandera'), true);
+  assert.equal(charges.some((c) => c.id === 'logoIcColor'), false);
+  const withLogo = validCasco({
+    logoPropio: {
+      posicion: 'left_side',
+      imagen: '/api/images/logo123',
+      tamano: 'M',
+    },
+  });
+  assert.equal(stockKey('casco', base), stockKey('casco', withLogo));
+  assert.equal(
+    extraCharges('casco', withLogo).some((c) => c.id === 'logoPersonalizado'),
+    true,
+  );
+});
+
+test('initials millimetres depend on the slot and keep the typography', () => {
+  const left = validCasco({ iniciales: inicialesAt('left_side', { tamano: 'S' }) });
+  const leftLabels = configLabels('casco', left);
+  assert.match(leftLabels.Iniciales, /IC/);
+  assert.match(leftLabels.Iniciales, /12 mm/);
+  assert.equal(leftLabels['Ubicación iniciales'], 'Lateral izquierdo');
+  const back = validCasco({
+    iniciales: inicialesAt('back', { texto: 'MP', tamano: 'L', tipografia: 'didot' }),
+  });
+  const backLabels = configLabels('casco', back);
+  assert.match(backLabels.Iniciales, /MP/);
+  assert.match(backLabels.Iniciales, /18 mm/);
+  assert.equal(backLabels['Ubicación iniciales'], 'Atrás');
+  assert.equal(backLabels.Tipografía, 'Didot');
+});
+
+test('each personalization needs a single valid slot', () => {
+  assert.throws(
+    () => validCasco({ iniciales: inicialesAt('right_side' as 'back') }),
+    /posición de iniciales/i,
+  );
+  assert.throws(
+    () => validCasco({ bandera: { pais: 'Argentina' } }),
+    /posición de bandera/i,
+  );
+  assert.throws(
+    () => validCasco({ bandera: { posicion: ['back'], pais: 'Argentina' } }),
+    /posición de bandera/i,
+  );
+  assert.throws(
+    () =>
+      validCasco({
+        logoPropio: {
+          posicion: ['left_side', 'back'],
+          imagen: '/api/images/logo123',
+          tamano: 'S',
+        },
+      }),
+    /posición de logo propio/i,
+  );
+});
+
+test('two personalizations cannot share a slot', () => {
+  assert.throws(
+    () =>
+      validCasco({
+        iniciales: inicialesAt('back'),
+        bandera: { posicion: 'back', pais: 'Argentina' },
+      }),
+    new RegExp(CASCO_SLOT_FULL_MESSAGE),
+  );
+  const ok = validCasco({
+    iniciales: inicialesAt('left_side'),
+    bandera: { posicion: 'back', pais: 'Argentina' },
+  });
+  assert.equal(isNewCascoConfig(ok) && ok.iniciales?.posicion, 'left_side');
+  assert.equal(isNewCascoConfig(ok) && ok.bandera?.posicion, 'back');
+});
+
+test('free slots shrink as personalizations take them and block the fourth', () => {
+  const empty = defaultCasco();
+  assert.deepEqual(cascoFreeSlots(empty), ['left_side', 'back']);
+  assert.equal(cascoKindAtSlot(empty, 'left_side'), null);
+
+  const one = { ...empty, iniciales: inicialesAt('left_side') };
+  assert.equal(cascoKindAtSlot(one, 'left_side'), 'iniciales');
+  assert.deepEqual(cascoFreeSlots(one), ['back']);
+  // The kind already holding a slot still sees it, so it can stay put.
+  assert.deepEqual(cascoFreeSlots(one, 'iniciales'), ['left_side', 'back']);
+  assert.equal(cascoCanEnableKind(one, 'bandera'), true);
+
+  const two = { ...one, bandera: { posicion: 'back' as const, pais: 'Argentina' } };
+  assert.equal(cascoKindAtSlot(two, 'back'), 'bandera');
+  assert.deepEqual(cascoFreeSlots(two), []);
+  // Logo Iconic is always on the right, so it never competes for a slot.
+  assert.equal(cascoCanEnableKind(two, 'logoPropio'), false);
+  assert.equal(cascoCanEnableKind(two, 'iniciales'), true);
+  assert.equal(cascoCanEnableKind(two, 'bandera'), true);
+
+  const freed = { ...two, bandera: undefined };
+  assert.equal(cascoCanEnableKind(freed, 'logoPropio'), true);
+  assert.deepEqual(cascoFreeSlots(freed, 'logoPropio'), ['back']);
+});
+
+test('logo Iconic stays on the right and adds no extra of its own', () => {
+  const config = validCasco({
+    iniciales: inicialesAt('left_side'),
+    bandera: { posicion: 'back', pais: 'Argentina' },
+  });
+  const labels = configLabels('casco', config);
+  assert.equal(labels['Ubicación logo Iconic'], 'Lado derecho');
+  assert.equal(labels['Logo Iconic'], firstCascoColor(CASCO_PALETTE_IDS.logoHilo).nombre);
+  assert.equal(
+    extraCharges('casco', config).some((c) => c.id === 'logoIcColor'),
+    false,
+  );
+});
+

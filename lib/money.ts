@@ -25,6 +25,21 @@ export function parseDecimal(value: string): number {
   );
 }
 export const decimal = (cents: number) => (cents / 100).toFixed(2);
+export function arsFromUsd(usdCents: number, fxRateCents: number): number {
+  integer(usdCents, 'Monto');
+  const rate = integer(fxRateCents, 'Tipo de cambio');
+  if (!rate) throw new Error('Tipo de cambio: debe ser mayor a cero.');
+  return integer(
+    Number((BigInt(usdCents) * BigInt(rate) + 50n) / 100n),
+    'Equivalente en pesos',
+  );
+}
+export function formatRate(cents: number) {
+  return new Intl.NumberFormat('es-AR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
+}
 export const percent = (bp: number) => String(Math.round(bp / 100));
 export function parsePercent(value: string, label = 'Porcentaje'): number {
   const normalized = value.trim();

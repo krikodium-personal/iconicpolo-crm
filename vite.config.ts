@@ -1,7 +1,25 @@
+import { execSync } from 'node:child_process';
 import { sites } from '@openai/sites-vite-plugin';
 import tailwindcss from '@tailwindcss/postcss';
 import vinext from 'vinext';
 import { defineConfig } from 'vite';
+
+function resolveBuildId() {
+  const preset = process.env.VITE_BUILD?.trim();
+  if (preset) return preset;
+  const fromCi = process.env.WORKERS_CI_COMMIT_SHA?.trim();
+  if (fromCi) return fromCi.slice(0, 7);
+  try {
+    return execSync('git rev-parse --short HEAD', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return 'dev';
+  }
+}
+
+process.env.VITE_BUILD = resolveBuildId();
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === 'seatbelt';
@@ -24,6 +42,9 @@ export default defineConfig(async () => {
   const { cloudflare } = await import('@cloudflare/vite-plugin');
 
   return {
+    define: {
+      'import.meta.env.VITE_BUILD': JSON.stringify(process.env.VITE_BUILD),
+    },
     css: { postcss: { plugins: [tailwindcss()] } },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }

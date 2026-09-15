@@ -16,8 +16,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Field, Pick, ErrorBox } from './ui';
+import { Field, Pick, ErrorBox, DateCalendar, Photos } from './ui';
 import {
+  ACCOUNT_CONCEPTS,
   MONTHS,
   accountLedger,
   cashoutLimit,
@@ -30,7 +31,7 @@ import {
   yearSheet,
   type MonthlyResult,
 } from '@/lib/account';
-import { decimal, formatMoney, parseDecimal } from '@/lib/money';
+import { decimal, formatMoney, formatRate, parseDecimal, arsFromUsd } from '@/lib/money';
 import type { Data } from '@/lib/types';
 
 const today = () =>
@@ -46,6 +47,15 @@ function currentMonthIndex() {
 }
 function sheetValue(cents: number, money: (n: number) => string) {
   return cents ? money(cents) : '—';
+}
+
+function previewArs(amount: string, rate: string) {
+  try {
+    if (!amount.trim() || !rate.trim()) return null;
+    return arsFromUsd(parseDecimal(amount), parseDecimal(rate));
+  } catch {
+    return null;
+  }
 }
 
 function MonthAmount({
@@ -170,17 +180,21 @@ export function AccountBoard({
       currentYear(),
       ...results.map((row) => row.year),
       ...data.cashouts.map((row) => Number(row.date.slice(0, 4))),
+      ...(data.entries || []).map((row) => Number(row.date.slice(0, 4))),
     ]);
     return [...set]
       .filter((year) => Number.isFinite(year))
       .sort((a, b) => b - a);
-  }, [results, data.cashouts]);
+  }, [results, data.cashouts, data.entries]);
   const [year, Y] = useState(() => {
     if (initialYear && years.includes(initialYear)) return initialYear;
     const withData = years.find(
       (value) =>
         results.some((row) => row.year === value) ||
-        data.cashouts.some((row) => row.date.startsWith(String(value))),
+        data.cashouts.some((row) => row.date.startsWith(String(value))) ||
+        (data.entries || []).some((row) =>
+          row.date.startsWith(String(value)),
+        ),
     );
     return withData || years[0] || currentYear();
   });
@@ -191,21 +205,50 @@ export function AccountBoard({
   const [busy, B] = useState(false);
   const [error, E] = useState('');
   const [cashoutOpen, setCashoutOpen] = useState(false);
+  const [entryOpen, setEntryOpen] = useState(false);
   const [cashout, C] = useState({
     partner_id: data.partners.find((partner) => !partner.archived)?.id || '',
     amount: '',
     date: today(),
     notes: '',
   });
+  const [entry, setEntry] = useState({
+    concept: 'pago_proveedor',
+    detail: '',
+    partner_id: data.partners.find((partner) => !partner.archived)?.id || '',
+    supplier_id: '',
+    receipt: '',
+    amount: '',
+    currency: data.currency === 'ARS' ? 'ARS' : 'USD',
+    fx_rate: '',
+    date: today(),
+  });
   const yearRows = yearSheet(year, results);
   const previewRow = yearRows[monthIndex] || yearRows[0];
   const yearTotals = totalsOf(yearRows);
   const allProfit = totalsOf(results).profit;
-  const leftover = remainingProfit(allProfit, data.cashouts);
+  const leftover = remainingProfit(
+    allProfit,
+    data.cashouts,
+    data.entries || [],
+    data.currency,
+  );
   const yearCashouts = data.cashouts
     .filter((row) => row.date.startsWith(String(year)))
     .reduce((sum, row) => sum + row.amount, 0);
   const partners = data.partners.filter((partner) => !partner.archived);
+  const suppliers = data.contacts.filter(
+    (contact) => contact.kind === 'supplier' && !contact.archived,
+  );
+  const supplierNames = useMemo(
+    () =>
+      new Map(
+        data.contacts
+          .filter((contact) => contact.kind === 'supplier')
+          .map((contact) => [contact.id, contact.name]),
+      ),
+    [data.contacts],
+  );
   const sharesReady = sharesAreComplete(partners);
   const selectedPartner =
     partners.find((partner) => partner.id === cashout.partner_id) ||
@@ -222,11 +265,22 @@ export function AccountBoard({
     partners,
     data.cashouts.filter((row) => row.date.startsWith(String(year))),
   );
-  const ledger = accountLedger(results, data.cashouts, data.partners);
+  const ledger = accountLedger(
+    results,
+    data.cashouts,
+    data.partners,
+    data.entries || [],
+    data.currency,
+    supplierNames,
+  );
   const yearLedger = ledger.filter((entry) =>
     entry.date.startsWith(String(year)),
   );
   const money = (cents: number) => formatMoney(cents, data.currency);
+  const arsPreview =
+    entry.currency === 'USD'
+      ? previewArs(entry.amount, entry.fx_rate)
+      : null;
   async function run(body: Record<string, unknown>, after?: () => void) {
     B(true);
     E('');
@@ -380,82 +434,6 @@ export function AccountBoard({
         ) : null}
       </section>
       <section className="panel">
-          <div className="panel-heading">
-            <h2>Caja de socios</h2>
-            <span>
-              {sharesReady
-                ? `${partners.length} socios`
-                : 'Faltan los %'}
-            </span>
-          </div>
-          {partners.length ? (
-            <>
-              <div className="desktop-table">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Socio</TableHead>
-                      <TableHead>%</TableHead>
-                      <TableHead>Ganancia</TableHead>
-                      <TableHead>Cashouts</TableHead>
-                      <TableHead>Disponible</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {balances.map((row) => (
-                      <TableRow key={row.partner.id}>
-                        <TableCell>{row.partner.name}</TableCell>
-                        <TableCell>{shareLabel(row.partner.share)}</TableCell>
-                        <TableCell>{money(row.assigned)}</TableCell>
-                        <TableCell>
-                          {row.taken ? money(row.taken) : '—'}
-                        </TableCell>
-                        <TableCell
-                          className={row.available < 0 ? 'money-neg' : ''}
-                        >
-                          {money(row.available)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="record-card-list partner-balance-cards">
-                {balances.map((row) => (
-                  <article className="record-card" key={row.partner.id}>
-                    <div className="record-card-top">
-                      <b>
-                        {row.partner.name}
-                        {row.partner.share
-                          ? ` · ${shareLabel(row.partner.share)}`
-                          : ''}
-                      </b>
-                      <span className={row.available < 0 ? 'money-neg' : ''}>
-                        {money(row.available)}
-                      </span>
-                    </div>
-                    <dl className="record-card-facts">
-                      <div>
-                        <dt>Ganancia</dt>
-                        <dd>{money(row.assigned)}</dd>
-                      </div>
-                      <div>
-                        <dt>Cashouts</dt>
-                        <dd>{row.taken ? money(row.taken) : '—'}</dd>
-                      </div>
-                    </dl>
-                  </article>
-                ))}
-              </div>
-            </>
-          ) : (
-            <p className="hint">
-              Agregá un socio en Configuración para registrar cashouts a su
-              nombre.
-            </p>
-          )}
-        </section>
-      <section className="panel">
         <div className="panel-heading">
           <h2>Movimientos {year}</h2>
           <button
@@ -463,10 +441,21 @@ export function AccountBoard({
             className="secondary"
             onClick={() => {
               E('');
-              setCashoutOpen(true);
+              setEntry({
+                concept: 'pago_proveedor',
+                detail: '',
+                partner_id: partners[0]?.id || '',
+                supplier_id: suppliers[0]?.id || '',
+                receipt: '',
+                amount: '',
+                currency: data.currency === 'ARS' ? 'ARS' : 'USD',
+                fx_rate: '',
+                date: today(),
+              });
+              setEntryOpen(true);
             }}
           >
-            <Plus size={15} /> cashout
+            <Plus size={15} /> movimiento
           </button>
         </div>
         <div className="desktop-table">
@@ -489,9 +478,28 @@ export function AccountBoard({
                       {entry.partner ? ` · ${entry.partner}` : ''}
                       {entry.actor ? ` · Registrado por ${entry.actor}` : ''}
                       {entry.notes ? ` · ${entry.notes}` : ''}
+                      {entry.receipt ? (
+                        <a
+                          className="entry-receipt"
+                          href={entry.receipt}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Factura
+                        </a>
+                      ) : null}
                     </TableCell>
                     <TableCell className={entry.amount < 0 ? 'money-neg' : ''}>
-                      {money(entry.amount)}
+                      {formatMoney(
+                        entry.amount,
+                        entry.currency || data.currency,
+                      )}
+                      {entry.currency === 'USD' && entry.amount_ars ? (
+                        <small className="entry-fx">
+                          {formatMoney(entry.amount_ars, 'ARS')} · TC{' '}
+                          {formatRate(entry.fx_rate || 0)}
+                        </small>
+                      ) : null}
                     </TableCell>
                     <TableCell className={entry.balance < 0 ? 'money-neg' : ''}>
                       {money(entry.balance)}
@@ -517,19 +525,104 @@ export function AccountBoard({
               <div className="record-card-top">
                 <b>{entry.label}</b>
                 <span className={entry.amount < 0 ? 'money-neg' : ''}>
-                  {money(entry.amount)}
+                  {formatMoney(entry.amount, entry.currency || data.currency)}
                 </span>
               </div>
               <small>
                 {entry.date}
                 {entry.partner ? ` · ${entry.partner}` : ''}
                 {entry.actor ? ` · Registrado por ${entry.actor}` : ''}
-                {entry.notes ? ` · ${entry.notes}` : ''} · saldo{' '}
-                {money(entry.balance)}
+                {entry.notes ? ` · ${entry.notes}` : ''}
+                {entry.receipt ? ' · factura' : ''}
+                {entry.currency === 'USD' && entry.amount_ars
+                  ? ` · ${formatMoney(entry.amount_ars, 'ARS')} · TC ${formatRate(entry.fx_rate || 0)}`
+                  : ''}{' '}
+                · saldo {money(entry.balance)}
               </small>
             </article>
           ))}
         </div>
+      </section>
+      <section className="panel">
+        <div className="panel-heading">
+          <h2>Caja de socios</h2>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => {
+              E('');
+              setCashoutOpen(true);
+            }}
+          >
+            <Plus size={15} /> cashout
+          </button>
+        </div>
+        {partners.length ? (
+          <>
+            <div className="desktop-table">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Socio</TableHead>
+                    <TableHead>%</TableHead>
+                    <TableHead>Ganancia</TableHead>
+                    <TableHead>Cashouts</TableHead>
+                    <TableHead>Disponible</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {balances.map((row) => (
+                    <TableRow key={row.partner.id}>
+                      <TableCell>{row.partner.name}</TableCell>
+                      <TableCell>{shareLabel(row.partner.share)}</TableCell>
+                      <TableCell>{money(row.assigned)}</TableCell>
+                      <TableCell>
+                        {row.taken ? money(row.taken) : '—'}
+                      </TableCell>
+                      <TableCell
+                        className={row.available < 0 ? 'money-neg' : ''}
+                      >
+                        {money(row.available)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="record-card-list partner-balance-cards">
+              {balances.map((row) => (
+                <article className="record-card" key={row.partner.id}>
+                  <div className="record-card-top">
+                    <b>
+                      {row.partner.name}
+                      {row.partner.share
+                        ? ` · ${shareLabel(row.partner.share)}`
+                        : ''}
+                    </b>
+                    <span className={row.available < 0 ? 'money-neg' : ''}>
+                      {money(row.available)}
+                    </span>
+                  </div>
+                  <dl className="record-card-facts">
+                    <div>
+                      <dt>Ganancia</dt>
+                      <dd>{money(row.assigned)}</dd>
+                    </div>
+                    <div>
+                      <dt>Cashouts</dt>
+                      <dd>{row.taken ? money(row.taken) : '—'}</dd>
+                    </div>
+                  </dl>
+                </article>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="hint">
+            Agregá un socio en Configuración para registrar cashouts a su
+            nombre.
+          </p>
+        )}
       </section>
       <Dialog
         open={cashoutOpen}
@@ -630,6 +723,251 @@ export function AccountBoard({
               disabled={busy || !partners.length || partnerAvailable <= 0}
             >
               {busy ? 'Guardando…' : 'Cargar cashout'}
+            </button>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={entryOpen}
+        onOpenChange={(open) => {
+          setEntryOpen(open);
+          if (!open) E('');
+        }}
+      >
+        <DialogContent className="crm-dialog crm-dialog-movement max-[767px]:top-0 max-[767px]:left-0 max-[767px]:right-0 max-[767px]:bottom-0 max-[767px]:translate-x-0 max-[767px]:translate-y-0 max-[767px]:w-full max-[767px]:max-w-none max-[767px]:h-dvh max-[767px]:max-h-dvh max-[767px]:rounded-none max-[767px]:animate-none">
+          <DialogHeader>
+            <DialogTitle>Registrar movimiento</DialogTitle>
+            <DialogDescription>
+              Un gasto pagado por un socio, con fecha y moneda.
+            </DialogDescription>
+          </DialogHeader>
+          <ErrorBox message={error} />
+          {!partners.length ? (
+            <p className="hint">
+              Agregá un socio en Configuración para indicar quién pagó.
+            </p>
+          ) : null}
+          <form
+            className="cashout-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              try {
+                if (
+                  (entry.concept === 'otros' ||
+                    entry.concept === 'pago_proveedor') &&
+                  !entry.detail.trim()
+                ) {
+                  throw new Error(
+                    entry.concept === 'pago_proveedor'
+                      ? 'Describí el concepto del gasto.'
+                      : 'Especificá el concepto.',
+                  );
+                }
+                if (
+                  entry.concept === 'pago_proveedor' &&
+                  !(entry.supplier_id || suppliers[0]?.id)
+                ) {
+                  throw new Error('Elegí el proveedor.');
+                }
+                const amount = parseDecimal(entry.amount);
+                const fxRate =
+                  entry.currency === 'USD'
+                    ? parseDecimal(entry.fx_rate)
+                    : 0;
+                if (entry.currency === 'USD' && !fxRate) {
+                  throw new Error('Tipo de cambio: debe ser mayor a cero.');
+                }
+                if (!partners.length) {
+                  throw new Error(
+                    'Agregá un socio en Configuración para indicar quién pagó.',
+                  );
+                }
+                void run(
+                  {
+                    action: 'account_entry',
+                    concept: entry.concept,
+                    detail: entry.detail,
+                    partner_id: entry.partner_id || partners[0]?.id,
+                    supplier_id: entry.supplier_id || suppliers[0]?.id,
+                    receipt: entry.receipt,
+                    amount,
+                    currency: entry.currency,
+                    fx_rate: fxRate,
+                    date: entry.date,
+                  },
+                  () => {
+                    setEntry({
+                      ...entry,
+                      detail: '',
+                      receipt: '',
+                      amount: '',
+                      fx_rate: '',
+                    });
+                    setEntryOpen(false);
+                  },
+                );
+              } catch (err) {
+                E((err as Error).message);
+              }
+            }}
+          >
+            <div className="form-grid">
+              <Field label="Concepto *">
+                <Pick
+                  label="Concepto"
+                  value={entry.concept}
+                  onChange={(value) =>
+                    setEntry({
+                      ...entry,
+                      concept: value,
+                      detail:
+                        value === 'otros' || value === 'pago_proveedor'
+                          ? entry.detail
+                          : '',
+                      supplier_id:
+                        value === 'pago_proveedor' ? entry.supplier_id : '',
+                      receipt: value === 'pago_proveedor' ? entry.receipt : '',
+                    })
+                  }
+                  options={ACCOUNT_CONCEPTS.map((item) => ({
+                    value: item.id,
+                    label: item.label,
+                  }))}
+                />
+              </Field>
+              <Field label="Pagado por *">
+                <Pick
+                  label="Pagado por"
+                  value={entry.partner_id || partners[0]?.id || ''}
+                  onChange={(value) =>
+                    setEntry({ ...entry, partner_id: value })
+                  }
+                  options={partners.map((partner) => ({
+                    value: partner.id,
+                    label: partner.name,
+                  }))}
+                />
+              </Field>
+              {entry.concept === 'pago_proveedor' ? (
+                <>
+                  <Field label="Proveedor *" wide>
+                    {suppliers.length ? (
+                      <Pick
+                        label="Proveedor"
+                        value={entry.supplier_id || suppliers[0]?.id || ''}
+                        onChange={(value) =>
+                          setEntry({ ...entry, supplier_id: value })
+                        }
+                        options={suppliers.map((supplier) => ({
+                          value: supplier.id,
+                          label: supplier.name,
+                        }))}
+                      />
+                    ) : (
+                      <p className="hint">
+                        Agregá un proveedor en Proveedores para registrar el
+                        pago.
+                      </p>
+                    )}
+                  </Field>
+                  <Field label="Concepto del gasto *" wide>
+                    <input
+                      required
+                      value={entry.detail}
+                      onChange={(e) =>
+                        setEntry({ ...entry, detail: e.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field label="Factura o recibo" wide>
+                    <Photos
+                      value={entry.receipt ? [entry.receipt] : []}
+                      onChange={(urls) =>
+                        setEntry({ ...entry, receipt: urls[0] || '' })
+                      }
+                      onError={E}
+                      onBusy={B}
+                      max={1}
+                      camera
+                    />
+                  </Field>
+                </>
+              ) : null}
+              {entry.concept === 'otros' ? (
+                <Field label="Especificar *" wide>
+                  <input
+                    required
+                    value={entry.detail}
+                    onChange={(e) =>
+                      setEntry({ ...entry, detail: e.target.value })
+                    }
+                  />
+                </Field>
+              ) : null}
+              <Field label="Monto *" wide>
+                <div className="amount-currency">
+                  <Pick
+                    label="Moneda"
+                    value={entry.currency}
+                    onChange={(value) =>
+                      setEntry({
+                        ...entry,
+                        currency: value,
+                        fx_rate: value === 'USD' ? entry.fx_rate : '',
+                      })
+                    }
+                    options={[
+                      { value: 'ARS', label: 'Pesos' },
+                      { value: 'USD', label: 'Dólares' },
+                    ]}
+                  />
+                  <input
+                    inputMode="decimal"
+                    required
+                    value={entry.amount}
+                    onChange={(e) =>
+                      setEntry({ ...entry, amount: e.target.value })
+                    }
+                  />
+                </div>
+              </Field>
+              {entry.currency === 'USD' ? (
+                <>
+                  <Field label="Tipo de cambio *" wide>
+                    <input
+                      inputMode="decimal"
+                      required
+                      placeholder="Pesos por dólar"
+                      value={entry.fx_rate}
+                      onChange={(e) =>
+                        setEntry({ ...entry, fx_rate: e.target.value })
+                      }
+                    />
+                  </Field>
+                  <p className="entry-fx-preview">
+                    {arsPreview != null
+                      ? `Equivale a ${formatMoney(arsPreview, 'ARS')}`
+                      : 'Ingresá el monto y el tipo de cambio para ver el equivalente en pesos.'}
+                  </p>
+                </>
+              ) : null}
+              <Field label="Fecha *" wide>
+                <DateCalendar
+                  label="Fecha"
+                  value={entry.date}
+                  onChange={(value) => setEntry({ ...entry, date: value })}
+                />
+              </Field>
+            </div>
+            <button
+              className="primary"
+              disabled={
+                busy ||
+                !partners.length ||
+                (entry.concept === 'pago_proveedor' && !suppliers.length)
+              }
+            >
+              {busy ? 'Guardando…' : 'Cargar movimiento'}
             </button>
           </form>
         </DialogContent>

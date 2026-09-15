@@ -1,4 +1,10 @@
-import type { AccountExpense, Order, Partner, PartnerCashout } from './types';
+import type {
+  AccountEntry,
+  AccountExpense,
+  Order,
+  Partner,
+  PartnerCashout,
+} from './types';
 
 export const SHARE_TOTAL = 10000;
 
@@ -36,11 +42,15 @@ export type MonthlyResult = {
 export type LedgerEntry = {
   date: string;
   label: string;
-  kind: 'ganancia' | 'cashout';
+  kind: 'ganancia' | 'cashout' | 'movimiento';
   amount: number;
+  currency?: string;
   partner?: string;
   actor?: string;
   notes: string;
+  receipt?: string;
+  fx_rate?: number;
+  amount_ars?: number;
   balance: number;
 };
 
@@ -84,6 +94,42 @@ export function yearSheet(year: number, results: MonthlyResult[]) {
   });
 }
 
+export const ACCOUNT_CONCEPTS = [
+  { id: 'pago_proveedor', label: 'Pago proveedor' },
+  { id: 'gasto_publicitario', label: 'Gasto publicitario' },
+  { id: 'gastos_extras', label: 'Gastos extras' },
+  { id: 'otros', label: 'Otros' },
+] as const;
+
+export function conceptLabel(
+  concept: AccountEntry['concept'],
+  detail = '',
+  supplier = '',
+) {
+  const extra = detail.trim();
+  if (concept === 'pago_proveedor') {
+    return ['Pago proveedor', supplier.trim(), extra].filter(Boolean).join(' · ');
+  }
+  if (concept === 'otros') {
+    return extra ? `Otros · ${extra}` : 'Otros';
+  }
+  return (
+    ACCOUNT_CONCEPTS.find((item) => item.id === concept)?.label || concept
+  );
+}
+
+export function entryTotal(
+  entries: AccountEntry[],
+  currency?: string,
+) {
+  return entries.reduce((sum, row) => {
+    if (!currency || row.currency === currency) return sum + row.amount;
+    if (currency === 'ARS' && row.currency === 'USD')
+      return sum + (row.amount_ars || 0);
+    return sum;
+  }, 0);
+}
+
 export function cashoutTotal(cashouts: PartnerCashout[]) {
   return cashouts.reduce((sum, row) => sum + row.amount, 0);
 }
@@ -91,8 +137,10 @@ export function cashoutTotal(cashouts: PartnerCashout[]) {
 export function remainingProfit(
   profit: number,
   cashouts: PartnerCashout[],
+  entries: AccountEntry[] = [],
+  currency?: string,
 ) {
-  return profit - cashoutTotal(cashouts);
+  return profit - cashoutTotal(cashouts) - entryTotal(entries, currency);
 }
 
 export function assertCashoutFits(remaining: number, amount: number) {
@@ -305,6 +353,9 @@ export function accountLedger(
   results: MonthlyResult[],
   cashouts: PartnerCashout[],
   partners: Partner[],
+  entries: AccountEntry[] = [],
+  boardCurrency = 'USD',
+  supplierNames: Map<string, string> = new Map(),
 ): LedgerEntry[] {
   const names = new Map(partners.map((partner) => [partner.id, partner.name]));
   const raw: Omit<LedgerEntry, 'balance'>[] = [
@@ -315,6 +366,7 @@ export function accountLedger(
         label: `Ganancia ${row.label} ${row.year}`,
         kind: 'ganancia' as const,
         amount: row.profit,
+        currency: boardCurrency,
         notes: row.orders
           ? `${row.orders} pedido${row.orders === 1 ? '' : 's'} cobrado${row.orders === 1 ? '' : 's'}`
           : '',
@@ -324,20 +376,45 @@ export function accountLedger(
       label: 'Cashout',
       kind: 'cashout' as const,
       amount: -cashout.amount,
+      currency: boardCurrency,
       partner: names.get(cashout.partner_id),
       actor: names.get(cashout.created_by || '') || undefined,
       notes: cashout.notes,
     })),
+    ...entries.map((entry) => ({
+      date: entry.date,
+      label: conceptLabel(
+        entry.concept,
+        entry.detail,
+        supplierNames.get(entry.supplier_id || '') || '',
+      ),
+      kind: 'movimiento' as const,
+      amount: -entry.amount,
+      currency: entry.currency,
+      partner: names.get(entry.partner_id),
+      actor: names.get(entry.created_by || '') || undefined,
+      notes: '',
+      receipt: entry.receipt || '',
+      fx_rate: entry.fx_rate || 0,
+      amount_ars: entry.amount_ars || 0,
+    })),
   ];
+  const kindRank = { ganancia: 0, movimiento: 1, cashout: 2 };
   raw.sort((a, b) => {
     const byDate = a.date.localeCompare(b.date);
     if (byDate) return byDate;
-    if (a.kind === b.kind) return 0;
-    return a.kind === 'ganancia' ? -1 : 1;
+    return kindRank[a.kind] - kindRank[b.kind];
   });
   let balance = 0;
   return raw.map((entry) => {
-    balance += entry.amount;
+    const currency = entry.currency || boardCurrency;
+    if (currency === boardCurrency) balance += entry.amount;
+    else if (
+      boardCurrency === 'ARS' &&
+      currency === 'USD' &&
+      entry.amount_ars
+    )
+      balance += entry.kind === 'movimiento' ? -entry.amount_ars : entry.amount_ars;
     return { ...entry, balance };
   });
 }

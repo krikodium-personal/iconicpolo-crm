@@ -1,5 +1,5 @@
 'use client';
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import {
   BOTA_ACABADOS,
   BOTA_BASE_MODELO,
@@ -9,6 +9,17 @@ import {
   BOTA_MODELOS,
   BOTA_PLACES,
   botaModeloPriceId,
+  CASCO_DISENO_MAX,
+  CASCO_ESTAMPADOS,
+  CASCO_FABRIC_PARTS,
+  CASCO_MATERIAL_PRICE_KEY,
+  CASCO_MATERIALES,
+  CASCO_PALETTE_IDS,
+  CASCO_SLOT_FULL_MESSAGE,
+  CASCO_TAMANOS_INICIALES,
+  CASCO_TAMANOS_LOGO,
+  CASCO_TALLES,
+  CASCO_VISERAS,
   COUNTRIES,
   FONTS,
   HELMET_MATERIALS,
@@ -22,11 +33,25 @@ import {
   RODILLERA_PLACES,
   RODILLERA_SIZES,
   RODILLERA_TIPOS,
+  cascoCanEnableKind,
+  cascoFreeSlots,
+  cascoPalette,
+  changeCascoMaterial,
+  changeCascoVisera,
   emptyPricing,
+  findCascoTalle,
+  firstCascoColor,
+  posicionLabel,
   pricePoint,
+  talleLabel,
   type BotaConfig,
   type BotaMeasureId,
-  type CascoConfig,
+  type CascoConfigLegacy,
+  type CascoConfigV2,
+  type CascoMaterialTipo,
+  type CascoPosicion,
+  type CascoSlotKind,
+  type ColorElegido,
   type ConfiguredKind,
   type ConfiguredPricing,
   type ExtraCharge,
@@ -38,8 +63,10 @@ import {
   extraTotals,
   selectedReferenceIds,
   fontStack,
+  isNewCascoConfig,
   stockKey,
   stockForConfig,
+  configDesignPhotos,
 } from '@/lib/configure';
 import { formatMoney } from '@/lib/money';
 import type { Movement } from '@/lib/types';
@@ -74,6 +101,175 @@ function ColorPicker({
         </div>
         <small>{selected?.name || 'Sin color'}</small>
       </div>
+    </Field>
+  );
+}
+
+function CatalogColorPicker({
+  label,
+  paletteId,
+  value,
+  onChange,
+}: {
+  label: string;
+  paletteId: string;
+  value?: ColorElegido;
+  onChange: (color: ColorElegido) => void;
+}) {
+  const palette = cascoPalette(paletteId);
+  const selected =
+    value && palette.find((color) => color.position === value.position);
+  return (
+    <Field label={label} wide>
+      <div className="color-picker">
+        <div className="color-swatches">
+          {palette.map((color) => (
+            <button
+              key={color.position}
+              type="button"
+              aria-label={color.nombre}
+              aria-pressed={color.position === value?.position}
+              className={`color-swatch${color.position === value?.position ? ' selected' : ''}`}
+              style={{ background: color.hex }}
+              title={color.nombre}
+              onClick={() =>
+                onChange({
+                  palette: paletteId,
+                  position: color.position,
+                  nombre: color.nombre,
+                  hex: color.hex,
+                })
+              }
+            />
+          ))}
+        </div>
+        <small>{selected?.nombre || value?.nombre || 'Sin color'}</small>
+      </div>
+    </Field>
+  );
+}
+
+function CountrySearch({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (country: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const needle = query.trim().toLocaleLowerCase('es');
+  const filtered: string[] = needle
+    ? COUNTRIES.filter((country) =>
+        country.toLocaleLowerCase('es').includes(needle),
+      )
+    : [...COUNTRIES];
+  const options = value && !filtered.includes(value)
+    ? [value, ...filtered]
+    : filtered;
+  return (
+    <Field label="País *" wide>
+      <div className="country-search">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Buscar país"
+          aria-label="Buscar país"
+        />
+        <Pick
+          label="País"
+          value={value}
+          onChange={onChange}
+          options={options.map((country) => ({
+            value: country,
+            label: country,
+          }))}
+        />
+      </div>
+    </Field>
+  );
+}
+
+function SlotPick({
+  kind,
+  posicion,
+  config,
+  onChange,
+}: {
+  kind: CascoSlotKind;
+  posicion: CascoPosicion;
+  config: CascoConfigV2;
+  onChange: (posicion: CascoPosicion) => void;
+}) {
+  const slots = cascoFreeSlots(config, kind);
+  if (slots.length <= 1) {
+    const only = slots[0] || posicion;
+    return (
+      <Field label="Posición *">
+        <p>{posicionLabel(only)}</p>
+      </Field>
+    );
+  }
+  return (
+    <Field label="Posición *">
+      <Pick
+        label="Posición"
+        value={posicion}
+        onChange={(v) => onChange(v as CascoPosicion)}
+        options={slots.map((id) => ({
+          value: id,
+          label: posicionLabel(id),
+        }))}
+      />
+    </Field>
+  );
+}
+
+function SlotToggle({
+  label,
+  kind,
+  enabled,
+  config,
+  onEnable,
+  onDisable,
+}: {
+  label: string;
+  kind: CascoSlotKind;
+  enabled: boolean;
+  config: CascoConfigV2;
+  onEnable: (posicion: CascoPosicion) => void;
+  onDisable: () => void;
+}) {
+  const [rejected, setRejected] = useState(false);
+  const blocked = !enabled && !cascoCanEnableKind(config, kind);
+  if (rejected && !blocked) setRejected(false);
+  return (
+    <Field label={label}>
+      <Pick
+        label={label}
+        value={enabled ? 'si' : 'no'}
+        onChange={(v) => {
+          setRejected(false);
+          if (v !== 'si') {
+            onDisable();
+            return;
+          }
+          const slot = cascoFreeSlots(config, kind)[0];
+          if (!slot) {
+            setRejected(true);
+            return;
+          }
+          onEnable(slot);
+        }}
+        options={[
+          { value: 'no', label: 'No' },
+          { value: 'si', label: 'Sí · costo extra' },
+        ]}
+      />
+      {blocked ? (
+        <output className={`hint${rejected ? ' slot-full' : ''}`}>
+          {CASCO_SLOT_FULL_MESSAGE}
+        </output>
+      ) : null}
     </Field>
   );
 }
@@ -144,18 +340,26 @@ function InitialsPreview({
   text,
   fontId,
   colorId,
+  colorHex,
+  colorName,
   surfaceId,
+  surfaceHex,
 }: {
   text: string;
   fontId: string;
-  colorId: string;
+  colorId?: string;
+  colorHex?: string;
+  colorName?: string;
   surfaceId?: string;
+  surfaceHex?: string;
 }) {
   const font = FONTS.find((item) => item.id === fontId);
-  const color = INITIAL_COLORS.find((item) => item.id === colorId);
+  const color = colorId
+    ? INITIAL_COLORS.find((item) => item.id === colorId)
+    : undefined;
   const shown = text.trim();
-  const ink = color?.hex || '#111111';
-  const surface = leatherSurface(surfaceId);
+  const ink = colorHex || color?.hex || '#111111';
+  const surface = surfaceHex || leatherSurface(surfaceId);
   const photo = surfaceId ? LEATHER_PHOTOS[surfaceId] : '';
   const darkSurface = surface
     ? hexLuminance(surface) < 0.48
@@ -175,7 +379,7 @@ function InitialsPreview({
           {shown || 'IC'}
         </span>
         <small>
-          {font?.label || 'Tipografía'} · {color?.name || 'Color'}
+          {font?.label || 'Tipografía'} · {colorName || color?.name || 'Color'}
           {shown ? '' : ' · escribí el texto'}
         </small>
       </div>
@@ -213,6 +417,442 @@ function ExtraNote({
       +{formatMoney(extra.price, currency)}
       {extra.cost ? ` · costo ${formatMoney(extra.cost, currency)}` : ''}
     </p>
+  );
+}
+
+function setCascoColor(
+  config: CascoConfigV2,
+  part: keyof CascoConfigV2['colores'],
+  color: ColorElegido,
+): CascoConfigV2 {
+  return { ...config, colores: { ...config.colores, [part]: color } };
+}
+
+function CascoConfiguratorNew({
+  value,
+  onChange,
+  movements = [],
+  productId,
+  pricing,
+  currency,
+  onError,
+  onBusy,
+}: {
+  value: CascoConfigV2;
+  onChange: (next: CascoConfigV2) => void;
+  movements?: import('@/lib/types').Movement[];
+  productId?: string;
+  pricing: ConfiguredPricing;
+  currency: string;
+  onError?: (message: string) => void;
+  onBusy?: (busy: boolean) => void;
+}) {
+  const [colorResetHint, setColorResetHint] = useState('');
+  const extras = extraCharges('casco', value, pricing);
+  const totals = extraTotals('casco', value, pricing);
+  const available =
+    productId != null
+      ? stockForConfig(movements, productId, stockKey('casco', value))
+      : null;
+  const set = (patch: Partial<CascoConfigV2>) => onChange({ ...value, ...patch });
+  const fabricPalette =
+    value.material === 'prints' ? '' : value.material;
+  const showBand = value.visera === 'argentine' && value.material !== 'prints';
+  return (
+    <div className="configurator">
+      <ReferenceShots kind="casco" value={value} pricing={pricing} />
+      <div className="form-grid">
+        <Field label="Modelo *">
+          <Pick
+            label="Modelo"
+            value={value.modelo}
+            onChange={(v) => set({ modelo: v as CascoConfigV2['modelo'] })}
+            options={[
+              { value: 'h1', label: 'H1 homologado' },
+              { value: 'standard', label: 'Standard sin homologar' },
+            ]}
+          />
+          {value.modelo === 'h1' ? (
+            <ExtraNote
+              extra={pricePoint(pricing, 'modelo_h1')}
+              currency={currency}
+            />
+          ) : null}
+        </Field>
+        <Field label="Estilo *">
+          <Pick
+            label="Estilo"
+            value={value.visera}
+            onChange={(v) =>
+              onChange(changeCascoVisera(value, v as CascoConfigV2['visera']))
+            }
+            options={CASCO_VISERAS.map((item) => ({
+              value: item.id,
+              label: item.id === 'english' ? 'Inglesa (Lock/English)' : item.nombre,
+            }))}
+          />
+        </Field>
+        <Field label="Material *">
+          <Pick
+            label="Material"
+            value={value.material}
+            onChange={(v) => {
+              const next = v as CascoMaterialTipo;
+              onChange(changeCascoMaterial(value, next));
+              setColorResetHint(
+                next === 'prints'
+                  ? 'Los colores de tela se ocultan: elegí un estampado.'
+                  : 'Los colores de tela se reiniciaron al cambiar el material.',
+              );
+            }}
+            options={CASCO_MATERIALES.map((item) => ({
+              value: item.id,
+              label: item.nombre,
+            }))}
+          />
+          <ExtraNote
+            extra={pricePoint(pricing, CASCO_MATERIAL_PRICE_KEY[value.material])}
+            currency={currency}
+          />
+        </Field>
+      </div>
+      {colorResetHint ? <p className="hint">{colorResetHint}</p> : null}
+      {value.material === 'prints' ? (
+        <Field label="Estampado *">
+          <Pick
+            label="Estampado"
+            value={value.estampado || 'topographic'}
+            onChange={(v) =>
+              set({ estampado: v as NonNullable<CascoConfigV2['estampado']> })
+            }
+            options={CASCO_ESTAMPADOS.map((item) => ({
+              value: item.id,
+              label: item.nombre,
+            }))}
+          />
+        </Field>
+      ) : (
+        <>
+          {CASCO_FABRIC_PARTS.filter(
+            (part) => part.field !== 'peakBand' || showBand,
+          ).map((part) => (
+            <CatalogColorPicker
+              key={part.field}
+              label={`${part.label} *`}
+              paletteId={fabricPalette}
+              value={value.colores[part.field]}
+              onChange={(color) =>
+                onChange(setCascoColor(value, part.field, color))
+              }
+            />
+          ))}
+        </>
+      )}
+      <div className="form-grid">
+        <Field label="Barbijo">
+          <Pick
+            label="Barbijo"
+            value={value.colores.strap ? 'si' : 'no'}
+            onChange={(v) =>
+              onChange({
+                ...value,
+                colores: {
+                  ...value.colores,
+                  strap:
+                    v === 'si'
+                      ? firstCascoColor(CASCO_PALETTE_IDS.barbijo)
+                      : undefined,
+                },
+              })
+            }
+            options={[
+              { value: 'no', label: 'Sin barbijo' },
+              { value: 'si', label: 'Con barbijo' },
+            ]}
+          />
+          {value.colores.strap ? (
+            <ExtraNote
+              extra={pricePoint(pricing, 'correaje')}
+              currency={currency}
+            />
+          ) : null}
+        </Field>
+      </div>
+      {value.colores.strap ? (
+        <CatalogColorPicker
+          label="Color de barbijo *"
+          paletteId={CASCO_PALETTE_IDS.barbijo}
+          value={value.colores.strap}
+          onChange={(color) => onChange(setCascoColor(value, 'strap', color))}
+        />
+      ) : null}
+      <CatalogColorPicker
+        label="Ojales *"
+        paletteId={CASCO_PALETTE_IDS.ojales}
+        value={value.colores.airholes}
+        onChange={(color) => onChange(setCascoColor(value, 'airholes', color))}
+      />
+      <CatalogColorPicker
+        label="Logo Iconic *"
+        paletteId={CASCO_PALETTE_IDS.logoHilo}
+        value={value.logoIconic}
+        onChange={(color) => set({ logoIconic: color })}
+      />
+      <p className="hint">Va en el lado derecho.</p>
+      <div className="form-grid">
+        <SlotToggle
+          label="Iniciales"
+          kind="iniciales"
+          enabled={Boolean(value.iniciales)}
+          config={value}
+          onDisable={() => set({ iniciales: undefined })}
+          onEnable={(posicion) =>
+            set({
+              iniciales: {
+                posicion,
+                texto: '',
+                tamano: 'M',
+                colorHilo: firstCascoColor(CASCO_PALETTE_IDS.logoHilo),
+                tipografia: 'trajan',
+              },
+            })
+          }
+        />
+      </div>
+      {value.iniciales ? (
+        <>
+          <SlotPick
+            kind="iniciales"
+            posicion={value.iniciales.posicion}
+            config={value}
+            onChange={(posicion) =>
+              set({
+                iniciales: { ...value.iniciales!, posicion },
+              })
+            }
+          />
+          <div className="form-grid">
+            <Field label="Texto de iniciales *">
+              <input
+                value={value.iniciales.texto}
+                maxLength={24}
+                onChange={(e) =>
+                  set({
+                    iniciales: {
+                      ...value.iniciales!,
+                      texto: e.target.value,
+                    },
+                  })
+                }
+                placeholder="IC"
+              />
+            </Field>
+            <Field label="Tamaño *">
+              <Pick
+                label="Tamaño de iniciales"
+                value={value.iniciales.tamano}
+                onChange={(v) =>
+                  set({
+                    iniciales: {
+                      ...value.iniciales!,
+                      tamano: v as 'S' | 'M' | 'L',
+                    },
+                  })
+                }
+                options={CASCO_TAMANOS_INICIALES[value.iniciales.posicion].map(
+                  (size) => ({
+                    value: size.id,
+                    label: `${size.nombre} · ${size.mm} mm`,
+                  }),
+                )}
+              />
+            </Field>
+          </div>
+          <Field label="Tipografía *">
+            <Pick
+              label="Tipografía"
+              value={value.iniciales.tipografia}
+              onChange={(v) =>
+                set({
+                  iniciales: { ...value.iniciales!, tipografia: v },
+                })
+              }
+              options={FONTS.map((font) => ({
+                value: font.id,
+                label: font.label,
+              }))}
+            />
+          </Field>
+          <CatalogColorPicker
+            label="Color de hilo *"
+            paletteId={CASCO_PALETTE_IDS.logoHilo}
+            value={value.iniciales.colorHilo}
+            onChange={(color) =>
+              set({
+                iniciales: { ...value.iniciales!, colorHilo: color },
+              })
+            }
+          />
+          <InitialsPreview
+            text={value.iniciales.texto}
+            fontId={value.iniciales.tipografia}
+            colorHex={value.iniciales.colorHilo.hex}
+            colorName={`${value.iniciales.colorHilo.nombre} · ${posicionLabel(value.iniciales.posicion)}`}
+            surfaceHex={value.colores.top?.hex}
+          />
+          <ExtraNote
+            extra={pricePoint(pricing, 'iniciales')}
+            currency={currency}
+          />
+        </>
+      ) : null}
+      <div className="form-grid">
+        <SlotToggle
+          label="Bandera"
+          kind="bandera"
+          enabled={Boolean(value.bandera)}
+          config={value}
+          onDisable={() => set({ bandera: undefined })}
+          onEnable={(posicion) => set({ bandera: { posicion, pais: 'Argentina' } })}
+        />
+      </div>
+      {value.bandera ? (
+        <>
+          <SlotPick
+            kind="bandera"
+            posicion={value.bandera.posicion}
+            config={value}
+            onChange={(posicion) =>
+              set({
+                bandera: { ...value.bandera!, posicion },
+              })
+            }
+          />
+          <CountrySearch
+            value={value.bandera.pais}
+            onChange={(pais) =>
+              set({ bandera: { ...value.bandera!, pais } })
+            }
+          />
+          <ExtraNote
+            extra={pricePoint(pricing, 'bandera')}
+            currency={currency}
+          />
+        </>
+      ) : null}
+      <div className="form-grid">
+        <SlotToggle
+          label="Logo propio"
+          kind="logoPropio"
+          enabled={Boolean(value.logoPropio)}
+          config={value}
+          onDisable={() => set({ logoPropio: undefined })}
+          onEnable={(posicion) =>
+            set({ logoPropio: { posicion, imagen: '', tamano: 'M' } })
+          }
+        />
+      </div>
+      {value.logoPropio ? (
+        <>
+          <SlotPick
+            kind="logoPropio"
+            posicion={value.logoPropio.posicion}
+            config={value}
+            onChange={(posicion) =>
+              set({
+                logoPropio: { ...value.logoPropio!, posicion },
+              })
+            }
+          />
+          <Field label="Tamaño *">
+            <Pick
+              label="Tamaño del logo"
+              value={value.logoPropio.tamano}
+              onChange={(v) =>
+                set({
+                  logoPropio: {
+                    ...value.logoPropio!,
+                    tamano: v as 'S' | 'M' | 'L',
+                  },
+                })
+              }
+              options={CASCO_TAMANOS_LOGO.map((size) => ({
+                value: size.id,
+                label: size.nombre,
+              }))}
+            />
+          </Field>
+          <Field label="Imagen del logo *" wide>
+            <Photos
+              value={
+                value.logoPropio.imagen ? [value.logoPropio.imagen] : []
+              }
+              max={1}
+              onChange={(urls) =>
+                set({
+                  logoPropio: {
+                    ...value.logoPropio!,
+                    imagen: urls[0] || '',
+                  },
+                })
+              }
+              onError={onError || (() => undefined)}
+              onBusy={onBusy || (() => undefined)}
+            />
+          </Field>
+          <ExtraNote
+            extra={pricePoint(pricing, 'logoPersonalizado')}
+            currency={currency}
+          />
+        </>
+      ) : null}
+      <Field label="Talle *" wide>
+        <Pick
+          label="Talle"
+          value={
+            value.talle && typeof value.talle === 'object'
+              ? String(value.talle.cm)
+              : '__empty__'
+          }
+          onChange={(v) =>
+            set({
+              talle: v === '__empty__' ? '' : findCascoTalle(Number(v)) || '',
+            })
+          }
+          options={[
+            { value: '__empty__', label: 'Elegí el talle' },
+            ...CASCO_TALLES.map((talle) => ({
+              value: String(talle.cm),
+              label: talleLabel(talle),
+            })),
+          ]}
+        />
+      </Field>
+      <Field label="Imágenes de referencia del diseño" wide>
+        <Photos
+          value={configDesignPhotos('casco', value)}
+          max={CASCO_DISENO_MAX}
+          camera
+          onChange={(urls) =>
+            set({ disenoImagenes: urls, disenoImagen: urls[0] || '' })
+          }
+          onError={onError || (() => undefined)}
+          onBusy={onBusy || (() => undefined)}
+        />
+        <small>
+          Podés adjuntar varios bocetos, mockups o fotos del casco para ilustrar
+          el diseño al proveedor.
+        </small>
+      </Field>
+      <ConfigSummary
+        kind="casco"
+        value={value}
+        extras={extras}
+        available={available}
+        totals={totals}
+        currency={currency}
+      />
+    </div>
   );
 }
 
@@ -913,17 +1553,48 @@ export function Configurator({
       </div>
     );
   }
-  const c = value as CascoConfig;
-  const set = (patch: Partial<CascoConfig>) => onChange({ ...c, ...patch });
+  if (isNewCascoConfig(value)) {
+    return (
+      <CascoConfiguratorNew
+        value={value}
+        onChange={onChange}
+        movements={movements}
+        productId={productId}
+        pricing={pricing}
+        currency={currency}
+        onError={onError}
+        onBusy={onBusy}
+      />
+    );
+  }
+  const c = value as CascoConfigLegacy;
+  const set = (patch: Partial<CascoConfigLegacy>) =>
+    onChange({ ...c, ...patch });
   return (
     <div className="configurator">
       <ReferenceShots kind="casco" value={c} pricing={pricing} />
+      <Field label="Imágenes de referencia del diseño" wide>
+        <Photos
+          value={configDesignPhotos('casco', c)}
+          max={CASCO_DISENO_MAX}
+          camera
+          onChange={(urls) =>
+            set({ disenoImagenes: urls, disenoImagen: urls[0] || '' })
+          }
+          onError={onError || (() => undefined)}
+          onBusy={onBusy || (() => undefined)}
+        />
+        <small>
+          Podés adjuntar varios bocetos, mockups o fotos del casco para ilustrar
+          el diseño al proveedor.
+        </small>
+      </Field>
       <div className="form-grid">
         <Field label="Modelo *">
           <Pick
             label="Modelo"
             value={c.modelo}
-            onChange={(v) => set({ modelo: v as CascoConfig['modelo'] })}
+            onChange={(v) => set({ modelo: v as CascoConfigLegacy['modelo'] })}
             options={[
               { value: 'h1', label: 'H1 homologado' },
               { value: 'standard', label: 'Standard sin homologar' },
@@ -940,7 +1611,7 @@ export function Configurator({
           <Pick
             label="Tipo de vicera"
             value={c.vicera}
-            onChange={(v) => set({ vicera: v as CascoConfig['vicera'] })}
+            onChange={(v) => set({ vicera: v as CascoConfigLegacy['vicera'] })}
             options={[
               { value: 'lock', label: 'Lock / English' },
               { value: 'argentina', label: 'Argentina' },
@@ -963,7 +1634,7 @@ export function Configurator({
             label="Material externo"
             value={c.materialExterno}
             onChange={(v) =>
-              set({ materialExterno: v as CascoConfig['materialExterno'] })
+              set({ materialExterno: v as CascoConfigLegacy['materialExterno'] })
             }
             options={HELMET_MATERIALS.map((material) => ({
               value: material.id,
@@ -1027,7 +1698,7 @@ export function Configurator({
             label="Ubicación logo IC"
             value={c.logoIcUbicacion}
             onChange={(v) =>
-              set({ logoIcUbicacion: v as CascoConfig['logoIcUbicacion'] })
+              set({ logoIcUbicacion: v as CascoConfigLegacy['logoIcUbicacion'] })
             }
             options={[
               { value: 'derecha', label: 'Lado derecho' },
@@ -1099,7 +1770,7 @@ export function Configurator({
                 value={c.inicialesUbicacion}
                 onChange={(v) =>
                   set({
-                    inicialesUbicacion: v as CascoConfig['inicialesUbicacion'],
+                    inicialesUbicacion: v as CascoConfigLegacy['inicialesUbicacion'],
                   })
                 }
                 options={[
@@ -1113,7 +1784,7 @@ export function Configurator({
                 label="Tamaño de iniciales"
                 value={c.inicialesTamano}
                 onChange={(v) =>
-                  set({ inicialesTamano: v as CascoConfig['inicialesTamano'] })
+                  set({ inicialesTamano: v as CascoConfigLegacy['inicialesTamano'] })
                 }
                 options={[
                   { value: '14', label: 'Chico · 14 mm' },
@@ -1169,7 +1840,7 @@ export function Configurator({
                 value={c.banderaUbicacion}
                 onChange={(v) =>
                   set({
-                    banderaUbicacion: v as CascoConfig['banderaUbicacion'],
+                    banderaUbicacion: v as CascoConfigLegacy['banderaUbicacion'],
                   })
                 }
                 options={[
@@ -1208,7 +1879,7 @@ export function Configurator({
                 onChange={(v) =>
                   set({
                     logoPersonalizadoPosicion:
-                      v as CascoConfig['logoPersonalizadoPosicion'],
+                      v as CascoConfigLegacy['logoPersonalizadoPosicion'],
                   })
                 }
                 options={[
@@ -1226,7 +1897,7 @@ export function Configurator({
                 onChange={(v) =>
                   set({
                     logoPersonalizadoTamano:
-                      v as CascoConfig['logoPersonalizadoTamano'],
+                      v as CascoConfigLegacy['logoPersonalizadoTamano'],
                   })
                 }
                 options={[
@@ -1289,6 +1960,9 @@ function extraForLabel(
 ) {
   return extras.find((charge) => {
     if (EXTRA_LABEL[charge.id] === label) return true;
+    if (charge.id === 'correaje' && label === 'Barbijo') return true;
+    if (charge.id === 'logoPersonalizado' && label === 'Logo propio')
+      return true;
     if (charge.id.startsWith('tipo_') && label === 'Tipo') return true;
     if (charge.id.startsWith('material_') && label === 'Material') return true;
     if (charge.id.startsWith('asiento_') && label === 'Material asiento')

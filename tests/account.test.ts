@@ -142,6 +142,38 @@ test('deleted orders are excluded from monthly results', () => {
   assert.equal(rows[0]?.orders, 1);
 });
 
+test('ledger includes partner-paid account movements', () => {
+  const results = monthlyResults(
+    [order('o1', '2026-01-05', 100_000, 40_000)],
+    [],
+  );
+  const ledger = accountLedger(
+    results,
+    [],
+    partners,
+    [
+      {
+        id: 'm1',
+        concept: 'pago_proveedor',
+        detail: 'Cuero crupon',
+        partner_id: 'ivan',
+        supplier_id: 'sup1',
+        amount: 10_000,
+        currency: 'USD',
+        date: '2026-01-10',
+        created_at: '',
+      },
+    ],
+    'USD',
+    new Map([['sup1', 'Talabarteria']]),
+  );
+  assert.equal(ledger[1]?.kind, 'movimiento');
+  assert.equal(ledger[1]?.label, 'Pago proveedor · Talabarteria · Cuero crupon');
+  assert.equal(ledger[1]?.amount, -10_000);
+  assert.equal(ledger[1]?.partner, 'Ivan');
+  assert.equal(ledger.at(-1)?.balance, 50_000);
+});
+
 test('year sheet fills every month and remaining profit subtracts cashouts', () => {
   const rows = monthlyResults(
     [order('o1', '2026-01-05', 100_000, 40_000)],

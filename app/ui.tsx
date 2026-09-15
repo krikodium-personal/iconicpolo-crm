@@ -17,6 +17,9 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Camera, Package, Upload, X } from 'lucide-react';
+import { DayPicker } from 'react-day-picker';
+import { es } from 'react-day-picker/locale';
+import 'react-day-picker/style.css';
 import type { Order } from '@/lib/types';
 import { decimal, parseDecimal } from '@/lib/money';
 function selectFieldInput(e: { target: EventTarget }) {
@@ -126,6 +129,45 @@ export function Pick({
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+function parseIsoDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return undefined;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function formatIsoDate(day: Date) {
+  const year = day.getFullYear();
+  const month = String(day.getMonth() + 1).padStart(2, '0');
+  const date = String(day.getDate()).padStart(2, '0');
+  return `${year}-${month}-${date}`;
+}
+
+export function DateCalendar({
+  value,
+  onChange,
+  label = 'Fecha',
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  label?: string;
+}) {
+  const selected = parseIsoDate(value);
+  return (
+    <div className="date-calendar">
+      <DayPicker
+        mode="single"
+        locale={es}
+        defaultMonth={selected}
+        selected={selected}
+        onSelect={(day) => {
+          if (day) onChange(formatIsoDate(day));
+        }}
+        aria-label={label}
+      />
+    </div>
   );
 }
 export function SelectCheck({

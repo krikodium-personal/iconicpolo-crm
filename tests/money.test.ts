@@ -13,6 +13,7 @@ import {
   parsePercent,
   percent,
   ratio,
+  arsFromUsd,
 } from '../lib/money.ts';
 
 test('parses money and percentages into safe integer units', () => {
@@ -22,6 +23,12 @@ test('parses money and percentages into safe integer units', () => {
   assert.equal(percent(1_500), '15');
   assert.equal(parsePercent('15'), 1_500);
   assert.throws(() => parsePercent('15.00'));
+});
+
+test('converts dollars to pesos with the taken exchange rate', () => {
+  assert.equal(arsFromUsd(10_000, 148_050), 14_805_000);
+  assert.equal(arsFromUsd(5_000, 100_000), 5_000_000);
+  assert.throws(() => arsFromUsd(10_000, 0));
 });
 
 test('uses half-up rounding for basis-point calculations', () => {
