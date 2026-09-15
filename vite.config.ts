@@ -2,34 +2,15 @@ import { sites } from '@openai/sites-vite-plugin';
 import tailwindcss from '@tailwindcss/postcss';
 import vinext from 'vinext';
 import { defineConfig } from 'vite';
-import hostingConfig from './.openai/hosting.json';
-
-const { d1, r2 } = hostingConfig;
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === 'seatbelt';
 
+// Keep this overlay to the Worker entry only. Repeating D1/R2 here duplicates the
+// bindings from wrangler.jsonc in dist/server/wrangler.json and wrangler deploy
+// then fails with "DB assigned to multiple D1 Database bindings".
 const localBindingConfig = {
   main: 'vinext/server/fetch-handler',
-  d1_databases: d1
-    ? [
-        {
-          binding: d1,
-          database_name: 'iconic-crm',
-          database_id: 'd40d3c2f-d003-4070-8ea6-201d17b5eb67',
-          remote: true,
-        },
-      ]
-    : [],
-  r2_buckets: r2
-    ? [
-        {
-          binding: r2,
-          bucket_name: 'iconic-crm-files',
-          remote: true,
-        },
-      ]
-    : [],
 };
 
 export default defineConfig(async () => {

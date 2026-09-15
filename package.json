@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
+    "deploy": "vinext build && node scripts/prepare-wrangler-deploy.mjs && wrangler deploy --config dist/server/wrangler.json --keep-vars",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "test": "node --test --experimental-strip-types tests/money.test.ts tests/variants.test.ts tests/account.test.ts tests/configure.test.ts tests/auth.test.ts",
