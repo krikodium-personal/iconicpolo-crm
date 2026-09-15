@@ -487,6 +487,7 @@ export function AccountBoard({
                     <TableCell>
                       {entry.label}
                       {entry.partner ? ` · ${entry.partner}` : ''}
+                      {entry.actor ? ` · Registrado por ${entry.actor}` : ''}
                       {entry.notes ? ` · ${entry.notes}` : ''}
                     </TableCell>
                     <TableCell className={entry.amount < 0 ? 'money-neg' : ''}>
@@ -522,6 +523,7 @@ export function AccountBoard({
               <small>
                 {entry.date}
                 {entry.partner ? ` · ${entry.partner}` : ''}
+                {entry.actor ? ` · Registrado por ${entry.actor}` : ''}
                 {entry.notes ? ` · ${entry.notes}` : ''} · saldo{' '}
                 {money(entry.balance)}
               </small>

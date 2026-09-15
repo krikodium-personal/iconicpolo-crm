@@ -64,6 +64,20 @@
       "when": 1789412400000,
       "tag": "0008_partner_share",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789498800000,
+      "tag": "0009_partner_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1789585200000,
+      "tag": "0010_order_deleted",
+      "breakpoints": true
     }
   ]
 }

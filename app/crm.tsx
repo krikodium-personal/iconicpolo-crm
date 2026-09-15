@@ -17,6 +17,7 @@ import {
   Archive,
   RotateCcw,
   ArrowDownUp,
+  Trash2,
   MessageCircle,
   ChevronLeft,
   ChevronRight,
@@ -27,6 +28,7 @@ import {
   Landmark,
   Check,
   Pencil,
+  LogOut,
 } from 'lucide-react';
 import {
   SidebarProvider,
@@ -81,11 +83,13 @@ import {
   OrderDetail,
   StockForm,
   StockOverview,
+  StockItemDetail,
   SettingsForm,
   whatsapp,
   whatsappGroup,
 } from './forms';
 import { AccountBoard } from './account';
+import { AuthScreen } from './login';
 import {
   StatusMenu,
   OrderPayMenu,
@@ -101,10 +105,17 @@ import {
   margin,
   orderDiscountPercent,
 } from '@/lib/money';
-import { isConfiguredCategory, isConfiguredProduct } from '@/lib/configure';
+import {
+  describeConfigured,
+  isConfiguredCategory,
+  isConfiguredProduct,
+  reservedHolds,
+  stockAvailability,
+} from '@/lib/configure';
 import { TypeCards, TypeConfigForm } from './type-config';
 import {
   ORDER_STATUSES,
+  orderIsLive,
   orderIsLocked,
   orderPipelineStatus,
   type Data,
@@ -147,18 +158,58 @@ type Panel =
   | { type: 'supplier' | 'customer'; record?: Contact }
   | { type: 'product'; record?: Product; editing?: boolean }
   | { type: 'order'; record?: Order; editing?: boolean }
-  | { type: 'stock'; record: Product; movement?: Movement; back?: 'inventory' }
-  | { type: 'inventory'; record: Product }
+  | {
+      type: 'stock';
+      record: Product;
+      movement?: Movement;
+      back?: 'inventory';
+      itemKey?: string;
+    }
+  | { type: 'inventory'; record: Product; itemKey?: string }
   | { type: 'settings' };
+type SessionUser = { id: string; name: string; email: string };
+type AuthMode = 'loading' | 'setup' | 'login' | 'ready';
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || 'IC';
+}
 function panelIdentity(panel: Panel | null) {
   if (!panel) return '';
   if (panel.type === 'stock') {
     return `stock:${panel.record.id}:${panel.movement?.id || 'new'}`;
   }
+  if (panel.type === 'inventory') {
+    return `inventory:${panel.record.id}:${panel.itemKey || 'list'}`;
+  }
   if (panel.type === 'order') {
     return `order:${panel.record?.id || 'new'}:${panel.editing ? 'edit' : 'view'}`;
   }
   return panel.type;
+}
+function inventoryItemContext(
+  data: Data,
+  record: Product,
+  itemKey: string,
+) {
+  const row = stockAvailability(
+    data.movements,
+    reservedHolds(data.orders, data.products),
+    record.id,
+  ).find((item) => item.key === itemKey);
+  if (!row) return null;
+  const inbound = data.movements.find(
+    (movement) =>
+      movement.product_id === record.id &&
+      movement.quantity > 0 &&
+      (movement.config_key || '') === row.config_key &&
+      (movement.location || '') === row.location,
+  );
+  const described = describeConfigured(record, row.config);
+  return {
+    row,
+    inbound,
+    title: (described.split('\n')[0] || record.name).trim() || record.name,
+  };
 }
 type Archived = {
   entity: 'products' | 'orders' | 'contacts';
@@ -297,13 +348,6 @@ function ProductCard({
     </article>
   );
 }
-function initials(name: string) {
-  return name
-    .split(' ')
-    .slice(0, 2)
-    .map((word) => word[0])
-    .join('');
-}
 function ContactCard({
   contact,
   productCount,
@@ -422,6 +466,7 @@ function OrderCard({
   money,
   compact = false,
   archiveButton,
+  deleteButton,
   onOpen,
   onStatus,
   onPay,
@@ -432,6 +477,7 @@ function OrderCard({
   money: (n: number) => string;
   compact?: boolean;
   archiveButton: ReactNode;
+  deleteButton?: ReactNode;
   onOpen: () => void;
   onStatus: (status: string) => Promise<void>;
   onPay: (pay: string, paid?: number) => Promise<void>;
@@ -466,7 +512,10 @@ function OrderCard({
                 <ChevronRight size={18} />
               </button>
             ) : (
-              archiveButton
+              <>
+                {archiveButton}
+                {deleteButton}
+              </>
             )}
           </div>
         </div>
@@ -614,19 +663,64 @@ export default function CRM({
     [query, Q] = useState(''),
     [filter, F] = useState(initialFilter),
     [archived, A] = useState(false),
+    [deletedList, setDeletedList] = useState(false),
     [confirm, C] = useState<Archived | null>(null),
+    [remove, setRemove] = useState<
+      | { type: 'order'; record: Order }
+      | { type: 'restore-order'; record: Order }
+      | { type: 'stock'; name: string; movementId: string }
+      | null
+    >(null),
     [configDirty, setConfigDirty] = useState(false),
     [discardOpen, setDiscardOpen] = useState(false),
     [busy, B] = useState(false),
     [selected, S] = useState<string[]>([]),
-    [stocked, T] = useState(false);
+    [stocked, T] = useState(false),
+    [user, setUser] = useState<SessionUser | null>(null),
+    [authMode, setAuthMode] = useState<AuthMode>('loading'),
+    [setupPartners, setSetupPartners] = useState<
+      { id: string; name: string }[]
+    >([]);
+  const loadSession = useCallback(async () => {
+    const response = await fetch('/api/auth/me', { cache: 'no-store' });
+    const body = (await response.json()) as {
+      user: SessionUser | null;
+      setup?: boolean;
+      partners?: { id: string; name: string }[];
+      error?: string;
+    };
+    if (!response.ok)
+      throw new Error(body.error || 'No se pudo verificar el acceso.');
+    if (body.user) {
+      setUser(body.user);
+      setAuthMode('ready');
+      setSetupPartners([]);
+      return true;
+    }
+    setUser(null);
+    setAuthMode(body.setup ? 'setup' : 'login');
+    setSetupPartners(body.partners || []);
+    D(null);
+    return false;
+  }, []);
   const refresh = useCallback(async () => {
     const response = await fetch('/api/crm', { cache: 'no-store' });
     const next = (await response.json()) as Data & { error?: string };
+    if (response.status === 401) {
+      D(null);
+      await loadSession();
+      throw new Error(next.error || 'Tenés que ingresar.');
+    }
     if (!response.ok) throw new Error(next.error);
     D(next);
     return next;
-  }, []);
+  }, [loadSession]);
+  async function logout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    D(null);
+    P(null);
+    await loadSession();
+  }
   const N = (text: string) => {
     setNotice(text ? { id: Date.now(), text } : null);
   };
@@ -636,9 +730,11 @@ export default function CRM({
     return () => window.clearTimeout(timeout);
   }, [notice]);
   useEffect(() => {
-    // oxlint-disable-next-line react/react-compiler -- The async refresh synchronizes this view with D1.
-    void refresh().catch((e) => E(e.message));
-  }, [refresh]);
+    // oxlint-disable-next-line react/react-compiler -- Session and D1 data load together.
+    void loadSession()
+      .then((ok) => (ok ? refresh() : undefined))
+      .catch((e) => E(e.message));
+  }, [loadSession, refresh]);
   useEffect(() => {
     const context = (
       document as Document & {
@@ -750,7 +846,7 @@ export default function CRM({
           return;
         }
       }
-      if (body.action === 'partner_shares' || body.action === 'partner') {
+      if (body.action === 'partner_shares' || body.action === 'partner' || body.action === 'partner_access') {
         P({ type: 'settings' });
         return;
       }
@@ -762,7 +858,25 @@ export default function CRM({
       ) {
         const updated = next.products.find((p) => p.id === body.product_id);
         if (updated) {
-          P({ type: 'inventory', record: updated });
+          let itemKey =
+            panel?.type === 'stock' && panel.itemKey
+              ? panel.itemKey
+              : undefined;
+          if (
+            itemKey &&
+            body.action === 'stock_update' &&
+            typeof body.id === 'string'
+          ) {
+            const movement = next.movements.find((item) => item.id === body.id);
+            if (movement) {
+              itemKey = `${movement.config_key || ''}\t${movement.location || ''}`;
+            }
+          }
+          P({
+            type: 'inventory',
+            record: updated,
+            ...(itemKey ? { itemKey } : {}),
+          });
           return;
         }
       }
@@ -826,7 +940,7 @@ export default function CRM({
   const money = (n: number) => formatMoney(n, currency);
   const search = (...values: (string | undefined)[]) =>
     values.join(' ').toLowerCase().includes(query.toLowerCase());
-  const activeOrders = data?.orders.filter((o) => !o.archived) || [];
+  const activeOrders = data?.orders.filter(orderIsLive) || [];
   const billed = activeOrders.reduce((sum, order) => sum + order.total, 0);
   const collected = activeOrders.reduce((sum, order) => sum + order.paid, 0);
   const outstanding = activeOrders.reduce(
@@ -896,12 +1010,17 @@ export default function CRM({
     );
   }
   const orders =
-    data?.orders.filter(
-      (o) =>
+    data?.orders.filter((o) => {
+      const isDeleted = !!o.deleted;
+      if (deletedList) return isDeleted && search(o.number, customer(o.customer_id)) &&
+        (filter === 'all' || orderPipelineStatus(o) === filter);
+      return (
+        !isDeleted &&
         !!o.archived === archived &&
         search(o.number, customer(o.customer_id)) &&
-        (filter === 'all' || orderPipelineStatus(o) === filter),
-    ) || [];
+        (filter === 'all' || orderPipelineStatus(o) === filter)
+      );
+    }) || [];
   function renderArchiveButton({ entity, record }: Archived) {
     return (
       <button
@@ -918,6 +1037,47 @@ export default function CRM({
       </button>
     );
   }
+  function renderDeleteOrderButton(order: Order) {
+    return (
+      <button
+        type="button"
+        className="icon-button danger"
+        title="Borrar"
+        aria-label={`Borrar ${order.number}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          setRemove({ type: 'order', record: order });
+        }}
+      >
+        <Trash2 size={16} />
+      </button>
+    );
+  }
+  function renderRestoreDeletedButton(order: Order) {
+    return (
+      <button
+        type="button"
+        className="icon-button"
+        title="Restaurar"
+        aria-label={`Restaurar ${order.number}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          setRemove({ type: 'restore-order', record: order });
+        }}
+      >
+        <RotateCcw size={16} />
+      </button>
+    );
+  }
+  function renderOrderRowActions(order: Order) {
+    if (order.deleted) return renderRestoreDeletedButton(order);
+    return (
+      <>
+        {renderArchiveButton({ entity: 'orders', record: order })}
+        {renderDeleteOrderButton(order)}
+      </>
+    );
+  }
   function renderNoRows({ text }: { text: string }) {
     return (
       <Empty className="empty">
@@ -926,12 +1086,14 @@ export default function CRM({
           <EmptyDescription>
             {query || filter !== 'all' || stocked
               ? 'Probá con otra búsqueda o filtro.'
+              : deletedList
+                ? 'Los pedidos borrados aparecen aquí. No entran en ganancias ni en el estado de cuenta.'
               : archived
                 ? 'Los registros archivados aparecerán aquí.'
                 : 'Creá el primer registro para empezar.'}
           </EmptyDescription>
         </EmptyHeader>
-        {!archived && !query && !stocked && (
+        {!archived && !deletedList && !query && !stocked && (
           <button className="secondary" onClick={create}>
             <Plus size={16} /> Crear registro
           </button>
@@ -1017,7 +1179,7 @@ export default function CRM({
                         <ChevronRight size={18} />
                       </button>
                     ) : (
-                      renderArchiveButton({ entity: 'orders', record: o })
+                      renderOrderRowActions(o)
                     )}
                   </TableCell>
                 </TableRow>
@@ -1033,10 +1195,15 @@ export default function CRM({
               customerName={customer(o.customer_id)}
               money={money}
               compact={compact}
-              archiveButton={renderArchiveButton({
-                entity: 'orders',
-                record: o,
-              })}
+              archiveButton={
+                o.deleted
+                  ? renderRestoreDeletedButton(o)
+                  : renderArchiveButton({
+                      entity: 'orders',
+                      record: o,
+                    })
+              }
+              deleteButton={o.deleted ? null : renderDeleteOrderButton(o)}
               onOpen={() => P({ type: 'order', record: o })}
               onStatus={(status) => patchOrder(o, { status })}
               onPay={(pay, paid) => patchOrder(o, { pay, paid })}
@@ -1065,6 +1232,41 @@ export default function CRM({
             : panel?.type === 'supplier'
               ? panel.record?.name || 'Nuevo proveedor'
               : panel?.record?.name || 'Nuevo cliente';
+  const inventoryRecord =
+    panel?.type === 'inventory' || panel?.type === 'stock'
+      ? (data?.products.find((p) => p.id === panel.record.id) ?? panel.record)
+      : undefined;
+  const inventoryItem =
+    panel?.type === 'inventory' && panel.itemKey && data && inventoryRecord
+      ? inventoryItemContext(data, inventoryRecord, panel.itemKey)
+      : null;
+  if (authMode === 'loading') {
+    return (
+      <div className="auth-screen">
+        <div className="metrics" style={{ maxWidth: 720, width: '100%' }}>
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-40 rounded-xl" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (authMode === 'setup' || authMode === 'login') {
+    return (
+      <>
+        <ErrorBox message={error} />
+        <AuthScreen
+          mode={authMode}
+          partners={setupPartners}
+          onSuccess={async () => {
+            E('');
+            const ok = await loadSession();
+            if (ok) await refresh();
+          }}
+        />
+      </>
+    );
+  }
   return (
     <>
       <SidebarProvider>
@@ -1108,10 +1310,17 @@ export default function CRM({
             >
               <Settings size={17} /> Configuración
             </button>
+            <button
+              className="settings-button"
+              onClick={() => void logout()}
+            >
+              <LogOut size={17} /> Salir
+            </button>
             <div className="sidebar-foot">
-              <span className="avatar">IC</span>
+              <span className="avatar">{initials(user?.name || '')}</span>
               <span>
-                Iconic Equestrian<small>Gestión comercial · {currency}</small>
+                {user?.name || 'Iconic'}
+                <small>{user?.email || 'Sesión activa'}</small>
               </span>
             </div>
           </SidebarFooter>
@@ -1335,7 +1544,7 @@ export default function CRM({
                   </section>
                 </div>
                 <p className="report-note">
-                  Pedidos no archivados · Cobrado y por cobrar según cada
+                  Pedidos activos · Cobrado y por cobrar según cada
                   pedido · Ganancia bruta es venta menos costo, sin impuestos
                   ni gastos.
                 </p>
@@ -1441,12 +1650,31 @@ export default function CRM({
                     />
                   )}
                   <button
-                    className={`secondary ${archived ? 'selected' : ''}`}
-                    onClick={() => A(!archived)}
+                    className={`secondary ${archived && !deletedList ? 'selected' : ''}`}
+                    onClick={() => {
+                      if (module === 'pedidos') {
+                        setDeletedList(false);
+                        A(deletedList ? true : !archived);
+                      } else {
+                        A(!archived);
+                      }
+                    }}
                   >
                     <Archive size={16} />
-                    {archived ? 'Ver activos' : 'Archivados'}
+                    {archived && !deletedList ? 'Ver activos' : 'Archivados'}
                   </button>
+                  {module === 'pedidos' ? (
+                    <button
+                      className={`secondary ${deletedList ? 'selected' : ''}`}
+                      onClick={() => {
+                        A(false);
+                        setDeletedList(!deletedList);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                      {deletedList ? 'Ver activos' : 'Borrados'}
+                    </button>
+                  ) : null}
                   <span className="result-count">
                     {module === 'productos'
                       ? products.length
@@ -1831,7 +2059,8 @@ export default function CRM({
                                     {
                                       data.orders.filter(
                                         (o) =>
-                                          o.customer_id === c.id && !o.archived,
+                                          o.customer_id === c.id &&
+                                          orderIsLive(o),
                                       ).length
                                     }{' '}
                                     pedidos
@@ -1862,7 +2091,7 @@ export default function CRM({
                           lastPurchase={cardDate(latestOrder(c.id)?.date || '')}
                           orderCount={
                             data.orders.filter(
-                              (o) => o.customer_id === c.id && !o.archived,
+                              (o) => o.customer_id === c.id && orderIsLive(o),
                             ).length
                           }
                           archiveButton={renderArchiveButton({
@@ -1904,6 +2133,14 @@ export default function CRM({
               setDiscardOpen(true);
               return;
             }
+            if (panel?.type === 'inventory' && panel.itemKey) {
+              details.cancel();
+              const record =
+                data?.products.find((p) => p.id === panel.record.id) ??
+                panel.record;
+              P({ type: 'inventory', record });
+              return;
+            }
             closePanel();
           }}
         >
@@ -1915,7 +2152,46 @@ export default function CRM({
             } max-[767px]:top-0 max-[767px]:left-0 max-[767px]:right-0 max-[767px]:bottom-0 max-[767px]:translate-x-0 max-[767px]:translate-y-0 max-[767px]:w-full max-[767px]:max-w-none max-[767px]:h-dvh max-[767px]:max-h-dvh max-[767px]:rounded-none max-[767px]:animate-none`}
           >
             <DialogHeader>
-              {panel?.type === 'inventory' ? (
+              {panel?.type === 'inventory' && panel.itemKey ? (
+                <div className="stock-dialog-heading order-dialog-heading">
+                  <div>
+                    <button
+                      type="button"
+                      className="dialog-kicker"
+                      onClick={() => {
+                        if (!inventoryRecord) return;
+                        P({ type: 'inventory', record: inventoryRecord });
+                      }}
+                    >
+                      {panelTitle}
+                    </button>
+                    <DialogTitle>
+                      {inventoryItem?.title || inventoryRecord?.name || panelTitle}
+                    </DialogTitle>
+                    <DialogDescription className="sr-only">
+                      Detalle de la unidad de stock.
+                    </DialogDescription>
+                  </div>
+                  {inventoryItem?.inbound ? (
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => {
+                        if (!inventoryRecord || !inventoryItem.inbound) return;
+                        P({
+                          type: 'stock',
+                          record: inventoryRecord,
+                          movement: inventoryItem.inbound,
+                          back: 'inventory',
+                          itemKey: panel.itemKey,
+                        });
+                      }}
+                    >
+                      <Pencil size={16} /> Editar
+                    </button>
+                  ) : null}
+                </div>
+              ) : panel?.type === 'inventory' ? (
                 <div className="stock-dialog-heading">
                   <div>
                     <DialogTitle>{panelTitle}</DialogTitle>
@@ -2137,24 +2413,61 @@ export default function CRM({
                   />
                 )
               ) : panel.type === 'inventory' ? (
-                <StockOverview
-                  record={
-                    data.products.find((p) => p.id === panel.record.id) ??
-                    panel.record
-                  }
-                  data={data}
-                  onEdit={(movement) =>
-                    P({
-                      type: 'stock',
-                      record:
-                        data.products.find((p) => p.id === panel.record.id) ??
-                        panel.record,
-                      movement,
-                      back: 'inventory',
-                    })
-                  }
-                  onOpenOrder={(order) => P({ type: 'order', record: order })}
-                />
+                panel.itemKey ? (
+                  <StockItemDetail
+                    record={
+                      data.products.find((p) => p.id === panel.record.id) ??
+                      panel.record
+                    }
+                    data={data}
+                    itemKey={panel.itemKey}
+                    onOpenOrder={(order) => P({ type: 'order', record: order })}
+                    onDelete={(movement, name) =>
+                      setRemove({
+                        type: 'stock',
+                        name,
+                        movementId: movement.id,
+                      })
+                    }
+                  />
+                ) : (
+                  <StockOverview
+                    record={
+                      data.products.find((p) => p.id === panel.record.id) ??
+                      panel.record
+                    }
+                    data={data}
+                    onOpen={(itemKey) =>
+                      P({
+                        type: 'inventory',
+                        record:
+                          data.products.find((p) => p.id === panel.record.id) ??
+                          panel.record,
+                        itemKey,
+                      })
+                    }
+                    onEdit={(movement) =>
+                      P({
+                        type: 'stock',
+                        record:
+                          data.products.find((p) => p.id === panel.record.id) ??
+                          panel.record,
+                        movement,
+                        back: 'inventory',
+                      })
+                    }
+                    onDelete={(movement, name) =>
+                      setRemove({
+                        type: 'stock',
+                        name,
+                        movementId: movement.id,
+                      })
+                    }
+                    onOpenOrder={(order) =>
+                      P({ type: 'order', record: order })
+                    }
+                  />
+                )
               ) : panel.type === 'stock' ? (
                 <StockForm
                   key={panel.movement?.id || 'new'}
@@ -2163,9 +2476,29 @@ export default function CRM({
                   save={save}
                   movement={panel.movement}
                   onConfigDirtyChange={setConfigDirty}
+                  onCancel={
+                    panel.itemKey
+                      ? () => {
+                          const record =
+                            data.products.find(
+                              (p) => p.id === panel.record.id,
+                            ) ?? panel.record;
+                          P({
+                            type: 'inventory',
+                            record,
+                            itemKey: panel.itemKey,
+                          });
+                        }
+                      : undefined
+                  }
                 />
               ) : panel.type === 'settings' ? (
-                <SettingsForm data={data} save={save} />
+                <SettingsForm
+                  data={data}
+                  save={save}
+                  user={user || undefined}
+                  onLogout={logout}
+                />
               ) : (
                 <ContactForm
                   kind={panel.type}
@@ -2221,6 +2554,82 @@ export default function CRM({
                 }}
               >
                 Confirmar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <AlertDialog
+          open={!!remove}
+          onOpenChange={(open) => {
+            if (!open) setRemove(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {remove?.type === 'restore-order'
+                  ? 'Restaurar pedido'
+                  : remove?.type === 'stock'
+                    ? 'Borrar de stock'
+                    : 'Borrar pedido'}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {remove?.type === 'restore-order'
+                  ? 'El pedido vuelve a los activos y otra vez cuenta para ganancias y el estado de cuenta.'
+                  : remove?.type === 'stock'
+                    ? `Se borra ${remove.name} del stock. Esta acción no se puede deshacer.`
+                    : 'El pedido pasa a Borrados. Deja de contar para ganancias, cobros y el estado de cuenta, pero queda el registro.'}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                variant={remove?.type === 'restore-order' ? 'default' : 'destructive'}
+                disabled={busy}
+                onClick={async () => {
+                  if (!remove) return;
+                  B(true);
+                  try {
+                    if (remove.type === 'stock') {
+                      await post({
+                        action: 'stock_delete',
+                        id: remove.movementId,
+                      });
+                      if (
+                        panel?.type === 'inventory' &&
+                        panel.itemKey
+                      ) {
+                        P({
+                          type: 'inventory',
+                          record: panel.record,
+                        });
+                      }
+                      setRemove(null);
+                      await refresh();
+                      N('Unidad borrada del stock.');
+                    } else {
+                      await post({
+                        action: 'order_delete',
+                        id: remove.record.id,
+                        version: remove.record.version,
+                        deleted: remove.type === 'restore-order' ? 0 : 1,
+                      });
+                      setRemove(null);
+                      await refresh();
+                      N(
+                        remove.type === 'restore-order'
+                          ? 'Pedido restaurado.'
+                          : 'Pedido borrado.',
+                      );
+                    }
+                  } catch (e) {
+                    E((e as Error).message);
+                  } finally {
+                    B(false);
+                  }
+                }}
+              >
+                {remove?.type === 'restore-order' ? 'Restaurar' : 'Borrar'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

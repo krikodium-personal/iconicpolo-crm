@@ -336,11 +336,30 @@ export const HELMET_MATERIALS = [
 ] as const;
 
 export const MONTURA_MATERIALS = [
-  { id: 'descarne', label: 'Descarne' },
+  { id: 'descarne', label: 'Descarne gamusado' },
   { id: 'cuero_forrado', label: 'Cuero forrado' },
-  { id: 'gamuza', label: 'Gamuza' },
   { id: 'suela', label: 'Suela' },
 ] as const;
+export type MonturaMaterial = (typeof MONTURA_MATERIALS)[number]['id'];
+
+export function aliasMonturaMaterial(value: unknown) {
+  return value === 'gamuza' ? 'descarne' : value;
+}
+
+export function rewriteMonturaGamuzaText(value: string) {
+  if (!value.includes('gamuza')) return value;
+  return value
+    .replaceAll('"material":"gamuza"', '"material":"descarne"')
+    .replaceAll('"materialAsiento":"gamuza"', '"materialAsiento":"descarne"')
+    .replaceAll('"material_gamuza"', '"material_descarne"')
+    .replaceAll('"asiento_gamuza"', '"asiento_descarne"');
+}
+
+function monturaMaterialLabel(id: string) {
+  return (
+    MONTURA_MATERIALS.find((material) => material.id === id)?.label || id
+  );
+}
 
 export const RODILLERA_TIPOS = [
   { id: 'velcro', label: 'Velcro' },
@@ -544,12 +563,10 @@ export const PRICED_GROUPS: Record<ConfiguredKind, PricedGroup[]> = {
     {
       id: 'asiento',
       label: 'Material asiento',
-      options: [
-        { id: 'asiento_descarne', label: 'Descarne' },
-        { id: 'asiento_cuero_forrado', label: 'Cuero forrado' },
-        { id: 'asiento_gamuza', label: 'Gamuza' },
-        { id: 'asiento_suela', label: 'Suela' },
-      ],
+      options: MONTURA_MATERIALS.map((material) => ({
+        id: `asiento_${material.id}`,
+        label: material.label,
+      })),
     },
     {
       id: 'faldin',
@@ -674,6 +691,14 @@ export function parsePricing(raw: unknown): ConfiguredPricing {
         price: moneyAmount(point.price, `Precio de ${id}`),
       };
     }
+    for (const [from, to] of [
+      ['material_gamuza', 'material_descarne'],
+      ['asiento_gamuza', 'asiento_descarne'],
+    ] as const) {
+      if (!(from in extras)) continue;
+      if (!(to in extras)) extras[to] = extras[from];
+      delete extras[from];
+    }
   }
   const bag =
     raw && typeof raw === 'object'
@@ -769,11 +794,11 @@ export function configuredProductOf<
 
 export type MonturaConfig = {
   tipo: 'americana' | 'bauti';
-  material: 'descarne' | 'cuero_forrado' | 'gamuza' | 'suela';
+  material: MonturaMaterial;
   color: 'negro' | 'marron';
   tamano: '18' | '19' | '20';
   acabadoAsiento: 'perforado' | 'liso';
-  materialAsiento: 'descarne' | 'cuero_forrado' | 'gamuza' | 'suela';
+  materialAsiento: MonturaMaterial;
   faldin: boolean;
   iniciales: boolean;
   inicialesTexto: string;
@@ -1006,7 +1031,7 @@ export function parseMontura(raw: unknown): MonturaConfig {
   const config: MonturaConfig = {
     tipo: oneOf(b.tipo, ['americana', 'bauti'], 'Tipo'),
     material: oneOf(
-      b.material || 'cuero_forrado',
+      aliasMonturaMaterial(b.material || 'cuero_forrado'),
       MONTURA_MATERIALS.map((material) => material.id),
       'Material',
     ),
@@ -1018,8 +1043,8 @@ export function parseMontura(raw: unknown): MonturaConfig {
       'Acabado asiento',
     ),
     materialAsiento: oneOf(
-      b.materialAsiento,
-      ['descarne', 'cuero_forrado', 'gamuza', 'suela'],
+      aliasMonturaMaterial(b.materialAsiento),
+      MONTURA_MATERIALS.map((material) => material.id),
       'Material asiento',
     ),
     faldin: flag(b.faldin),
@@ -1309,11 +1334,13 @@ export function stockKey(kind: ConfiguredKind, raw: ProductConfig) {
     const c = raw as MonturaConfig;
     return JSON.stringify({
       tipo: c.tipo,
-      material: c.material,
+      material: aliasMonturaMaterial(c.material) as MonturaMaterial,
       color: c.color,
       tamano: c.tamano,
       acabadoAsiento: c.acabadoAsiento,
-      materialAsiento: c.materialAsiento,
+      materialAsiento: aliasMonturaMaterial(
+        c.materialAsiento,
+      ) as MonturaMaterial,
       faldin: c.faldin,
       corte: c.corte,
       portaEstriberaIngles: c.portaEstriberaIngles,
@@ -1372,19 +1399,12 @@ export function configLabels(kind: ConfiguredKind, raw: ProductConfig) {
   if (kind === 'montura') {
     const c = raw as MonturaConfig;
     labels.Tipo = c.tipo === 'americana' ? 'Americana' : 'Bauti';
-    labels.Material =
-      MONTURA_MATERIALS.find((material) => material.id === c.material)?.label ||
-      c.material;
+    labels.Material = monturaMaterialLabel(c.material);
     labels.Color = c.color === 'negro' ? 'Negro' : 'Marrón';
     labels.Tamaño = c.tamano;
     labels['Acabado asiento'] =
       c.acabadoAsiento === 'perforado' ? 'Perforado' : 'Liso';
-    labels['Material asiento'] = {
-      descarne: 'Descarne',
-      cuero_forrado: 'Cuero forrado',
-      gamuza: 'Gamuza',
-      suela: 'Suela',
-    }[c.materialAsiento];
+    labels['Material asiento'] = monturaMaterialLabel(c.materialAsiento);
     labels.Faldín = c.faldin ? 'Con' : 'Sin';
     labels.Corte = c.corte === 'tapita' ? 'Tapita' : 'Costura';
     labels['Porta estribera inglés'] = c.portaEstriberaIngles ? 'Sí' : 'No';
@@ -1703,6 +1723,7 @@ export function reservedHolds(
     id: string;
     number: string;
     archived: number;
+    deleted?: number;
     status: string;
     items: {
       product_id: string;
@@ -1722,7 +1743,8 @@ export function reservedHolds(
   );
   const holds: StockHold[] = [];
   for (const order of orders) {
-    if (order.archived || order.status === 'entregado') continue;
+    if (order.archived || order.deleted || order.status === 'entregado')
+      continue;
     if (exceptOrderId && order.id === exceptOrderId) continue;
     for (const item of order.items) {
       const hold = itemStockHold(
@@ -1791,18 +1813,11 @@ function lowerEs(value: string) {
 
 function summarizeMontura(raw: MonturaConfig) {
   const tipo = raw.tipo === 'americana' ? 'Americana' : 'Bauti';
-  const material =
-    MONTURA_MATERIALS.find((item) => item.id === raw.material)?.label ||
-    raw.material;
+  const material = monturaMaterialLabel(raw.material);
   const color = raw.color === 'negro' ? 'Negro' : 'Marrón';
   const asiento =
     raw.acabadoAsiento === 'perforado' ? 'Perforado' : 'Liso';
-  const asientoMaterial = {
-    descarne: 'Descarne',
-    cuero_forrado: 'Cuero forrado',
-    gamuza: 'Gamuza',
-    suela: 'Suela',
-  }[raw.materialAsiento];
+  const asientoMaterial = monturaMaterialLabel(raw.materialAsiento);
   const corte = raw.corte === 'tapita' ? 'Tapita' : 'Costura';
   const lines = [
     `Montura ${tipo} ${lowerEs(material)} ${lowerEs(color)} ${raw.tamano}`,

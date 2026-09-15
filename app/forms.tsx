@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ORDER_STATUSES,
+  actorName,
   orderIsLocked,
   type Contact,
   type Product,
@@ -12,6 +13,7 @@ import {
   type Option,
   type Item,
   type Movement,
+  type Partner,
 } from '@/lib/types';
 import {
   decimal,
@@ -916,7 +918,7 @@ export function ProductForm({
                     <small>{stockPlaceLabel(m.location)}</small>
                   ) : null}
                   <small>
-                    {new Date(m.created_at).toLocaleString('es-AR')}
+                    {movementWhen(data.partners, m)}
                   </small>
                 </div>
                 <strong className={m.quantity > 0 ? 'positive' : 'negative'}>
@@ -958,6 +960,40 @@ function Fact({
       <strong className={pending ? 'pending-text' : undefined}>{value}</strong>
     </div>
   );
+}
+function ActorNote({
+  partners,
+  createdBy,
+  archivedBy,
+  archived,
+  deletedBy,
+  deleted,
+}: {
+  partners: Partner[];
+  createdBy?: string;
+  archivedBy?: string;
+  archived?: number;
+  deletedBy?: string;
+  deleted?: number;
+}) {
+  const created = actorName(partners, createdBy);
+  const archivedName = archived ? actorName(partners, archivedBy) : '';
+  const deletedName = deleted ? actorName(partners, deletedBy) : '';
+  if (!created && !archivedName && !deletedName) return null;
+  return (
+    <p className="hint actor-note">
+      {created ? `Creado por ${created}` : null}
+      {created && (archivedName || deletedName) ? ' · ' : null}
+      {archivedName ? `Archivado por ${archivedName}` : null}
+      {archivedName && deletedName ? ' · ' : null}
+      {deletedName ? `Borrado por ${deletedName}` : null}
+    </p>
+  );
+}
+function movementWhen(partners: Partner[], movement: Movement) {
+  const who = actorName(partners, movement.created_by);
+  const when = new Date(movement.created_at).toLocaleString('es-AR');
+  return who ? `${when} · ${who}` : when;
 }
 export function ProductDetail({
   record,
@@ -1001,6 +1037,12 @@ export function ProductDetail({
           Registrar stock
         </button>
       </div>
+      <ActorNote
+        partners={data.partners}
+        createdBy={record.created_by}
+        archivedBy={record.archived_by}
+        archived={record.archived}
+      />
       {isConfiguredProduct(record) ? (
         Object.values(record.pricing.photos || {}).length ? (
           <section className="form-section" style={{ borderTop: 0, marginTop: 0 }}>
@@ -1189,7 +1231,7 @@ export function ProductDetail({
                 {detail ? (
                   <small className="snapshot-copy">{detail}</small>
                 ) : null}
-                <small>{new Date(m.created_at).toLocaleString('es-AR')}</small>
+                <small>{movementWhen(data.partners, m)}</small>
               </div>
               <strong className={m.quantity > 0 ? 'positive' : 'negative'}>
                 {m.quantity > 0 ? '+' : ''}
@@ -1249,8 +1291,32 @@ function itemDescription(item: Item, product?: Product) {
   return extras.length ? [item.name, ...extras].join('\n') : item.name;
 }
 
-function itemPhoto(item: Item, product?: Product) {
+function itemPhoto(
+  item: Item,
+  product?: Product,
+  movements: Movement[] = [],
+) {
   if (!product) return undefined;
+  if (item.selections.from_stock) {
+    const hold = itemStockHold(item, configuredKindOf(product), {
+      id: item.order_id,
+      number: '',
+    });
+    if (hold) {
+      const stockUrl = uniquePhotoUrls(
+        movements
+          .filter(
+            (movement) =>
+              movement.product_id === item.product_id &&
+              movement.quantity > 0 &&
+              (movement.config_key || '') === hold.configKey &&
+              (movement.location || '') === hold.location,
+          )
+          .flatMap((movement) => movement.photos || []),
+      )[0];
+      if (stockUrl) return stockUrl;
+    }
+  }
   const kind = configuredKindOf(product);
   if (kind && item.selections.config) {
     try {
@@ -1280,9 +1346,9 @@ export function OrderDetail({
   save: Save;
 }) {
   const [error, E] = useState('');
-  const customer = data.contacts.find((c) => c.id === record.customer_id);
   const closed = orderIsLocked(record.status);
   const units = record.items.reduce((total, item) => total + item.quantity, 0);
+  const due = Math.max(0, record.total - record.paid);
   return (
     <div className="pdp">
       <ErrorBox message={error} />
@@ -1297,12 +1363,12 @@ export function OrderDetail({
         <article className="record-card order-detail-card">
           <div className="record-card-top">
             <div className="record-card-id">
-              <span className="record-link">
-                {customer?.name || 'Sin cliente'}
+              <span className="order-detail-number">
+                Pedido Nro: {record.number}
               </span>
-              <small>
-                {record.number} · {formatOrderDate(record.date)}
-              </small>
+              <time className="order-detail-date" dateTime={record.date}>
+                {formatOrderDate(record.date)}
+              </time>
             </div>
           </div>
           <div className="record-card-status">
@@ -1331,6 +1397,14 @@ export function OrderDetail({
               }
             />
           </div>
+          <ActorNote
+            partners={data.partners}
+            createdBy={record.created_by}
+            archivedBy={record.archived_by}
+            archived={record.archived}
+            deletedBy={record.deleted_by}
+            deleted={record.deleted}
+          />
           <dl className="record-card-facts">
             <div>
               <dt>Productos</dt>
@@ -1349,9 +1423,9 @@ export function OrderDetail({
               </dd>
             </div>
             <div>
-              <dt>Ganancia</dt>
-              <dd className="amount">
-                {formatMoney(record.total - record.cost, data.currency)}
+              <dt>Saldo</dt>
+              <dd className={`amount${due > 0 ? ' money-neg' : ''}`}>
+                {formatMoney(due, data.currency)}
               </dd>
             </div>
           </dl>
@@ -1377,7 +1451,7 @@ export function OrderDetail({
                   <div className="stock-item-photo">
                     <ProductPhoto
                       name={item.name}
-                      url={itemPhoto(item, product)}
+                      url={itemPhoto(item, product, data.movements)}
                     />
                     <span className="stock-item-qty">{item.quantity}</span>
                   </div>
@@ -1429,19 +1503,6 @@ export function OrderDetail({
             <Fact
               label="Ganancia"
               value={formatMoney(record.total - record.cost, data.currency)}
-            />
-          </div>
-          <div className="order-detail-totals-row two">
-            <Fact
-              label="Cobrado"
-              value={formatMoney(record.paid, data.currency)}
-            />
-            <Fact
-              label="Saldo"
-              value={formatMoney(
-                Math.max(0, record.total - record.paid),
-                data.currency,
-              )}
             />
           </div>
         </div>
@@ -2389,16 +2450,208 @@ function configLine(record: Product, config: Record<string, unknown>) {
     describeConfigured(record, config) || 'Combinación sin detalle'
   );
 }
+function inboundForStockRow(
+  movements: Movement[],
+  productId: string,
+  row: { config_key: string; location: string },
+) {
+  return movements.find(
+    (movement) =>
+      movement.product_id === productId &&
+      movement.quantity > 0 &&
+      (movement.config_key || '') === row.config_key &&
+      (movement.location || '') === row.location,
+  );
+}
+function uniquePhotoUrls(urls: (string | undefined)[]) {
+  const seen = new Set<string>();
+  const photos: string[] = [];
+  for (const url of urls) {
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    photos.push(url);
+  }
+  return photos;
+}
+function stockItemHeading(
+  record: Product,
+  config: Record<string, unknown>,
+) {
+  if (!configuredKindOf(record)) return record.name;
+  return configLine(record, config).split('\n')[0] || record.name;
+}
+function inventoryItemContext(
+  data: Data,
+  record: Product,
+  itemKey: string,
+) {
+  const row = stockAvailability(
+    data.movements,
+    reservedHolds(data.orders, data.products),
+    record.id,
+  ).find((item) => item.key === itemKey);
+  if (!row) return null;
+  return {
+    row,
+    inbound: inboundForStockRow(data.movements, record.id, row),
+    title: stockItemHeading(record, row.config),
+  };
+}
+function StockItemPhotos({ urls, name }: { urls: string[]; name: string }) {
+  return (
+    <div className={`stock-item-hero${urls.length > 1 ? ' has-many' : ''}`}>
+      {(urls.length ? urls : ['']).map((url, i) => (
+        <div className="stock-item-hero-slide" key={url || i}>
+          <ProductPhoto name={name} url={url || undefined} />
+        </div>
+      ))}
+    </div>
+  );
+}
+export function StockItemDetail({
+  record,
+  data,
+  itemKey,
+  onOpenOrder,
+  onDelete,
+}: {
+  record: Product;
+  data: Data;
+  itemKey: string;
+  onOpenOrder?: (order: Order) => void;
+  onDelete?: (movement: Movement, name: string) => void;
+}) {
+  const item = inventoryItemContext(data, record, itemKey);
+  if (!item) {
+    return <p className="hint">Esta unidad ya no está en stock.</p>;
+  }
+  const { row, inbound } = item;
+  const unitPhotos = uniquePhotoUrls(
+    data.movements
+      .filter(
+        (movement) =>
+          movement.product_id === record.id &&
+          movement.quantity > 0 &&
+          (movement.config_key || '') === row.config_key &&
+          (movement.location || '') === row.location,
+      )
+      .flatMap((movement) => movement.photos || []),
+  );
+  const photos = unitPhotos.length
+    ? unitPhotos
+    : uniquePhotoUrls(record.photos);
+  const kind = configuredKindOf(record);
+  let labels: Record<string, string> = {};
+  if (kind && Object.keys(row.config).length) {
+    try {
+      labels = configLabels(kind, parseConfig(kind, row.config));
+    } catch {
+      labels = {};
+    }
+  }
+  const supplier = data.contacts.find((c) => c.id === row.supplier_id);
+  const heading = stockItemHeading(record, row.config);
+  return (
+    <div className="pdp stock-item-detail">
+      <StockItemPhotos urls={photos} name={record.name} />
+      {inbound && onDelete ? (
+        <div className="pdp-actions">
+          <button
+            type="button"
+            className="secondary danger"
+            disabled={!!row.reserved}
+            title={
+              row.reserved
+                ? 'No se puede borrar: hay pedidos que reservan esta unidad.'
+                : 'Borrar del stock'
+            }
+            onClick={() => onDelete(inbound, heading)}
+          >
+            <Trash2 size={16} /> Borrar
+          </button>
+        </div>
+      ) : null}
+      <section
+        className="form-section"
+        style={{ borderTop: 0, marginTop: 0, paddingTop: 8 }}
+      >
+        <div className="pdp-facts stock-item-facts">
+          <Fact label="Cantidad" value={`${row.quantity} uds.`} />
+          {row.reserved ? (
+            <Fact
+              label="Disponible"
+              value={`${row.available} uds. · ${row.reserved} reservada${row.reserved === 1 ? '' : 's'}`}
+            />
+          ) : null}
+          <Fact
+            label="Dónde está"
+            value={stockPlaceLabel(row.location) || 'Sin ubicación'}
+          />
+          <Fact
+            label="Proveedor"
+            value={supplier?.name || 'Sin proveedor'}
+            pending={!supplier}
+          />
+          {inbound?.reason ? (
+            <Fact label="Motivo" value={inbound.reason} />
+          ) : null}
+          {inbound?.created_at ? (
+            <Fact
+              label="Ingreso"
+              value={movementWhen(data.partners, inbound)}
+            />
+          ) : null}
+          {Object.keys(labels).length ? (
+            <>
+              <h3 className="stock-item-facts-heading">Características</h3>
+              {Object.entries(labels).map(([label, value]) => (
+                <Fact key={label} label={label} value={value} />
+              ))}
+            </>
+          ) : null}
+        </div>
+      </section>
+      {row.reservations.length ? (
+        <section className="form-section">
+          <h3>Reservas</h3>
+          <div className="stock-reserve-actions">
+            <span className="reserved-badge">Reservado ({row.reserved})</span>
+            {row.reservations.map((reservation) => {
+              const order = data.orders.find(
+                (entry) => entry.id === reservation.orderId,
+              );
+              return (
+                <button
+                  key={reservation.orderId}
+                  type="button"
+                  className="secondary stock-order-link"
+                  disabled={!order || !onOpenOrder}
+                  onClick={() => order && onOpenOrder?.(order)}
+                >
+                  Ver {reservation.orderNumber}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
 export function StockOverview({
   record,
   data,
   onEdit,
+  onOpen,
   onOpenOrder,
+  onDelete,
 }: {
   record: Product;
   data: Data;
   onEdit: (movement: Movement) => void;
+  onOpen: (itemKey: string) => void;
   onOpenOrder?: (order: Order) => void;
+  onDelete?: (movement: Movement, name: string) => void;
 }) {
   const rows = stockAvailability(
     data.movements,
@@ -2432,33 +2685,39 @@ export function StockOverview({
       </div>
       {rows.length ? (
         rows.map((row) => {
-          const inbound = data.movements.find(
-            (movement) =>
-              movement.product_id === record.id &&
-              movement.quantity > 0 &&
-              (movement.config_key || '') === row.config_key &&
-              (movement.location || '') === row.location,
+          const inbound = inboundForStockRow(
+            data.movements,
+            record.id,
+            row,
           );
+          const title = configuredKindOf(record)
+            ? configLine(record, row.config)
+            : record.name;
           return (
             <div
-              className={`stock-item${row.reserved ? ' is-reserved' : ''}`}
+              className={`stock-item clickable-row${row.reserved ? ' is-reserved' : ''}`}
               key={row.key}
             >
+              <button
+                type="button"
+                className="row-hit"
+                aria-label={`Ver detalle de ${title.replace(/\n/g, ' ')}`}
+                onClick={() => onOpen(row.key)}
+              />
               <div className="stock-item-copy">
                 <ProductPhoto
                   name={record.name}
                   url={inbound?.photos?.[0] || record.photos[0]}
                 />
                 <div>
-                  <b>
-                    {configuredKindOf(record)
-                      ? configLine(record, row.config)
-                      : record.name}
-                  </b>
+                  <b>{title}</b>
                   <small>
                     {[
                       stockPlaceLabel(row.location),
                       data.contacts.find((c) => c.id === row.supplier_id)?.name,
+                      inbound
+                        ? actorName(data.partners, inbound.created_by)
+                        : '',
                     ]
                       .filter(Boolean)
                       .join(' · ')}
@@ -2478,7 +2737,10 @@ export function StockOverview({
                             type="button"
                             className="secondary stock-order-link"
                             disabled={!order || !onOpenOrder}
-                            onClick={() => order && onOpenOrder?.(order)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (order) onOpenOrder?.(order);
+                            }}
                           >
                             Ver {reservation.orderNumber}
                           </button>
@@ -2488,7 +2750,7 @@ export function StockOverview({
                   ) : null}
                 </div>
               </div>
-              <div className="stock-item-side">
+              <div className="stock-item-side row-actions">
                 <strong>
                   {row.quantity} <small>uds.</small>
                 </strong>
@@ -2498,9 +2760,31 @@ export function StockOverview({
                     className="icon-button"
                     title="Editar registro"
                     aria-label="Editar registro"
-                    onClick={() => onEdit(inbound)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(inbound);
+                    }}
                   >
                     <Pencil size={16} />
+                  </button>
+                ) : null}
+                {inbound && onDelete ? (
+                  <button
+                    type="button"
+                    className="icon-button danger"
+                    title={
+                      row.reserved
+                        ? 'No se puede borrar: hay pedidos que reservan esta unidad.'
+                        : 'Borrar del stock'
+                    }
+                    aria-label={`Borrar ${title.replace(/\n/g, ' ')}`}
+                    disabled={!!row.reserved}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(inbound, title.replace(/\n/g, ' · '));
+                    }}
+                  >
+                    <Trash2 size={16} />
                   </button>
                 ) : null}
               </div>
@@ -2519,12 +2803,14 @@ export function StockForm({
   save,
   movement,
   onConfigDirtyChange,
+  onCancel,
 }: {
   record: Product;
   data: Data;
   save: Save;
   movement?: Movement;
   onConfigDirtyChange?: (dirty: boolean) => void;
+  onCancel?: () => void;
 }) {
   const configured = configuredKindOf(record);
   const editing = !!movement;
@@ -2731,7 +3017,7 @@ export function StockForm({
                       .filter(Boolean)
                       .join(' · ')}
                   </small>
-                  <small>{new Date(m.created_at).toLocaleString('es-AR')}</small>
+                  <small>{movementWhen(data.partners, m)}</small>
                 </span>
                 <b>
                   {m.quantity > 0 ? '+' : ''}
@@ -2741,6 +3027,13 @@ export function StockForm({
             ))}
         </>
       )}
+      {onCancel ? (
+        <div className="form-footer" style={{ borderTop: 0, marginTop: 0 }}>
+          <button type="button" className="secondary" onClick={onCancel}>
+            Volver al detalle
+          </button>
+        </div>
+      ) : null}
       <Footer
         busy={busy || uploading}
         label={editing ? 'Guardar cambios' : 'Registrar movimiento'}
@@ -2748,7 +3041,17 @@ export function StockForm({
     </form>
   );
 }
-export function SettingsForm({ data, save }: { data: Data; save: Save }) {
+export function SettingsForm({
+  data,
+  save,
+  user,
+  onLogout,
+}: {
+  data: Data;
+  save: Save;
+  user?: { name: string; email: string };
+  onLogout?: () => Promise<void>;
+}) {
   const [currency, C] = useState(data.currency),
     [cat, S] = useState(data.categories[0]?.id || ''),
     [fields, F] = useState(
@@ -2763,6 +3066,14 @@ export function SettingsForm({ data, save }: { data: Data; save: Save }) {
           .map((partner) => [partner.id, shareInput(partner.share)]),
       ),
     ),
+    [emails, setEmails] = useState(() =>
+      Object.fromEntries(
+        data.partners
+          .filter((partner) => !partner.archived)
+          .map((partner) => [partner.id, partner.email || '']),
+      ),
+    ),
+    [passwords, setPasswords] = useState<Record<string, string>>({}),
     [error, E] = useState(''),
     [busy, B] = useState(false);
   const partners = data.partners.filter((partner) => !partner.archived);
@@ -2772,6 +3083,13 @@ export function SettingsForm({ data, save }: { data: Data; save: Save }) {
         data.partners
           .filter((partner) => !partner.archived)
           .map((partner) => [partner.id, shareInput(partner.share)]),
+      ),
+    );
+    setEmails(
+      Object.fromEntries(
+        data.partners
+          .filter((partner) => !partner.archived)
+          .map((partner) => [partner.id, partner.email || '']),
       ),
     );
   }, [data.partners]);
@@ -2811,6 +3129,24 @@ export function SettingsForm({ data, save }: { data: Data; save: Save }) {
   return (
     <div>
       <ErrorBox message={error} />
+      {user ? (
+        <div className="settings-session">
+          <p className="hint">
+            Sesión de {user.name}
+            {user.email ? ` · ${user.email}` : ''}
+          </p>
+          {onLogout ? (
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() => void onLogout()}
+            >
+              Cerrar sesión
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <h3>Moneda comercial</h3>
       <p className="hint">
         Inicialmente ARS. Sólo puede cambiarse antes de cargar productos o
@@ -2923,6 +3259,81 @@ export function SettingsForm({ data, save }: { data: Data; save: Save }) {
                 : 'Guardar porcentajes'}
           </button>
         </form>
+      </section>
+      <section className="form-section">
+        <h3>Acceso de socios</h3>
+        <p className="hint">
+          Cada socio ingresa con email y contraseña. Dejá la contraseña en
+          blanco para no cambiarla.
+        </p>
+        {partners.length ? (
+          partners.map((partner) => (
+            <form
+              className="settings-partner-access"
+              key={partner.id}
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run({
+                  action: 'partner_access',
+                  id: partner.id,
+                  email: emails[partner.id] || '',
+                  password: passwords[partner.id] || undefined,
+                }).then((ok) => {
+                  if (ok)
+                    setPasswords({ ...passwords, [partner.id]: '' });
+                });
+              }}
+            >
+              <div className="settings-partner-access-head">
+                <b>{partner.name}</b>
+                <small>
+                  {partner.has_password ? 'Acceso activo' : 'Sin contraseña'}
+                </small>
+              </div>
+              <div className="settings-partner-fields settings-partner-access-fields">
+                <Field label="Email">
+                  <input
+                    type="email"
+                    required
+                    value={emails[partner.id] || ''}
+                    onChange={(e) =>
+                      setEmails({ ...emails, [partner.id]: e.target.value })
+                    }
+                  />
+                </Field>
+                <Field
+                  label={
+                    partner.has_password
+                      ? 'Nueva contraseña'
+                      : 'Contraseña'
+                  }
+                >
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder={
+                      partner.has_password
+                        ? 'Dejá en blanco para no cambiar'
+                        : 'Mínimo 8 caracteres'
+                    }
+                    value={passwords[partner.id] || ''}
+                    onChange={(e) =>
+                      setPasswords({
+                        ...passwords,
+                        [partner.id]: e.target.value,
+                      })
+                    }
+                  />
+                </Field>
+              </div>
+              <button className="secondary" disabled={busy}>
+                {busy ? 'Guardando…' : 'Guardar acceso'}
+              </button>
+            </form>
+          ))
+        ) : (
+          <p className="hint">Todavía no hay socios.</p>
+        )}
       </section>
       <section className="form-section">
         <h3>Características por categoría</h3>

@@ -39,6 +39,7 @@ export type LedgerEntry = {
   kind: 'ganancia' | 'cashout';
   amount: number;
   partner?: string;
+  actor?: string;
   notes: string;
   balance: number;
 };
@@ -57,7 +58,9 @@ export function monthAnchorDate(key: MonthKey) {
 }
 
 export function collectedOrders(orders: Order[]) {
-  return orders.filter((order) => !order.archived && order.paid > 0);
+  return orders.filter(
+    (order) => !order.archived && !order.deleted && order.paid > 0,
+  );
 }
 
 export function yearSheet(year: number, results: MonthlyResult[]) {
@@ -322,6 +325,7 @@ export function accountLedger(
       kind: 'cashout' as const,
       amount: -cashout.amount,
       partner: names.get(cashout.partner_id),
+      actor: names.get(cashout.created_by || '') || undefined,
       notes: cashout.notes,
     })),
   ];

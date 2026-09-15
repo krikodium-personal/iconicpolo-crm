@@ -28,6 +28,7 @@ import {
   totalsOf,
 } from './account';
 import { whatsappGroup } from './whatsapp';
+import { setPartnerAccess } from './auth';
 import {
   configuredKindOf,
   extraTotals,
@@ -35,6 +36,7 @@ import {
   itemStockHold,
   parseConfig,
   parsePricing,
+  rewriteMonturaGamuzaText,
   stockAvailability,
   stockKey,
   stockPlaceLabel,
@@ -146,15 +148,107 @@ export async function ensureAccountTables() {
     ),
   ]);
   const partnerCols = await stmt('PRAGMA table_info(partners)').all();
-  if (
-    !partnerCols.results.some(
-      (column) => String(obj(column).name) === 'share',
-    )
-  ) {
+  const partnerNames = new Set(
+    partnerCols.results.map((column) => String(obj(column).name)),
+  );
+  if (!partnerNames.has('share')) {
     await stmt(
       'ALTER TABLE partners ADD share integer NOT NULL DEFAULT 0',
     ).run();
   }
+  await ensureActorColumns();
+}
+
+async function addColumn(
+  table: string,
+  names: Set<string>,
+  column: string,
+  ddl: string,
+) {
+  if (names.has(column)) return null;
+  return stmt(`ALTER TABLE ${table} ADD ${ddl}`);
+}
+
+async function columnNames(table: string) {
+  const cols = await stmt(`PRAGMA table_info(${table})`).all();
+  return new Set(cols.results.map((column) => String(obj(column).name)));
+}
+
+export async function ensureActorColumns() {
+  const d = db();
+  const partnerNames = await columnNames('partners');
+  const orderNames = await columnNames('orders');
+  const productNames = await columnNames('products');
+  const movementNames = await columnNames('stock_movements');
+  const cashoutNames = await columnNames('partner_cashouts');
+  const alters = [
+    await addColumn(
+      'partners',
+      partnerNames,
+      'email',
+      "email text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'partners',
+      partnerNames,
+      'password_hash',
+      "password_hash text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'orders',
+      orderNames,
+      'created_by',
+      "created_by text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'orders',
+      orderNames,
+      'archived_by',
+      "archived_by text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'orders',
+      orderNames,
+      'deleted',
+      'deleted integer NOT NULL DEFAULT 0',
+    ),
+    await addColumn(
+      'orders',
+      orderNames,
+      'deleted_by',
+      "deleted_by text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'products',
+      productNames,
+      'created_by',
+      "created_by text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'products',
+      productNames,
+      'archived_by',
+      "archived_by text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'stock_movements',
+      movementNames,
+      'created_by',
+      "created_by text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'partner_cashouts',
+      cashoutNames,
+      'created_by',
+      "created_by text NOT NULL DEFAULT ''",
+    ),
+  ].filter(Boolean);
+  if (alters.length) await d.batch(alters as ReturnType<typeof stmt>[]);
+  await d.batch([
+    d.prepare(
+      'CREATE TABLE IF NOT EXISTS sessions (id text PRIMARY KEY NOT NULL, partner_id text NOT NULL, expires_at text NOT NULL, FOREIGN KEY (partner_id) REFERENCES partners(id))',
+    ),
+  ]);
 }
 export async function ensureConfiguredCatalog() {
   const d = db();
@@ -310,7 +404,7 @@ async function reservedHoldsForProducts(
     `SELECT o.id AS order_id, o.number AS order_number, i.product_id, i.quantity, i.selections
      FROM order_items i
      JOIN orders o ON o.id = i.order_id
-     WHERE o.archived=0 AND o.status != 'entregado' AND o.id != ?
+     WHERE o.archived=0 AND o.deleted=0 AND o.status != 'entregado' AND o.id != ?
      AND i.product_id IN (${unique.map(() => '?').join(',')})`,
     exceptOrderId,
     ...unique,
@@ -396,6 +490,7 @@ async function orderWarehouseMoves(
   order: { id: string; number: string },
   items: Item[],
   direction: 'close' | 'reopen',
+  actor: { id: string },
 ) {
   const now = new Date().toISOString();
   if (direction === 'reopen') {
@@ -412,7 +507,7 @@ async function orderWarehouseMoves(
     }>();
     return closes.results.map((row) =>
       stmt(
-        'INSERT INTO stock_movements (id,product_id,order_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO stock_movements (id,product_id,order_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
         crypto.randomUUID(),
         row.product_id,
         order.id,
@@ -426,6 +521,7 @@ async function orderWarehouseMoves(
         row.location || '',
         row.supplier_id || '',
         '[]',
+        actor.id,
       ),
     );
   }
@@ -465,7 +561,7 @@ async function orderWarehouseMoves(
     }
     statements.push(
       stmt(
-        'INSERT INTO stock_movements (id,product_id,order_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO stock_movements (id,product_id,order_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
         crypto.randomUUID(),
         item.product_id,
         order.id,
@@ -477,6 +573,7 @@ async function orderWarehouseMoves(
         location,
         item.selections.supplier_id || '',
         '[]',
+        actor.id,
       ),
     );
   }
@@ -529,17 +626,23 @@ export async function allData() {
       let config: Record<string, unknown> = {};
       if (typeof row.config === 'string' && row.config) {
         try {
-          config = obj(JSON.parse(row.config));
+          config = obj(JSON.parse(rewriteMonturaGamuzaText(row.config)));
         } catch {
           config = {};
         }
       } else if (row.config && typeof row.config === 'object') {
         config = obj(row.config);
+        if (config.material === 'gamuza') config.material = 'descarne';
+        if (config.materialAsiento === 'gamuza')
+          config.materialAsiento = 'descarne';
       }
       return {
         ...row,
         config,
-        config_key: typeof row.config_key === 'string' ? row.config_key : '',
+        config_key:
+          typeof row.config_key === 'string'
+            ? rewriteMonturaGamuzaText(row.config_key)
+            : '',
         location: typeof row.location === 'string' ? row.location : '',
         supplier_id:
           typeof row.supplier_id === 'string' ? row.supplier_id : '',
@@ -547,10 +650,17 @@ export async function allData() {
       };
     }),
     categories: cat.results.map((r) => decode<Category>(r, ['fields'])),
-    partners: (partners.results as Partner[]).map((partner) => ({
-      ...partner,
-      share: Number(partner.share) || 0,
-    })),
+    partners: partners.results.map((row) => {
+      const partner = obj(row);
+      const hash = String(partner.password_hash || '');
+      delete partner.password_hash;
+      return {
+        ...partner,
+        share: Number(partner.share) || 0,
+        email: String(partner.email || ''),
+        has_password: hash ? 1 : 0,
+      } as Partner;
+    }),
     expenses: expenses.results as AccountExpense[],
     cashouts: cashouts.results as PartnerCashout[],
     currency: s.results[0] ? obj(s.results[0]).currency : 'ARS',
@@ -622,7 +732,10 @@ export async function contact(b: Record<string, unknown>) {
     ).run();
   return { id };
 }
-export async function product(b: Record<string, unknown>) {
+export async function product(
+  b: Record<string, unknown>,
+  actor?: { id: string },
+) {
   const id = b.id ? str(b.id, 'ID', true) : crypto.randomUUID();
   const category = str(b.category, 'Categoría', true);
   if (!(await stmt('SELECT id FROM categories WHERE id=?', category).first()))
@@ -727,12 +840,15 @@ export async function product(b: Record<string, unknown>) {
       id,
     ).run();
     if (!result.meta.changes) throw new Error('Producto no disponible.');
-  } else
+  } else {
+    if (!actor?.id) throw new Error('Tenés que ingresar.');
     await stmt(
-      'INSERT INTO products(name,sku,category,supplier_id,cost,price,ff_discount,ff_price,promo_kind,promo_value,photos,options,attributes,pricing,kind,id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO products(name,sku,category,supplier_id,cost,price,ff_discount,ff_price,promo_kind,promo_value,photos,options,attributes,pricing,kind,id,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       ...values,
       id,
+      actor.id,
     ).run();
+  }
   return { id };
 }
 async function customerIdForOrder(b: Record<string, unknown>) {
@@ -769,12 +885,16 @@ async function customerIdForOrder(b: Record<string, unknown>) {
   return customer;
 }
 
-export async function saveOrder(b: Record<string, unknown>) {
+export async function saveOrder(
+  b: Record<string, unknown>,
+  actor?: { id: string },
+) {
+  if (!actor?.id) throw new Error('Tenés que ingresar.');
   const d = db();
   const id = b.id ? str(b.id, 'ID', true) : crypto.randomUUID();
   const existing = b.id
     ? await stmt(
-        'SELECT * FROM orders WHERE id=? AND archived=0',
+        'SELECT * FROM orders WHERE id=? AND archived=0 AND deleted=0',
         id,
       ).first<Order>()
     : null;
@@ -1006,10 +1126,10 @@ export async function saveOrder(b: Record<string, unknown>) {
       ),
     );
     statements.push(stmt('DELETE FROM order_items WHERE order_id=?', id));
-  } else
+  } else {
     statements.push(
       stmt(
-        "INSERT INTO orders(id,number,customer_id,date,delivery,status,paid,invoice,notes,currency,total,cost) VALUES (?,?,?,?,?,'nuevo',?,?,?,?,?,?)",
+        "INSERT INTO orders(id,number,customer_id,date,delivery,status,paid,invoice,notes,currency,total,cost,created_by) VALUES (?,?,?,?,?,'nuevo',?,?,?,?,?,?,?)",
         id,
         number,
         customer,
@@ -1021,8 +1141,10 @@ export async function saveOrder(b: Record<string, unknown>) {
         currency,
         total,
         cost,
+        actor.id,
       ),
     );
+  }
   for (const i of items)
     statements.push(
       stmt(
@@ -1055,6 +1177,7 @@ export async function saveOrder(b: Record<string, unknown>) {
           { id, number },
           items,
           'close',
+          actor,
         )),
       );
     } else if (
@@ -1062,17 +1185,20 @@ export async function saveOrder(b: Record<string, unknown>) {
       !orderIsDelivered(status)
     ) {
       statements.push(
-        ...(await orderWarehouseMoves({ id, number }, items, 'reopen')),
+        ...(await orderWarehouseMoves({ id, number }, items, 'reopen', actor)),
       );
     }
   }
   await d.batch(statements);
   return { id, number };
 }
-export async function patchOrder(b: Record<string, unknown>) {
+export async function patchOrder(
+  b: Record<string, unknown>,
+  actor: { id: string },
+) {
   const id = str(b.id, 'ID', true);
   const existing = await stmt(
-    'SELECT * FROM orders WHERE id=? AND archived=0',
+    'SELECT * FROM orders WHERE id=? AND archived=0 AND deleted=0',
     id,
   ).first<Order>();
   if (!existing) throw new Error('Pedido no disponible.');
@@ -1093,11 +1219,11 @@ export async function patchOrder(b: Record<string, unknown>) {
       ).results.map((row) => decode<Item>(row, ['selections']));
       if (!orderIsDelivered(existing.status) && orderIsDelivered(status)) {
         statements.push(
-          ...(await orderWarehouseMoves(existing, items, 'close')),
+          ...(await orderWarehouseMoves(existing, items, 'close', actor)),
         );
       } else if (orderIsDelivered(existing.status) && !orderIsDelivered(status)) {
         statements.push(
-          ...(await orderWarehouseMoves(existing, items, 'reopen')),
+          ...(await orderWarehouseMoves(existing, items, 'reopen', actor)),
         );
       }
     }
@@ -1278,17 +1404,20 @@ async function productsBulk(b: Record<string, unknown>) {
   await db().batch(statements);
   return { ok: true, updated, skipped };
 }
-export async function mutate(b: Record<string, unknown>) {
+export async function mutate(
+  b: Record<string, unknown>,
+  actor: { id: string },
+) {
   await ensureConfiguredCatalog();
   switch (b.action) {
     case 'contact':
       return contact(b);
     case 'product':
-      return product(b);
+      return product(b, actor);
     case 'order':
-      return saveOrder(b);
+      return saveOrder(b, actor);
     case 'order_quick':
-      return patchOrder(b);
+      return patchOrder(b, actor);
     case 'products_bulk':
       return productsBulk(b);
     case 'stock': {
@@ -1331,7 +1460,7 @@ export async function mutate(b: Record<string, unknown>) {
           );
       }
       await stmt(
-        'INSERT INTO stock_movements (id,product_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos) VALUES (?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO stock_movements (id,product_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
         crypto.randomUUID(),
         id,
         q,
@@ -1342,6 +1471,7 @@ export async function mutate(b: Record<string, unknown>) {
         location,
         supplier,
         JSON.stringify(photos(b.photos)),
+        actor.id,
       ).run();
       return { ok: true };
     }
@@ -1440,24 +1570,36 @@ export async function mutate(b: Record<string, unknown>) {
           'SELECT * FROM orders WHERE id=?',
           id,
         ).first<Order>();
+        if (row?.deleted)
+          throw new Error('Restaurá el pedido borrado antes de archivarlo.');
         if (row && (orderIsLocked(row.status) || row.paid > 0))
           throw new Error(
             'No se puede archivar un pedido cerrado, entregado o con cobros.',
           );
       }
-      const r = await stmt(
-        `UPDATE ${table} SET archived=?,version=? WHERE id=?`,
-        integer(b.archived, 'Archivo', 1),
-        integer(b.version, 'Versión') + 1,
-        id,
-      ).run();
+      const archived = integer(b.archived, 'Archivo', 1);
+      const r =
+        table === 'contacts'
+          ? await stmt(
+              `UPDATE contacts SET archived=?,version=? WHERE id=?`,
+              archived,
+              integer(b.version, 'Versión') + 1,
+              id,
+            ).run()
+          : await stmt(
+              `UPDATE ${table} SET archived=?,archived_by=?,version=? WHERE id=?`,
+              archived,
+              archived ? actor.id : '',
+              integer(b.version, 'Versión') + 1,
+              id,
+            ).run();
       if (!r.meta.changes) throw new Error('Registro no disponible.');
       return { ok: true };
     }
     case 'reopen': {
       const id = str(b.id, 'ID', true);
       const existing = await stmt(
-        "SELECT * FROM orders WHERE id=? AND status IN ('cerrado','entregado') AND archived=0",
+        "SELECT * FROM orders WHERE id=? AND status IN ('cerrado','entregado') AND archived=0 AND deleted=0",
         id,
       ).first<Order>();
       if (!existing) throw new Error('Pedido no disponible.');
@@ -1466,12 +1608,12 @@ export async function mutate(b: Record<string, unknown>) {
       ).results.map((row) => decode<Item>(row, ['selections']));
       const statements = [
         stmt(
-          "UPDATE orders SET status='abierto',version=? WHERE id=? AND status IN ('cerrado','entregado') AND archived=0",
+          "UPDATE orders SET status='abierto',version=? WHERE id=? AND status IN ('cerrado','entregado') AND archived=0 AND deleted=0",
           integer(b.version, 'Versión') + 1,
           id,
         ),
         ...(orderIsDelivered(existing.status)
-          ? await orderWarehouseMoves(existing, items, 'reopen')
+          ? await orderWarehouseMoves(existing, items, 'reopen', actor)
           : []),
       ];
       const r = await db().batch(statements);
@@ -1632,14 +1774,104 @@ export async function mutate(b: Record<string, unknown>) {
         );
       }
       await stmt(
-        'INSERT INTO partner_cashouts(id,partner_id,amount,date,notes,created_at) VALUES(?,?,?,?,?,?)',
+        'INSERT INTO partner_cashouts(id,partner_id,amount,date,notes,created_at,created_by) VALUES(?,?,?,?,?,?,?)',
         crypto.randomUUID(),
         partnerId,
         amount,
         date(b.date, true),
         str(b.notes || '', 'Notas'),
         new Date().toISOString(),
+        actor.id,
       ).run();
+      return { ok: true };
+    }
+    case 'partner_access': {
+      await ensureAccountTables();
+      const id = str(b.id, 'ID', true);
+      const email = str(b.email, 'Email', true, 120);
+      const password =
+        b.password == null || b.password === ''
+          ? undefined
+          : str(b.password, 'Contraseña', true, 80);
+      await setPartnerAccess(id, email, password);
+      return { ok: true };
+    }
+    case 'order_delete': {
+      const id = str(b.id, 'ID', true);
+      const deleted = integer(b.deleted, 'Borrado', 1);
+      const existing = await stmt(
+        'SELECT * FROM orders WHERE id=?',
+        id,
+      ).first<Order>();
+      if (!existing) throw new Error('Pedido no disponible.');
+      const r = await stmt(
+        deleted
+          ? 'UPDATE orders SET deleted=1,deleted_by=?,archived=0,archived_by=?,version=? WHERE id=?'
+          : "UPDATE orders SET deleted=0,deleted_by='',version=? WHERE id=?",
+        ...(deleted
+          ? [actor.id, '', integer(b.version, 'Versión') + 1, id]
+          : [integer(b.version, 'Versión') + 1, id]),
+      ).run();
+      if (!r.meta.changes) throw new Error('Pedido no disponible.');
+      return { ok: true };
+    }
+    case 'stock_delete': {
+      const id = str(b.id, 'ID', true);
+      const movement = await stmt(
+        'SELECT * FROM stock_movements WHERE id=?',
+        id,
+      ).first<{
+        id: string;
+        product_id: string;
+        quantity: number;
+        order_id: string | null;
+        config_key: string | null;
+        location: string | null;
+      }>();
+      if (!movement) throw new Error('Registro de stock no disponible.');
+      if (movement.quantity <= 0 || movement.order_id)
+        throw new Error('Solo se pueden borrar ingresos de stock.');
+      const key = movement.config_key || '';
+      const location = movement.location || '';
+      const holds = await reservedHoldsForProducts(
+        [movement.product_id],
+        '',
+      );
+      if (
+        holds.some(
+          (hold) =>
+            hold.configKey === key &&
+            (!hold.location || hold.location === location),
+        )
+      )
+        throw new Error(
+          'No se puede borrar: hay pedidos que reservan esta unidad.',
+        );
+      const outbound = await stmt(
+        "SELECT id FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? AND COALESCE(location,'')=? AND quantity<0 LIMIT 1",
+        movement.product_id,
+        key,
+        location,
+      ).first();
+      if (outbound)
+        throw new Error(
+          'No se puede borrar: esta unidad ya se usó en un pedido.',
+        );
+      const d = db();
+      const r = await d.batch([
+        stmt('DROP TRIGGER IF EXISTS stock_immutable_delete'),
+        stmt(
+          "DELETE FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? AND COALESCE(location,'')=? AND quantity>0 AND COALESCE(order_id,'')=''",
+          movement.product_id,
+          key,
+          location,
+        ),
+        stmt(
+          "CREATE TRIGGER stock_immutable_delete BEFORE DELETE ON stock_movements BEGIN SELECT RAISE(ABORT,'STOCK_IMMUTABLE'); END",
+        ),
+      ]);
+      if (!r[1]?.meta.changes)
+        throw new Error('No se pudo borrar el stock.');
       return { ok: true };
     }
     default:

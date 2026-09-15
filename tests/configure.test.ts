@@ -29,6 +29,38 @@ test('montura defaults are valid and porta estribera starts off', () => {
   assert.match(stockKey('montura', config), /americana/);
 });
 
+test('montura gamuza is the same as descarne gamusado', () => {
+  const fromGamuza = parseMontura({
+    ...defaultMontura(),
+    material: 'gamuza',
+    materialAsiento: 'gamuza',
+  });
+  const fromDescarne = parseMontura({
+    ...defaultMontura(),
+    material: 'descarne',
+    materialAsiento: 'descarne',
+  });
+  assert.equal(fromGamuza.material, 'descarne');
+  assert.equal(fromGamuza.materialAsiento, 'descarne');
+  assert.equal(
+    stockKey('montura', fromGamuza),
+    stockKey('montura', fromDescarne),
+  );
+  const labels = configLabels('montura', fromDescarne);
+  assert.equal(labels.Material, 'Descarne gamusado');
+  assert.equal(labels['Material asiento'], 'Descarne gamusado');
+  const pricing = parsePricing({
+    extras: {
+      material_gamuza: { cost: 10, price: 20 },
+      asiento_gamuza: { cost: 3, price: 4 },
+    },
+  });
+  assert.deepEqual(pricing.extras.material_descarne, { cost: 10, price: 20 });
+  assert.deepEqual(pricing.extras.asiento_descarne, { cost: 3, price: 4 });
+  assert.equal(pricing.extras.material_gamuza, undefined);
+  assert.equal(pricing.extras.asiento_gamuza, undefined);
+});
+
 test('montura initials require text', () => {
   assert.throws(
     () =>
@@ -317,6 +349,22 @@ test('delivered orders release the reservation and closed ones keep it', () => {
   assert.equal(open[0]?.quantity, 1);
   assert.equal(closed[0]?.quantity, 1);
   assert.equal(delivered.length, 0);
+  assert.equal(
+    reservedHolds(
+      [
+        {
+          id: 'o1',
+          number: 'IC-1',
+          archived: 0,
+          deleted: 1,
+          status: 'abierto',
+          items: [item],
+        },
+      ],
+      products,
+    ).length,
+    0,
+  );
 });
 
 test('montura labels list every selected option', () => {
@@ -341,7 +389,7 @@ test('montura stock summary hides default faldin and porta estribera', () => {
   });
   assert.equal(
     text,
-    'Montura Bauti cuero forrado negro 19\nAsiento: liso, descarne\nCorte: tapita',
+    'Montura Bauti cuero forrado negro 19\nAsiento: liso, descarne gamusado\nCorte: tapita',
   );
 });
 

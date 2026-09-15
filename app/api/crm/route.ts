@@ -1,6 +1,9 @@
 import { allData, mutate, obj } from '@/lib/server';
 import { seed } from '@/lib/seed';
-export async function GET() {
+import { readUser, unauthorized } from '@/lib/auth';
+export async function GET(request: Request) {
+  const user = await readUser(request);
+  if (!user) return unauthorized();
   try {
     return Response.json(await allData(), {
       headers: { 'Cache-Control': 'no-store' },
@@ -16,6 +19,8 @@ export async function GET() {
 export async function POST(request: Request) {
   if (request.headers.get('origin') !== new URL(request.url).origin)
     return Response.json({ error: 'Origen no autorizado.' }, { status: 403 });
+  const user = await readUser(request);
+  if (!user) return unauthorized();
   if (Number(request.headers.get('content-length') || 0) > 200000)
     return Response.json(
       { error: 'Solicitud demasiado grande.' },
@@ -28,7 +33,7 @@ export async function POST(request: Request) {
     const result =
       body.action === 'initialize'
         ? await seed(body.demo === true)
-        : await mutate(body);
+        : await mutate(body, user);
     return Response.json(result);
   } catch (error) {
     const message =

@@ -43,6 +43,8 @@ export type Product = {
   stock: number;
   archived: number;
   version: number;
+  created_by?: string;
+  archived_by?: string;
 };
 export type Item = {
   id: string;
@@ -80,9 +82,19 @@ export type Order = {
   total: number;
   cost: number;
   archived: number;
+  deleted: number;
   version: number;
+  created_by?: string;
+  archived_by?: string;
+  deleted_by?: string;
   items: Item[];
 };
+export function orderIsLive(order: {
+  archived?: number | boolean;
+  deleted?: number | boolean;
+}) {
+  return !order.archived && !order.deleted;
+}
 export type Category = {
   id: string;
   name: string;
@@ -100,6 +112,7 @@ export type Movement = {
   location: string;
   supplier_id: string;
   photos: string[];
+  created_by?: string;
 };
 export type Partner = {
   id: string;
@@ -107,7 +120,13 @@ export type Partner = {
   share: number;
   archived: number;
   version: number;
+  email?: string;
+  has_password?: number;
 };
+export function actorName(partners: Partner[], id?: string | null) {
+  if (!id) return '';
+  return partners.find((partner) => partner.id === id)?.name || '';
+}
 export type AccountExpense = {
   id: string;
   kind: 'mkt' | 'comisiones';
@@ -123,6 +142,7 @@ export type PartnerCashout = {
   date: string;
   notes: string;
   created_at: string;
+  created_by?: string;
 };
 export type Data = {
   contacts: Contact[];

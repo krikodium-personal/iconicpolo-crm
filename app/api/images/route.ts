@@ -1,8 +1,11 @@
 import { files } from '@/db';
+import { readUser, unauthorized } from '@/lib/auth';
 import { stmt } from '@/lib/server';
 export async function POST(request: Request) {
   if (request.headers.get('origin') !== new URL(request.url).origin)
     return Response.json({ error: 'Origen no autorizado.' }, { status: 403 });
+  const user = await readUser(request);
+  if (!user) return unauthorized();
   if (Number(request.headers.get('content-length') || 0) > 5_300_000)
     return Response.json({ error: 'Máximo 5 MB por foto.' }, { status: 413 });
   try {

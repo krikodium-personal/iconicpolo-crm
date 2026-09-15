@@ -49,6 +49,7 @@ function order(
     total,
     cost,
     archived: 0,
+    deleted: 0,
     version: 1,
     items: [],
   };
@@ -126,6 +127,18 @@ test('collected orders count even if they are still open', () => {
   assert.equal(rows[0]?.billed, 40_000);
   assert.equal(rows[0]?.cost, 15_000);
   assert.equal(rows[0]?.profit, 25_000);
+  assert.equal(rows[0]?.orders, 1);
+});
+
+test('deleted orders are excluded from monthly results', () => {
+  const live = order('o1', '2026-04-02', 50_000, 20_000);
+  const gone = order('o2', '2026-04-02', 90_000, 30_000);
+  gone.deleted = 1;
+  const archived = order('o3', '2026-04-02', 70_000, 10_000);
+  archived.archived = 1;
+  const rows = monthlyResults([live, gone, archived], []);
+  assert.equal(rows[0]?.billed, 50_000);
+  assert.equal(rows[0]?.cost, 20_000);
   assert.equal(rows[0]?.orders, 1);
 });
 
