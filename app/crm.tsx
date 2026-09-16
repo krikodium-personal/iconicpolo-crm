@@ -585,7 +585,7 @@ function OpenOrdersCarousel({
   return (
     <section className="panel open-orders">
       <div className="panel-heading">
-        <h2>Pedidos activos</h2>
+        <h2>Pedidos activos ({orders.length})</h2>
         <div className="open-orders-tools">
           {orders.length > 1 ? (
             <div className="open-orders-nav">
@@ -1125,7 +1125,7 @@ export default function CRM({
       <>
         <div className="desktop-table">
           <Table>
-            <TableHeader>
+            <TableHeader className="[&_tr]:border-b-0">
               <TableRow>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Estado</TableHead>
@@ -1591,7 +1591,9 @@ export default function CRM({
                     }
                   />
                 ) : null}
-                <section className="panel records">
+                <section
+                  className={`panel records${module === 'pedidos' ? ' orders-panel' : ''}`}
+                >
                 <div className="toolbar">
                   <label className="search">
                     <Search size={17} />

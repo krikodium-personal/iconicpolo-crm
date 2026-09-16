@@ -259,7 +259,38 @@ function ProductosSkeleton() {
 }
 
 function PedidosSkeleton() {
-  return <RecordsSkeleton filters={1} cols={7} rows={6} />;
+  return (
+    <section
+      className="panel records orders-panel"
+      aria-busy="true"
+      aria-label="Cargando"
+    >
+      <ToolbarSkeleton filters={1} />
+      <div className="desktop-table">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {Array.from({ length: 7 }, (_, i) => (
+                <TableHead key={i}>
+                  <Skeleton className="h-3 w-16" />
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {Array.from({ length: 6 }, (_, i) => (
+              <TableRowSkeleton key={i} cols={7} />
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <div className="record-card-list">
+        {Array.from({ length: 4 }, (_, i) => (
+          <RecordCardSkeleton key={i} />
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function ContactsSkeleton() {

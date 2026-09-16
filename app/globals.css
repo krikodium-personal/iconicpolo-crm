@@ -925,7 +925,9 @@ h3 {
   gap: 12px;
   padding: 20px 24px;
   flex-wrap: wrap;
-  border-bottom: 1px solid var(--border);
+}
+.orders-panel [data-slot='table-header'] tr {
+  border-bottom: none !important;
 }
 .search {
   display: flex;
