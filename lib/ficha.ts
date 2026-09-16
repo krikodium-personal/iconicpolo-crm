@@ -1,7 +1,7 @@
 import {
   BOTA_PLACES,
   FONTS,
-  INITIAL_COLORS,
+  colorSwatch,
   KIND_TITLES,
   LEATHER_HEX,
   LEATHER_PHOTOS,
@@ -98,7 +98,7 @@ function formatDate(value: string) {
 }
 
 function initialColor(id: string) {
-  return INITIAL_COLORS.find((color) => color.id === id);
+  return colorSwatch(id);
 }
 
 function fontLabel(id: string) {
@@ -203,6 +203,8 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
       };
     }
     if (c.bordado && c.bordadoImagen) {
+      const color = chartSwatch('Color bordado', c.bordadoColor);
+      if (color) swatches.push(color);
       const size =
         RODILLERA_SIZES.find((item) => item.id === c.bordadoTamano)?.label ||
         c.bordadoTamano;
@@ -212,7 +214,7 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
       artwork.push({
         kind: 'bordado',
         url: c.bordadoImagen,
-        caption: `Bordado · ${size} · ${place}`,
+        caption: `Bordado · ${size} · ${place} · ${colorSwatch(c.bordadoColor)?.name || c.bordadoColor}`,
       });
     }
     return { swatches, initials, artwork };
@@ -251,7 +253,7 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
       pushChosen('Banda de visera', c.colores.peakBand);
     pushChosen('Bajo visera', c.colores.underPeak);
     pushChosen('Correaje', c.colores.strap);
-    pushChosen('Ojales', c.colores.airholes);
+    pushChosen('Tapones', c.colores.airholes);
     pushChosen('Logo Iconic', c.logoIconic);
     if (c.iniciales) {
       pushChosen('Color de hilo', c.iniciales.colorHilo);
@@ -268,10 +270,11 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
       };
     }
     if (c.logoPropio?.imagen) {
+      pushChosen('Color logo propio', c.logoPropio.colorHilo);
       artwork.push({
         kind: 'logo',
         url: c.logoPropio.imagen,
-        caption: `Logo propio · ${logoTamanoLabel(c.logoPropio.tamano)} · ${posicionLabel(c.logoPropio.posicion)}`,
+        caption: `Logo propio · ${logoTamanoLabel(c.logoPropio.tamano)} · ${posicionLabel(c.logoPropio.posicion)} · ${c.logoPropio.colorHilo.nombre}`,
       });
     }
     const designPhotos = configDesignPhotos('casco', c);

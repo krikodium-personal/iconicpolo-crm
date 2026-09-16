@@ -1,6 +1,7 @@
 import {
   CASCO_ESTAMPADOS,
   CASCO_MATERIAL_PRICE_KEY,
+  CASCO_PALETA_LOGO_HILO,
   CASCO_PALETTE_IDS,
   CASCO_POSICIONES,
   CASCO_TAMANOS_INICIALES,
@@ -304,8 +305,22 @@ export function isConfiguredCategory(id: string) {
 
 export type ColorSwatch = { id: string; name: string; hex: string };
 
-/** Colores de iniciales, tomados de la carta adjunta. */
-export const INITIAL_COLORS: ColorSwatch[] = [
+/** Colores de iniciales / hilo: misma paleta del logo Iconic de cascos. */
+export const INITIAL_COLORS: ColorSwatch[] = CASCO_PALETA_LOGO_HILO.map(
+  (color) => ({
+    id: `hilo-${color.position}`,
+    name: color.nombre,
+    hex: color.hex,
+  }),
+);
+
+export const DEFAULT_INITIAL_COLOR_ID =
+  INITIAL_COLORS.find((color) => color.name === 'Negro')?.id ||
+  INITIAL_COLORS[0]?.id ||
+  'hilo-3';
+
+/** Paleta anterior, solo para cascos legacy (casquete, vicera, etc.). */
+export const LEGACY_BODY_COLORS: ColorSwatch[] = [
   { id: 'blanco', name: 'Blanco', hex: '#ffffff' },
   { id: 'plata', name: 'Plata', hex: '#b8b8b8' },
   { id: 'grafito', name: 'Grafito', hex: '#5a5a5a' },
@@ -344,6 +359,13 @@ export const INITIAL_COLORS: ColorSwatch[] = [
   { id: 'crema', name: 'Crema', hex: '#fff3c4' },
   { id: 'dorado', name: 'Dorado', hex: '#d4a017' },
 ];
+
+export function colorSwatch(id: string) {
+  return (
+    INITIAL_COLORS.find((color) => color.id === id) ||
+    LEGACY_BODY_COLORS.find((color) => color.id === id)
+  );
+}
 
 export const FONTS = [
   { id: 'trajan', label: 'Trajan' },
@@ -953,6 +975,7 @@ export type CascoConfigV2 = {
     posicion: CascoPosicion;
     imagen: string;
     tamano: CascoTamano;
+    colorHilo: ColorElegido;
   };
   talle: CascoTalle | '';
   disenoImagen: string;
@@ -1011,6 +1034,7 @@ export type RodilleraConfig = {
   bordadoImagen: string;
   bordadoTamano: 'chica' | 'mediano' | 'grande';
   bordadoUbicacion: 'izquierda' | 'derecha' | 'centro';
+  bordadoColor: string;
 };
 
 export type BotaConfig = {
@@ -1047,7 +1071,7 @@ export function defaultMontura(): MonturaConfig {
     faldin: true,
     iniciales: false,
     inicialesTexto: '',
-    inicialesColor: 'negro',
+    inicialesColor: DEFAULT_INITIAL_COLOR_ID,
     inicialesTipografia: 'trajan',
     inicialesUbicacion: 'atras',
     corte: 'tapita',
@@ -1141,7 +1165,7 @@ export function defaultRodillera(): RodilleraConfig {
     tamano: 'mediano',
     iniciales: false,
     inicialesTexto: '',
-    inicialesColor: 'negro',
+    inicialesColor: DEFAULT_INITIAL_COLOR_ID,
     inicialesTipografia: 'trajan',
     inicialesUbicacion: 'centro',
     inicialesTamano: 'mediano',
@@ -1149,6 +1173,7 @@ export function defaultRodillera(): RodilleraConfig {
     bordadoImagen: '',
     bordadoTamano: 'mediano',
     bordadoUbicacion: 'centro',
+    bordadoColor: DEFAULT_INITIAL_COLOR_ID,
   };
 }
 
@@ -1167,7 +1192,7 @@ export function defaultBota(): BotaConfig {
     medidas: emptyBotaMeasures(),
     iniciales: false,
     inicialesTexto: '',
-    inicialesColor: 'negro',
+    inicialesColor: DEFAULT_INITIAL_COLOR_ID,
     inicialesTipografia: 'trajan',
     inicialesUbicacion: 'izquierda',
     parche: false,
@@ -1221,8 +1246,7 @@ function flag(v: unknown) {
 
 function colorId(v: unknown, label: string) {
   const id = must(v, label);
-  if (!INITIAL_COLORS.some((color) => color.id === id))
-    throw new Error(`${label}: color inválido.`);
+  if (!colorSwatch(id)) throw new Error(`${label}: color inválido.`);
   return id;
 }
 
@@ -1251,7 +1275,7 @@ export function parseMontura(raw: unknown): MonturaConfig {
     faldin: flag(b.faldin),
     iniciales: flag(b.iniciales),
     inicialesTexto: text(b.inicialesTexto).trim(),
-    inicialesColor: text(b.inicialesColor, 'negro'),
+    inicialesColor: text(b.inicialesColor, DEFAULT_INITIAL_COLOR_ID),
     inicialesTipografia: text(b.inicialesTipografia, 'trajan'),
     inicialesUbicacion: oneOf(
       b.inicialesUbicacion || 'atras',
@@ -1350,7 +1374,7 @@ function parseCascoV2(raw: unknown): CascoConfigV2 {
     airholes: parseChosenColor(
       coloresRaw.airholes,
       CASCO_PALETTE_IDS.ojales,
-      'Ojales',
+      'Tapones',
     ),
   };
   if (coloresRaw.strap)
@@ -1450,6 +1474,11 @@ function parseCascoV2(raw: unknown): CascoConfigV2 {
         CASCO_TAMANOS_LOGO.map((item) => item.id),
         'Tamaño del logo propio',
       ),
+      colorHilo: parseChosenColor(
+        rawLogo.colorHilo,
+        CASCO_PALETTE_IDS.logoHilo,
+        'Color de hilo del logo propio',
+      ),
     };
   }
   return config;
@@ -1481,7 +1510,7 @@ function parseCascoLegacy(raw: unknown): CascoConfigLegacy {
     correajeColor: text(b.correajeColor, 'negro'),
     iniciales: flag(b.iniciales),
     inicialesTexto: text(b.inicialesTexto).trim(),
-    inicialesColor: text(b.inicialesColor, 'negro'),
+    inicialesColor: text(b.inicialesColor, DEFAULT_INITIAL_COLOR_ID),
     inicialesTipografia: text(b.inicialesTipografia, 'trajan'),
     inicialesUbicacion: oneOf(
       b.inicialesUbicacion || 'derecha',
@@ -1674,7 +1703,7 @@ export function parseRodillera(raw: unknown): RodilleraConfig {
     ),
     iniciales: flag(b.iniciales),
     inicialesTexto: text(b.inicialesTexto).trim(),
-    inicialesColor: text(b.inicialesColor, 'negro'),
+    inicialesColor: text(b.inicialesColor, DEFAULT_INITIAL_COLOR_ID),
     inicialesTipografia: text(b.inicialesTipografia, 'trajan'),
     inicialesUbicacion: oneOf(
       b.inicialesUbicacion || 'centro',
@@ -1698,9 +1727,13 @@ export function parseRodillera(raw: unknown): RodilleraConfig {
       RODILLERA_PLACES.map((place) => place.id),
       'Ubicación de bordado',
     ),
+    bordadoColor: text(b.bordadoColor, DEFAULT_INITIAL_COLOR_ID),
   };
   requireInitials(config);
-  if (config.bordado) requireImage(config.bordadoImagen, 'bordado');
+  if (config.bordado) {
+    requireImage(config.bordadoImagen, 'bordado');
+    colorId(config.bordadoColor, 'Color de hilo del bordado');
+  }
   return config;
 }
 
@@ -1731,7 +1764,7 @@ export function parseBota(raw: unknown): BotaConfig {
     medidas: requireBotaMeasures(b.medidas),
     iniciales: flag(b.iniciales),
     inicialesTexto: text(b.inicialesTexto).trim(),
-    inicialesColor: text(b.inicialesColor, 'negro'),
+    inicialesColor: text(b.inicialesColor, DEFAULT_INITIAL_COLOR_ID),
     inicialesTipografia: text(b.inicialesTipografia, 'trajan'),
     inicialesUbicacion: oneOf(
       b.inicialesUbicacion || 'izquierda',
@@ -1833,7 +1866,7 @@ export function stockKey(kind: ConfiguredKind, raw: ProductConfig) {
 }
 
 function colorName(id: string) {
-  return INITIAL_COLORS.find((color) => color.id === id)?.name || id;
+  return colorSwatch(id)?.name || id;
 }
 
 function fontName(id: string) {
@@ -1898,6 +1931,7 @@ export function configLabels(kind: ConfiguredKind, raw: ProductConfig) {
       labels['Ubicación bordado'] =
         RODILLERA_PLACES.find((place) => place.id === c.bordadoUbicacion)
           ?.label || c.bordadoUbicacion;
+      labels['Color bordado'] = colorName(c.bordadoColor);
     }
     return labels;
   }
@@ -1947,7 +1981,7 @@ export function configLabels(kind: ConfiguredKind, raw: ProductConfig) {
     labels.Correaje = c.colores.strap
       ? c.colores.strap.nombre
       : 'Sin correaje';
-    labels.Ojales = c.colores.airholes.nombre;
+    labels.Tapones = c.colores.airholes.nombre;
     labels['Logo Iconic'] = c.logoIconic.nombre;
     labels['Ubicación logo Iconic'] = 'Lado derecho';
     labels.Talle =
@@ -1965,6 +1999,7 @@ export function configLabels(kind: ConfiguredKind, raw: ProductConfig) {
     if (c.logoPropio) {
       labels['Logo propio'] =
         `${logoTamanoLabel(c.logoPropio.tamano)} · ${posicionLabel(c.logoPropio.posicion)}`;
+      labels['Color logo propio'] = c.logoPropio.colorHilo.nombre;
     }
     const designCount = configDesignPhotos('casco', c).length;
     if (designCount === 1) labels.Diseño = 'Imagen adjunta';

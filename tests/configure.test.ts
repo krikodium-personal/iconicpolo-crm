@@ -967,6 +967,7 @@ test('new casco stock key ignores photos and personalization', () => {
       posicion: 'left_side',
       imagen: '/api/images/logo123',
       tamano: 'M',
+      colorHilo: firstCascoColor(CASCO_PALETTE_IDS.logoHilo),
     },
   });
   assert.equal(stockKey('casco', base), stockKey('casco', withLogo));

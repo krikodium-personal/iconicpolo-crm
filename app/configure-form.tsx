@@ -25,6 +25,7 @@ import {
   HELMET_MATERIALS,
   HELMET_SIZES,
   INITIAL_COLORS,
+  LEGACY_BODY_COLORS,
   LEATHER_HEX,
   LEATHER_PHOTOS,
   MONTURA_MATERIALS,
@@ -76,17 +77,25 @@ function ColorPicker({
   label,
   value,
   onChange,
+  colors = INITIAL_COLORS,
 }: {
   label: string;
   value: string;
   onChange: (id: string) => void;
+  colors?: typeof INITIAL_COLORS;
 }) {
-  const selected = INITIAL_COLORS.find((color) => color.id === value);
+  const selected = colors.find((color) => color.id === value);
   return (
-    <Field label={label} wide>
+    <label className="field wide color-picker-field">
+      <span className="color-picker-heading">
+        <span>{label}</span>
+        {selected ? (
+          <strong className="color-picker-selection">{selected.name}</strong>
+        ) : null}
+      </span>
       <div className="color-picker">
         <div className="color-swatches">
-          {INITIAL_COLORS.map((color) => (
+          {colors.map((color) => (
             <button
               key={color.id}
               type="button"
@@ -99,9 +108,8 @@ function ColorPicker({
             />
           ))}
         </div>
-        <small>{selected?.name || 'Sin color'}</small>
       </div>
-    </Field>
+    </label>
   );
 }
 
@@ -119,8 +127,15 @@ function CatalogColorPicker({
   const palette = cascoPalette(paletteId);
   const selected =
     value && palette.find((color) => color.position === value.position);
+  const selectedName = selected?.nombre || value?.nombre;
   return (
-    <Field label={label} wide>
+    <label className="field wide color-picker-field">
+      <span className="color-picker-heading">
+        <span>{label}</span>
+        {selectedName ? (
+          <strong className="color-picker-selection">{selectedName}</strong>
+        ) : null}
+      </span>
       <div className="color-picker">
         <div className="color-swatches">
           {palette.map((color) => (
@@ -143,9 +158,8 @@ function CatalogColorPicker({
             />
           ))}
         </div>
-        <small>{selected?.nombre || value?.nombre || 'Sin color'}</small>
       </div>
-    </Field>
+    </label>
   );
 }
 
@@ -323,7 +337,7 @@ function mixHex(hex: string, toward: [number, number, number], amount: number) {
 
 function leatherSurface(id?: string) {
   if (!id) return '';
-  return LEATHER_HEX[id] || INITIAL_COLORS.find((item) => item.id === id)?.hex || '';
+  return LEATHER_HEX[id] || INITIAL_COLORS.find((item) => item.id === id)?.hex || LEGACY_BODY_COLORS.find((item) => item.id === id)?.hex || '';
 }
 
 function leatherPreviewStyle(hex: string, photo?: string): CSSProperties {
@@ -354,9 +368,9 @@ function InitialsPreview({
   surfaceHex?: string;
 }) {
   const font = FONTS.find((item) => item.id === fontId);
-  const color = colorId
-    ? INITIAL_COLORS.find((item) => item.id === colorId)
-    : undefined;
+  const color =
+    INITIAL_COLORS.find((item) => item.id === colorId) ||
+    LEGACY_BODY_COLORS.find((item) => item.id === colorId);
   const shown = text.trim();
   const ink = colorHex || color?.hex || '#111111';
   const surface = surfaceHex || leatherSurface(surfaceId);
@@ -587,7 +601,7 @@ function CascoConfiguratorNew({
         />
       ) : null}
       <CatalogColorPicker
-        label="Ojales *"
+        label="Tapones *"
         paletteId={CASCO_PALETTE_IDS.ojales}
         value={value.colores.airholes}
         onChange={(color) => onChange(setCascoColor(value, 'airholes', color))}
@@ -748,7 +762,14 @@ function CascoConfiguratorNew({
           config={value}
           onDisable={() => set({ logoPropio: undefined })}
           onEnable={(posicion) =>
-            set({ logoPropio: { posicion, imagen: '', tamano: 'M' } })
+            set({
+              logoPropio: {
+                posicion,
+                imagen: '',
+                tamano: 'M',
+                colorHilo: firstCascoColor(CASCO_PALETTE_IDS.logoHilo),
+              },
+            })
           }
         />
       </div>
@@ -782,6 +803,16 @@ function CascoConfiguratorNew({
               }))}
             />
           </Field>
+          <CatalogColorPicker
+            label="Color de hilo *"
+            paletteId={CASCO_PALETTE_IDS.logoHilo}
+            value={value.logoPropio.colorHilo}
+            onChange={(color) =>
+              set({
+                logoPropio: { ...value.logoPropio!, colorHilo: color },
+              })
+            }
+          />
           <Field label="Imagen del logo *" wide>
             <Photos
               value={
@@ -1288,6 +1319,11 @@ export function Configurator({
                 />
               </Field>
             </div>
+            <ColorPicker
+              label="Color de hilo *"
+              value={c.bordadoColor}
+              onChange={(id) => set({ bordadoColor: id })}
+            />
             <Field label="Imagen del bordado *" wide>
               <Photos
                 value={c.bordadoImagen ? [c.bordadoImagen] : []}
@@ -1650,28 +1686,33 @@ export function Configurator({
       <ColorPicker
         label="Color casco *"
         value={c.colorCasco}
+        colors={LEGACY_BODY_COLORS}
         onChange={(id) => set({ colorCasco: id })}
       />
       <ColorPicker
         label="Vicera arriba *"
         value={c.colorViceraArriba}
+        colors={LEGACY_BODY_COLORS}
         onChange={(id) => set({ colorViceraArriba: id })}
       />
       <ColorPicker
         label="Vicera abajo *"
         value={c.colorViceraAbajo}
+        colors={LEGACY_BODY_COLORS}
         onChange={(id) => set({ colorViceraAbajo: id })}
       />
       {c.vicera === 'argentina' ? (
         <ColorPicker
           label="Banda vicera *"
           value={c.colorBandaVicera}
+          colors={LEGACY_BODY_COLORS}
           onChange={(id) => set({ colorBandaVicera: id })}
         />
       ) : null}
       <ColorPicker
         label="Tapones / airholes *"
         value={c.colorTapones}
+        colors={LEGACY_BODY_COLORS}
         onChange={(id) => set({ colorTapones: id })}
       />
       <div className="form-grid">
@@ -1690,6 +1731,7 @@ export function Configurator({
           <ColorPicker
             label="Color de correaje *"
             value={c.correajeColor}
+            colors={LEGACY_BODY_COLORS}
             onChange={(id) => set({ correajeColor: id })}
           />
         ) : null}
