@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
+import { CrmLink } from './crm-nav';
 import {
   Table,
   TableHeader,
@@ -412,9 +413,9 @@ export function AccountBoard({
       <section className="panel account-sheet">
         <div className="panel-heading">
           <h2>Resultados</h2>
-          <a href={`/tablero?vista=resultados&anio=${year}`}>
+          <CrmLink href={`/tablero?vista=resultados&anio=${year}`}>
             Ver todo <ArrowUpRight size={15} />
-          </a>
+          </CrmLink>
         </div>
         <div className="result-tools result-tools-bar">
           {monthPick}

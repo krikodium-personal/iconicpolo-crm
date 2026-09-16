@@ -1,25 +1,27 @@
-import CRM from '../crm';
+import CrmApp from '../crm-app';
 import { modules, ORDER_STATUSES } from '@/lib/types';
 import { notFound } from 'next/navigation';
+
 export default async function Page({
   params,
   searchParams,
 }: {
-  params: Promise<{ module: string }>;
+  params: Promise<{ slug?: string[] }>;
   searchParams: Promise<{ estado?: string; vista?: string; anio?: string }>;
 }) {
-  const { module } = await params;
+  const { slug } = await params;
+  if (slug && slug.length > 1) notFound();
+  const module = slug?.[0] || 'dashboard';
   if (!modules.includes(module as (typeof modules)[number])) notFound();
   const { estado, vista, anio } = await searchParams;
   const initialFilter =
     module === 'pedidos' &&
     (ORDER_STATUSES as readonly string[]).includes(estado || '')
-      ? estado
+      ? estado!
       : 'all';
   const year = Number(anio);
   return (
-    <CRM
-      key={module + initialFilter + (vista || '') + (anio || '')}
+    <CrmApp
       module={module}
       initialFilter={initialFilter}
       accountView={

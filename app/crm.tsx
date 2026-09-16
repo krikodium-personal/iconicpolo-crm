@@ -73,7 +73,8 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from '@/components/ui/empty';
-import { Skeleton } from '@/components/ui/skeleton';
+import { AuthSkeleton, ModuleSkeleton } from './screen-skeletons';
+import { CrmLink } from './crm-nav';
 import {
   ContactForm,
   ProductForm,
@@ -608,9 +609,9 @@ function OpenOrdersCarousel({
               </button>
             </div>
           ) : null}
-          <a href="/pedidos">
+          <CrmLink href="/pedidos">
             Ver todos <ArrowUpRight size={15} />
-          </a>
+          </CrmLink>
         </div>
       </div>
       {orders.length ? (
@@ -736,6 +737,17 @@ export default function CRM({
       .then((ok) => (ok ? refresh() : undefined))
       .catch((e) => E(e.message));
   }, [loadSession, refresh]);
+  useEffect(() => {
+    F(initialFilter);
+    Q('');
+    A(false);
+    setDeletedList(false);
+    S([]);
+    T(false);
+    P(null);
+    C(null);
+    setRemove(null);
+  }, [module, initialFilter]);
   useEffect(() => {
     const context = (
       document as Document & {
@@ -1242,15 +1254,7 @@ export default function CRM({
       ? inventoryItemContext(data, inventoryRecord, panel.itemKey)
       : null;
   if (authMode === 'loading') {
-    return (
-      <div className="auth-screen">
-        <div className="metrics" style={{ maxWidth: 720, width: '100%' }}>
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-40 rounded-xl" />
-          ))}
-        </div>
-      </div>
-    );
+    return <AuthSkeleton />;
   }
   if (authMode === 'setup' || authMode === 'login') {
     return (
@@ -1273,7 +1277,7 @@ export default function CRM({
       <SidebarProvider>
         <Sidebar>
           <SidebarHeader>
-            <a className="brand" href="/" aria-label="Iconic CRM">
+            <CrmLink className="brand" href="/" aria-label="Iconic CRM">
               <Image
                 unoptimized
                 src="/logo-iconic.png"
@@ -1282,7 +1286,7 @@ export default function CRM({
                 height={100}
                 priority
               />
-            </a>
+            </CrmLink>
           </SidebarHeader>
           <SidebarContent>
             <SidebarMenu>
@@ -1291,7 +1295,7 @@ export default function CRM({
                   <SidebarMenuButton
                     isActive={module === id}
                     render={
-                      <a
+                      <CrmLink
                         aria-label={title}
                         href={id === 'dashboard' ? '/' : `/${id}`}
                       />
@@ -1329,7 +1333,7 @@ export default function CRM({
         </Sidebar>
         <SidebarInset>
           <header className="topbar">
-            <a className="topbar-logo" href="/" aria-label="Iconic CRM">
+            <CrmLink className="topbar-logo" href="/" aria-label="Iconic CRM">
               <Image
                 unoptimized
                 src="/logo-iconic.png"
@@ -1338,7 +1342,7 @@ export default function CRM({
                 height={253}
                 priority
               />
-            </a>
+            </CrmLink>
             <SidebarTrigger />
             <div className="topbar-end">
               <button
@@ -1360,6 +1364,13 @@ export default function CRM({
               >
                 <RefreshCw size={17} />
               </button>
+              <button
+                className="icon-button topbar-logout"
+                aria-label="Salir"
+                onClick={() => void logout()}
+              >
+                <LogOut size={17} />
+              </button>
             </div>
           </header>
           <main className="workspace">
@@ -1377,7 +1388,7 @@ export default function CRM({
                 <div className="page-heading-row">
                   <h1>{title}</h1>
                   {module === 'tablero' && accountView === 'resultados' ? (
-                    <a href="/tablero">Volver</a>
+                    <CrmLink href="/tablero">Volver</CrmLink>
                   ) : null}
                 </div>
                 <p>
@@ -1415,11 +1426,7 @@ export default function CRM({
             </div>
             <ErrorBox message={error} />
             {!data ? (
-              <div className="metrics">
-                {[0, 1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-40 rounded-xl" />
-                ))}
-              </div>
+              <ModuleSkeleton module={module} />
             ) : !data.categories.length ? (
               <section className="onboarding">
                 <span className="onboarding-icon">
@@ -1518,7 +1525,7 @@ export default function CRM({
                     <div className="pipeline">
                       {[...ORDER_STATUSES].map(
                         (s, i) => (
-                          <a
+                          <CrmLink
                             href={`/pedidos?estado=${encodeURIComponent(s)}`}
                             key={s}
                           >
@@ -1539,7 +1546,7 @@ export default function CRM({
                                 }}
                               />
                             </div>
-                          </a>
+                          </CrmLink>
                         ),
                       )}
                     </div>
@@ -2111,11 +2118,14 @@ export default function CRM({
               </section>
               </>
             )}
+            <p className="page-build" aria-label={`Build ${BUILD}`}>
+              Build {BUILD}
+            </p>
           </main>
         </SidebarInset>
         <nav className="mobile-tabbar" aria-label="Navegación principal">
           {nav.map(({ id, short, icon: Icon }) => (
-            <a
+            <CrmLink
               key={id}
               href={id === 'dashboard' ? '/' : `/${id}`}
               className={`mobile-tab ${module === id ? 'active' : ''}`}
@@ -2123,7 +2133,7 @@ export default function CRM({
             >
               <Icon size={22} />
               {short}
-            </a>
+            </CrmLink>
           ))}
         </nav>
         <Dialog
