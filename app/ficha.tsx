@@ -8,9 +8,9 @@ import {
   fichaArtworkTitle,
   type FichaData,
 } from '@/lib/ficha';
-import { formatMoney } from '@/lib/money';
+import { formatMoney, decimal, parseDecimal } from '@/lib/money';
 import type { Order } from '@/lib/types';
-import { ProductPhoto } from './ui';
+import { ProductPhoto, Check, Pick, Field } from './ui';
 
 function hexLuminance(hex: string) {
   const n = hex.replace('#', '');
@@ -643,7 +643,6 @@ export type CotizacionLine = {
 export type CotizacionData = {
   number: string;
   date: string;
-  dateLabel: string;
   customerName: string;
   currency: string;
   units: number;
@@ -651,6 +650,91 @@ export type CotizacionData = {
   notes: string;
   lines: CotizacionLine[];
 };
+
+export type QuoteLang = 'es' | 'en';
+export type QuoteCarrier = 'DHL' | 'FedEx';
+
+export type CotizacionOptions = {
+  lang: QuoteLang;
+  shipping: null | { carrier: QuoteCarrier; amount: number };
+};
+
+const QUOTE_COPY = {
+  es: {
+    kicker: 'Cotización',
+    number: (n: string) => `Nro: ${n}`,
+    forCustomer: (name: string) => `Para ${name}`,
+    products: 'Productos',
+    units: (n: number) => (n === 1 ? '1 ud.' : `${n} uds.`),
+    subtotal: 'Subtotal',
+    shipping: 'Envío',
+    total: 'Total',
+    notes: 'Notas',
+    empty: 'Sin productos.',
+    discount: (value: string) => `${value}% dto.`,
+    footer:
+      'No se consideran impuestos de importación y tasas aduaneras.',
+    back: '← Volver al pedido',
+    heading: 'Ficha cotización',
+    downloadPdf: 'Descargar PDF',
+    downloadImage: 'Descargar imagen',
+    generating: 'Generando…',
+    share: 'WhatsApp',
+    hint: 'Descargá el PDF o compartilo por WhatsApp. En el celular, Compartir adjunta el archivo; en la computadora se descarga para enviarlo.',
+    shareLead: (n: string) => `Cotización Iconic — Nro: ${n}`,
+    shareAttach: 'Adjunto la cotización.',
+    langLabel: 'Idioma',
+    shippingToggle: 'Incluir cargos de envío',
+    carrierLabel: 'Carrier',
+    shippingCostLabel: 'Costo del envío',
+    error: 'No se pudo generar la cotización.',
+  },
+  en: {
+    kicker: 'Quotation',
+    number: (n: string) => `No.: ${n}`,
+    forCustomer: (name: string) => `For ${name}`,
+    products: 'Products',
+    units: (n: number) => (n === 1 ? '1 pc.' : `${n} pcs.`),
+    subtotal: 'Subtotal',
+    shipping: 'Shipping',
+    total: 'Total',
+    notes: 'Notes',
+    empty: 'No products.',
+    discount: (value: string) => `${value}% off`,
+    footer: 'Import taxes and customs fees are not included.',
+    back: '← Back to order',
+    heading: 'Quotation sheet',
+    downloadPdf: 'Download PDF',
+    downloadImage: 'Download image',
+    generating: 'Generating…',
+    share: 'WhatsApp',
+    hint: 'Download the PDF or share it on WhatsApp. On mobile, Share attaches the file; on desktop it downloads so you can send it.',
+    shareLead: (n: string) => `Iconic quotation — No.: ${n}`,
+    shareAttach: 'Please find the quotation attached.',
+    langLabel: 'Language',
+    shippingToggle: 'Include shipping charges',
+    carrierLabel: 'Carrier',
+    shippingCostLabel: 'Shipping cost',
+    error: 'Could not generate the quotation.',
+  },
+} as const;
+
+function quoteDateLabel(iso: string, lang: QuoteLang) {
+  const [year, month, day] = iso.split('-');
+  if (!year || !month || !day) return iso || (lang === 'en' ? 'No date' : 'Sin fecha');
+  return lang === 'en' ? `${month}/${day}/${year}` : `${day}/${month}/${year}`;
+}
+
+function quoteGrandTotal(quote: CotizacionData, options: CotizacionOptions) {
+  return quote.total + (options.shipping?.amount || 0);
+}
+
+function discountLabel(discount: number, lang: QuoteLang) {
+  const value = (discount / 100).toLocaleString(
+    lang === 'en' ? 'en-US' : 'es-AR',
+  );
+  return QUOTE_COPY[lang].discount(value);
+}
 
 export function buildCotizacionData({
   order,
@@ -661,13 +745,9 @@ export function buildCotizacionData({
   customerName: string;
   lines: CotizacionLine[];
 }): CotizacionData {
-  const [year, month, day] = order.date.split('-');
-  const dateLabel =
-    year && month && day ? `${day}/${month}/${year}` : order.date || 'Sin fecha';
   return {
     number: order.number,
     date: order.date,
-    dateLabel,
     customerName,
     currency: order.currency || 'USD',
     units: lines.reduce((sum, line) => sum + line.quantity, 0),
@@ -677,41 +757,62 @@ export function buildCotizacionData({
   };
 }
 
-function cotizacionFileName(quote: CotizacionData, ext: 'pdf' | 'png') {
-  const raw = `cotizacion-${quote.number}`
+function cotizacionFileName(
+  quote: CotizacionData,
+  lang: QuoteLang,
+  ext: 'pdf' | 'png',
+) {
+  const prefix = lang === 'en' ? 'quote' : 'cotizacion';
+  const raw = `${prefix}-${quote.number}`
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 60)
     .toLowerCase();
-  return `${raw || 'cotizacion'}.${ext}`;
+  return `${raw || prefix}.${ext}`;
 }
 
-function cotizacionShareText(quote: CotizacionData) {
+function cotizacionShareText(
+  quote: CotizacionData,
+  options: CotizacionOptions,
+) {
+  const copy = QUOTE_COPY[options.lang];
   return [
-    `Cotización Iconic — Nro: ${quote.number}`,
-    quote.customerName ? `Para ${quote.customerName}` : '',
-    `Total ${formatMoney(quote.total, quote.currency)}`,
-    'Adjunto la cotización.',
+    copy.shareLead(quote.number),
+    quote.customerName ? copy.forCustomer(quote.customerName) : '',
+    `${copy.total} ${formatMoney(quoteGrandTotal(quote, options), quote.currency)}`,
+    copy.shareAttach,
   ]
     .filter(Boolean)
     .join('\n');
 }
 
-function CotizacionSheet({ quote }: { quote: CotizacionData }) {
+function CotizacionSheet({
+  quote,
+  options,
+}: {
+  quote: CotizacionData;
+  options: CotizacionOptions;
+}) {
+  const copy = QUOTE_COPY[options.lang];
   const money = (cents: number) => formatMoney(cents, quote.currency);
+  const dateLabel = quoteDateLabel(quote.date, options.lang);
+  const grand = quoteGrandTotal(quote, options);
+  const shipping = options.shipping;
   return (
     <article className="ficha-sheet cotizacion-sheet">
       <header className="ficha-head">
         <img src="/logo-iconic.png" alt="Iconic" width={64} height={72} />
         <div>
-          <p>Cotización</p>
-          <h1>Nro: {quote.number}</h1>
+          <p>{copy.kicker}</p>
+          <h1>{copy.number(quote.number)}</h1>
           <small>
             {[
-              quote.dateLabel,
-              quote.customerName ? `Para ${quote.customerName}` : '',
+              dateLabel,
+              quote.customerName
+                ? copy.forCustomer(quote.customerName)
+                : '',
             ]
               .filter(Boolean)
               .join(' · ')}
@@ -720,16 +821,16 @@ function CotizacionSheet({ quote }: { quote: CotizacionData }) {
       </header>
       <dl className="ficha-meta">
         <div>
-          <dt>Productos</dt>
-          <dd>{quote.units === 1 ? '1 ud.' : `${quote.units} uds.`}</dd>
+          <dt>{copy.products}</dt>
+          <dd>{copy.units(quote.units)}</dd>
         </div>
         <div>
-          <dt>Total</dt>
-          <dd>{money(quote.total)}</dd>
+          <dt>{copy.total}</dt>
+          <dd>{money(grand)}</dd>
         </div>
       </dl>
       <section className="ficha-block">
-        <h2>Productos</h2>
+        <h2>{copy.products}</h2>
         {quote.lines.length ? (
           <ul className="cotizacion-lines">
             {quote.lines.map((line) => (
@@ -749,7 +850,7 @@ function CotizacionSheet({ quote }: { quote: CotizacionData }) {
                       ))}
                       {line.discount > 0 ? (
                         <span className="discount-badge">
-                          {`${(line.discount / 100).toLocaleString('es-AR')}% dto.`}
+                          {discountLabel(line.discount, options.lang)}
                         </span>
                       ) : null}
                     </p>
@@ -766,31 +867,53 @@ function CotizacionSheet({ quote }: { quote: CotizacionData }) {
             ))}
           </ul>
         ) : (
-          <p className="ficha-description">Sin productos.</p>
+          <p className="ficha-description">{copy.empty}</p>
         )}
       </section>
-      <dl className="ficha-meta">
+      <dl className="ficha-meta cotizacion-totals">
+        {shipping ? (
+          <>
+            <div>
+              <dt>{copy.subtotal}</dt>
+              <dd>{money(quote.total)}</dd>
+            </div>
+            <div>
+              <dt>
+                {copy.shipping} · {shipping.carrier}
+              </dt>
+              <dd>{money(shipping.amount)}</dd>
+            </div>
+          </>
+        ) : null}
         <div>
-          <dt>Total</dt>
-          <dd>{money(quote.total)}</dd>
+          <dt>{copy.total}</dt>
+          <dd>{money(grand)}</dd>
         </div>
       </dl>
       {quote.notes ? (
         <section className="ficha-block">
-          <h2>Notas</h2>
+          <h2>{copy.notes}</h2>
           <p className="ficha-description">{quote.notes}</p>
         </section>
       ) : null}
+      <p className="cotizacion-footer">{copy.footer}</p>
     </article>
   );
 }
 
-async function renderCotizacionCanvas(quote: CotizacionData) {
+async function renderCotizacionCanvas(
+  quote: CotizacionData,
+  options: CotizacionOptions,
+) {
+  const copy = QUOTE_COPY[options.lang];
   const pageW = 794;
   const pad = 36;
   const contentW = pageW - pad * 2;
   const scale = 2;
   const money = (cents: number) => formatMoney(cents, quote.currency);
+  const dateLabel = quoteDateLabel(quote.date, options.lang);
+  const grand = quoteGrandTotal(quote, options);
+  const shipping = options.shipping;
   const [brand, ...photos] = await Promise.all([
     loadImage('/logo-iconic.png'),
     ...quote.lines.map((line) =>
@@ -801,7 +924,7 @@ async function renderCotizacionCanvas(quote: CotizacionData) {
   canvas.width = pageW * scale;
   canvas.height = 6400 * scale;
   const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('No se pudo generar la cotización.');
+  if (!ctx) throw new Error(copy.error);
   ctx.scale(scale, scale);
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, pageW, 6400);
@@ -816,14 +939,17 @@ async function renderCotizacionCanvas(quote: CotizacionData) {
   }
   ctx.fillStyle = '#5e7268';
   ctx.font = '650 11px system-ui, sans-serif';
-  ctx.fillText('COTIZACIÓN', pad + 62, y + 14);
+  ctx.fillText(copy.kicker.toUpperCase(), pad + 62, y + 14);
   ctx.fillStyle = '#17292b';
   ctx.font = '700 26px system-ui, sans-serif';
-  ctx.fillText(`Nro: ${quote.number}`, pad + 62, y + 40);
+  ctx.fillText(copy.number(quote.number), pad + 62, y + 40);
   ctx.fillStyle = '#5e7268';
   ctx.font = '400 13px system-ui, sans-serif';
   ctx.fillText(
-    [quote.dateLabel, quote.customerName ? `Para ${quote.customerName}` : '']
+    [
+      dateLabel,
+      quote.customerName ? copy.forCustomer(quote.customerName) : '',
+    ]
       .filter(Boolean)
       .join('  ·  '),
     pad + 62,
@@ -839,11 +965,8 @@ async function renderCotizacionCanvas(quote: CotizacionData) {
   y += 22;
 
   const meta = [
-    [
-      'Productos',
-      quote.units === 1 ? '1 ud.' : `${quote.units} uds.`,
-    ],
-    ['Total', money(quote.total)],
+    [copy.products, copy.units(quote.units)],
+    [copy.total, money(grand)],
   ];
   meta.forEach((row, index) => {
     const x = pad + index * (contentW / 2);
@@ -858,7 +981,7 @@ async function renderCotizacionCanvas(quote: CotizacionData) {
 
   ctx.fillStyle = '#134c45';
   ctx.font = '700 11px system-ui, sans-serif';
-  ctx.fillText('PRODUCTOS', pad, y);
+  ctx.fillText(copy.products.toUpperCase(), pad, y);
   y += 18;
 
   for (let i = 0; i < quote.lines.length; i++) {
@@ -912,11 +1035,7 @@ async function renderCotizacionCanvas(quote: CotizacionData) {
     if (line.discount > 0) {
       ctx.fillStyle = '#7a6a52';
       ctx.font = '600 12px system-ui, sans-serif';
-      ctx.fillText(
-        `${(line.discount / 100).toLocaleString('es-AR')}% dto.`,
-        textX,
-        textY,
-      );
+      ctx.fillText(discountLabel(line.discount, options.lang), textX, textY);
       textY += 16;
     }
     ctx.fillStyle = '#6d7f72';
@@ -942,18 +1061,38 @@ async function renderCotizacionCanvas(quote: CotizacionData) {
   }
 
   y += 8;
+  if (shipping) {
+    ctx.fillStyle = '#6d7f72';
+    ctx.font = '650 10px system-ui, sans-serif';
+    ctx.fillText(copy.subtotal.toUpperCase(), pad, y);
+    ctx.fillStyle = '#17292b';
+    ctx.font = '600 14px system-ui, sans-serif';
+    ctx.fillText(money(quote.total), pad, y + 20);
+    y += 40;
+    ctx.fillStyle = '#6d7f72';
+    ctx.font = '650 10px system-ui, sans-serif';
+    ctx.fillText(
+      `${copy.shipping.toUpperCase()} · ${shipping.carrier}`,
+      pad,
+      y,
+    );
+    ctx.fillStyle = '#17292b';
+    ctx.font = '600 14px system-ui, sans-serif';
+    ctx.fillText(money(shipping.amount), pad, y + 20);
+    y += 40;
+  }
   ctx.fillStyle = '#6d7f72';
   ctx.font = '650 10px system-ui, sans-serif';
-  ctx.fillText('TOTAL', pad, y);
+  ctx.fillText(copy.total.toUpperCase(), pad, y);
   ctx.fillStyle = '#17292b';
   ctx.font = '700 20px system-ui, sans-serif';
-  ctx.fillText(money(quote.total), pad, y + 24);
+  ctx.fillText(money(grand), pad, y + 24);
   y += 48;
 
   if (quote.notes) {
     ctx.fillStyle = '#134c45';
     ctx.font = '700 11px system-ui, sans-serif';
-    ctx.fillText('NOTAS', pad, y);
+    ctx.fillText(copy.notes.toUpperCase(), pad, y);
     y += 18;
     ctx.fillStyle = '#17292b';
     ctx.font = '400 14px system-ui, sans-serif';
@@ -964,12 +1103,21 @@ async function renderCotizacionCanvas(quote: CotizacionData) {
     y += 8;
   }
 
+  y += 8;
+  ctx.fillStyle = '#5e7268';
+  ctx.font = '400 12px system-ui, sans-serif';
+  for (const part of wrapText(ctx, copy.footer, contentW)) {
+    ctx.fillText(part, pad, y);
+    y += 18;
+  }
+  y += 8;
+
   const used = Math.min(6380, Math.ceil(y + pad));
   const output = document.createElement('canvas');
   output.width = pageW * scale;
   output.height = used * scale;
   const out = output.getContext('2d');
-  if (!out) throw new Error('No se pudo generar la cotización.');
+  if (!out) throw new Error(copy.error);
   out.drawImage(canvas, 0, 0);
   const jpegBlob = await canvasToBlob(output, 'image/jpeg', 0.92);
   const pngBlob = await canvasToBlob(output, 'image/png');
@@ -983,24 +1131,96 @@ async function renderCotizacionCanvas(quote: CotizacionData) {
 
 export function CotizacionFichaView({
   quote,
+  linesForLang,
+  shippingCarrier = '',
+  shippingAmount = 0,
+  onShippingChange,
   onBack,
 }: {
   quote: CotizacionData;
+  linesForLang?: (lang: QuoteLang) => CotizacionLine[];
+  shippingCarrier?: '' | QuoteCarrier;
+  shippingAmount?: number;
+  onShippingChange?: (body: {
+    shipping_carrier: string;
+    shipping_amount: number;
+  }) => Promise<void>;
   onBack: () => void;
 }) {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [lang, setLang] = useState<QuoteLang>('es');
+  const [includeShipping, setIncludeShipping] = useState(!!shippingCarrier);
+  const [carrier, setCarrier] = useState<QuoteCarrier>(
+    shippingCarrier === 'FedEx' ? 'FedEx' : 'DHL',
+  );
+  const [shippingCost, setShippingCost] = useState(
+    decimal(shippingAmount || 0),
+  );
+  const copy = QUOTE_COPY[lang];
+  const displayQuote: CotizacionData = {
+    ...quote,
+    lines: linesForLang ? linesForLang(lang) : quote.lines,
+  };
+
+  const options: CotizacionOptions = {
+    lang,
+    shipping: (() => {
+      if (!includeShipping) return null;
+      try {
+        const amount = shippingCost.trim()
+          ? parseDecimal(shippingCost)
+          : 0;
+        return { carrier, amount };
+      } catch {
+        return { carrier, amount: 0 };
+      }
+    })(),
+  };
+
+  async function persistShipping(next: {
+    include: boolean;
+    carrier: QuoteCarrier;
+    cost: string;
+  }) {
+    if (!onShippingChange) return;
+    if (!next.include) {
+      await onShippingChange({ shipping_carrier: '', shipping_amount: 0 });
+      return;
+    }
+    let amount = 0;
+    try {
+      amount = next.cost.trim() ? parseDecimal(next.cost) : 0;
+    } catch {
+      amount = 0;
+    }
+    await onShippingChange({
+      shipping_carrier: next.carrier,
+      shipping_amount: amount,
+    });
+  }
 
   async function files() {
-    const captured = await renderCotizacionCanvas(quote);
+    if (includeShipping && shippingCost.trim()) {
+      try {
+        parseDecimal(shippingCost);
+      } catch (caught) {
+        throw caught instanceof Error
+          ? caught
+          : new Error(copy.shippingCostLabel);
+      }
+    }
+    const captured = await renderCotizacionCanvas(displayQuote, options);
     const pdf = jpegToPdf(captured.jpeg, captured.width, captured.height);
     return {
-      pdf: new File([new Uint8Array(pdf)], cotizacionFileName(quote, 'pdf'), {
-        type: 'application/pdf',
-      }),
+      pdf: new File(
+        [new Uint8Array(pdf)],
+        cotizacionFileName(displayQuote, lang, 'pdf'),
+        { type: 'application/pdf' },
+      ),
       image: new File(
         [new Uint8Array(captured.png)],
-        cotizacionFileName(quote, 'png'),
+        cotizacionFileName(displayQuote, lang, 'png'),
         { type: 'image/png' },
       ),
     };
@@ -1013,9 +1233,7 @@ export function CotizacionFichaView({
       await work();
     } catch (caught) {
       setError(
-        caught instanceof Error
-          ? caught.message
-          : 'No se pudo generar la cotización.',
+        caught instanceof Error ? caught.message : copy.error,
       );
     } finally {
       setBusy('');
@@ -1025,10 +1243,10 @@ export function CotizacionFichaView({
   return (
     <div className="ficha-view">
       <button type="button" className="dialog-kicker" onClick={onBack}>
-        ← Volver al pedido
+        {copy.back}
       </button>
       <div className="ficha-toolbar">
-        <h3>Ficha cotización</h3>
+        <h3>{copy.heading}</h3>
         <div className="ficha-actions">
           <button
             type="button"
@@ -1042,7 +1260,7 @@ export function CotizacionFichaView({
             }
           >
             <FileDown size={16} />
-            {busy === 'pdf' ? 'Generando…' : 'Descargar PDF'}
+            {busy === 'pdf' ? copy.generating : copy.downloadPdf}
           </button>
           <button
             type="button"
@@ -1056,7 +1274,7 @@ export function CotizacionFichaView({
             }
           >
             <ImageIcon size={16} />
-            {busy === 'image' ? 'Generando…' : 'Descargar imagen'}
+            {busy === 'image' ? copy.generating : copy.downloadImage}
           </button>
           <button
             type="button"
@@ -1065,12 +1283,12 @@ export function CotizacionFichaView({
             onClick={() =>
               void run('share', async () => {
                 const next = await files();
-                const text = cotizacionShareText(quote);
+                const text = cotizacionShareText(displayQuote, options);
                 if (canShareFiles(next.pdf)) {
                   try {
                     await navigator.share({
                       files: [next.pdf],
-                      title: `Cotización · ${quote.number}`,
+                      title: `${copy.kicker} · ${displayQuote.number}`,
                       text,
                     });
                   } catch (caught) {
@@ -1093,17 +1311,89 @@ export function CotizacionFichaView({
             }
           >
             <MessageCircle size={16} />
-            {busy === 'share' ? 'Generando…' : 'WhatsApp'}
+            {busy === 'share' ? copy.generating : copy.share}
           </button>
         </div>
       </div>
+      <div className="cotizacion-options form-grid">
+        <Field label={copy.langLabel}>
+          <Pick
+            label={copy.langLabel}
+            value={lang}
+            onChange={(value) => setLang(value === 'en' ? 'en' : 'es')}
+            options={[
+              { value: 'es', label: 'Español' },
+              { value: 'en', label: 'English' },
+            ]}
+          />
+        </Field>
+        <div className="field cotizacion-shipping-toggle">
+          <Check
+            label={copy.shippingToggle}
+            checked={includeShipping}
+            onChange={(checked) => {
+              const cost = checked
+                ? shippingCost || decimal(0)
+                : shippingCost;
+              setIncludeShipping(checked);
+              if (checked && !shippingCost) setShippingCost(decimal(0));
+              void run('shipping', () =>
+                persistShipping({
+                  include: checked,
+                  carrier,
+                  cost,
+                }),
+              );
+            }}
+          />
+        </div>
+        {includeShipping ? (
+          <>
+            <Field label={copy.carrierLabel}>
+              <Pick
+                label={copy.carrierLabel}
+                value={carrier}
+                onChange={(value) => {
+                  const next = value === 'FedEx' ? 'FedEx' : 'DHL';
+                  setCarrier(next);
+                  void run('shipping', () =>
+                    persistShipping({
+                      include: true,
+                      carrier: next,
+                      cost: shippingCost,
+                    }),
+                  );
+                }}
+                options={[
+                  { value: 'DHL', label: 'DHL' },
+                  { value: 'FedEx', label: 'FedEx' },
+                ]}
+              />
+            </Field>
+            <Field label={copy.shippingCostLabel}>
+              <input
+                inputMode="decimal"
+                value={shippingCost}
+                onChange={(e) => setShippingCost(e.target.value)}
+                onBlur={() =>
+                  void run('shipping', () =>
+                    persistShipping({
+                      include: true,
+                      carrier,
+                      cost: shippingCost,
+                    }),
+                  )
+                }
+                placeholder="0.00"
+              />
+            </Field>
+          </>
+        ) : null}
+      </div>
       {error ? <p className="hint ficha-error">{error}</p> : null}
-      <p className="hint">
-        Descargá el PDF o compartilo por WhatsApp. En el celular, Compartir
-        adjunta el archivo; en la computadora se descarga para enviarlo.
-      </p>
+      <p className="hint">{copy.hint}</p>
       <div className="ficha-preview">
-        <CotizacionSheet quote={quote} />
+        <CotizacionSheet quote={displayQuote} options={options} />
       </div>
     </div>
   );

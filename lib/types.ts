@@ -81,6 +81,10 @@ export type Order = {
   invoice: number;
   notes: string;
   currency: string;
+  /** Vacío = sin cargos de envío en la cotización/pedido. */
+  shipping_carrier: string;
+  /** Costo de envío en centavos. */
+  shipping_amount: number;
   total: number;
   cost: number;
   archived: number;

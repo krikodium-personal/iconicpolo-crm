@@ -1397,6 +1397,23 @@ button.status-pick {
 .cotizacion-total-fact {
   margin-top: 8px;
 }
+.cotizacion-options {
+  margin: 4px 0 8px;
+}
+.cotizacion-shipping-toggle {
+  justify-content: flex-end;
+}
+.cotizacion-footer {
+  margin: 20px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid #e6ece3;
+  color: #5e7268;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.cotizacion-totals {
+  margin-top: 8px;
+}
 .dialog-kicker {
   margin: 0 0 4px;
   font-size: 12px;

@@ -9,6 +9,7 @@ import {
   CASCO_TALLES,
   CASCO_VISERAS,
   chosenCascoColor,
+  cascoChosenColorName,
   estampadoLabel,
   firstCascoColor,
   inicialesMm,
@@ -43,6 +44,7 @@ export {
   CASCO_VISERAS,
   cascoPalette,
   chosenCascoColor,
+  cascoChosenColorName,
   estampadoLabel,
   findCascoTalle,
   firstCascoColor,
@@ -274,6 +276,7 @@ export const TEMPLATE_IDS = {
 } as const;
 
 export type ConfiguredKind = 'montura' | 'casco' | 'rodillera' | 'bota';
+export type ConfigLang = 'es' | 'en';
 
 export const KIND_BY_CATEGORY: Record<
   (typeof CONFIGURED_CATEGORIES)[number],
@@ -303,13 +306,19 @@ export function isConfiguredCategory(id: string) {
   return (CONFIGURED_CATEGORIES as readonly string[]).includes(id);
 }
 
-export type ColorSwatch = { id: string; name: string; hex: string };
+export type ColorSwatch = {
+  id: string;
+  name: string;
+  nameEn?: string;
+  hex: string;
+};
 
 /** Colores de iniciales / hilo: misma paleta del logo Iconic de cascos. */
 export const INITIAL_COLORS: ColorSwatch[] = CASCO_PALETA_LOGO_HILO.map(
   (color) => ({
     id: `hilo-${color.position}`,
     name: color.nombre,
+    nameEn: color.nombreEn,
     hex: color.hex,
   }),
 );
@@ -321,43 +330,78 @@ export const DEFAULT_INITIAL_COLOR_ID =
 
 /** Paleta anterior, solo para cascos legacy (casquete, vicera, etc.). */
 export const LEGACY_BODY_COLORS: ColorSwatch[] = [
-  { id: 'blanco', name: 'Blanco', hex: '#ffffff' },
-  { id: 'plata', name: 'Plata', hex: '#b8b8b8' },
-  { id: 'grafito', name: 'Grafito', hex: '#5a5a5a' },
-  { id: 'negro', name: 'Negro', hex: '#111111' },
-  { id: 'azul-marino', name: 'Azul marino', hex: '#0b1d3a' },
-  { id: 'azul-oscuro', name: 'Azul oscuro', hex: '#12326b' },
-  { id: 'azul', name: 'Azul', hex: '#2f6bdb' },
-  { id: 'azul-petroleo', name: 'Azul petróleo', hex: '#1d5f8a' },
-  { id: 'celeste-gris', name: 'Celeste gris', hex: '#c5d5e8' },
-  { id: 'celeste', name: 'Celeste', hex: '#8ed0ef' },
-  { id: 'cian', name: 'Cian', hex: '#12b0d0' },
-  { id: 'violeta', name: 'Violeta', hex: '#7b68a6' },
-  { id: 'uva', name: 'Uva', hex: '#6b3d7a' },
-  { id: 'lavanda', name: 'Lavanda', hex: '#c8b8e0' },
-  { id: 'rosa-palo', name: 'Rosa palo', hex: '#f5d0d0' },
-  { id: 'rosa', name: 'Rosa', hex: '#e8a0b0' },
-  { id: 'fucsia', name: 'Fucsia', hex: '#e04080' },
-  { id: 'bordo', name: 'Bordo', hex: '#5c1a1a' },
-  { id: 'rojo-oscuro', name: 'Rojo oscuro', hex: '#9b1c1c' },
-  { id: 'rojo', name: 'Rojo', hex: '#c62828' },
-  { id: 'naranja-intenso', name: 'Naranja intenso', hex: '#ff4500' },
-  { id: 'naranja', name: 'Naranja', hex: '#ff7a1a' },
-  { id: 'durazno', name: 'Durazno', hex: '#ffb347' },
-  { id: 'amarillo', name: 'Amarillo', hex: '#ffdd00' },
-  { id: 'lima', name: 'Lima', hex: '#d4ff00' },
-  { id: 'verde-manzana', name: 'Verde manzana', hex: '#8fbf40' },
-  { id: 'verde', name: 'Verde', hex: '#3d9b3d' },
-  { id: 'verde-bosque', name: 'Verde bosque', hex: '#1f5a28' },
-  { id: 'verde-botella', name: 'Verde botella', hex: '#14351c' },
-  { id: 'oliva', name: 'Oliva', hex: '#5a6230' },
-  { id: 'hueso', name: 'Hueso', hex: '#f4efe4' },
-  { id: 'beige', name: 'Beige', hex: '#e2c8b0' },
-  { id: 'tan', name: 'Tan', hex: '#c4a06a' },
-  { id: 'suela', name: 'Suela', hex: '#8b5a2b' },
-  { id: 'marron', name: 'Marrón', hex: '#5c3317' },
-  { id: 'crema', name: 'Crema', hex: '#fff3c4' },
-  { id: 'dorado', name: 'Dorado', hex: '#d4a017' },
+  { id: 'blanco', name: 'Blanco', nameEn: 'White', hex: '#ffffff' },
+  { id: 'plata', name: 'Plata', nameEn: 'Silver', hex: '#b8b8b8' },
+  { id: 'grafito', name: 'Grafito', nameEn: 'Graphite', hex: '#5a5a5a' },
+  { id: 'negro', name: 'Negro', nameEn: 'Black', hex: '#111111' },
+  { id: 'azul-marino', name: 'Azul marino', nameEn: 'Navy blue', hex: '#0b1d3a' },
+  { id: 'azul-oscuro', name: 'Azul oscuro', nameEn: 'Dark blue', hex: '#12326b' },
+  { id: 'azul', name: 'Azul', nameEn: 'Blue', hex: '#2f6bdb' },
+  {
+    id: 'azul-petroleo',
+    name: 'Azul petróleo',
+    nameEn: 'Petrol blue',
+    hex: '#1d5f8a',
+  },
+  {
+    id: 'celeste-gris',
+    name: 'Celeste gris',
+    nameEn: 'Grey sky blue',
+    hex: '#c5d5e8',
+  },
+  { id: 'celeste', name: 'Celeste', nameEn: 'Sky blue', hex: '#8ed0ef' },
+  { id: 'cian', name: 'Cian', nameEn: 'Cyan', hex: '#12b0d0' },
+  { id: 'violeta', name: 'Violeta', nameEn: 'Violet', hex: '#7b68a6' },
+  { id: 'uva', name: 'Uva', nameEn: 'Grape', hex: '#6b3d7a' },
+  { id: 'lavanda', name: 'Lavanda', nameEn: 'Lavender', hex: '#c8b8e0' },
+  { id: 'rosa-palo', name: 'Rosa palo', nameEn: 'Dusty rose', hex: '#f5d0d0' },
+  { id: 'rosa', name: 'Rosa', nameEn: 'Pink', hex: '#e8a0b0' },
+  { id: 'fucsia', name: 'Fucsia', nameEn: 'Fuchsia', hex: '#e04080' },
+  { id: 'bordo', name: 'Bordo', nameEn: 'Burgundy', hex: '#5c1a1a' },
+  {
+    id: 'rojo-oscuro',
+    name: 'Rojo oscuro',
+    nameEn: 'Dark red',
+    hex: '#9b1c1c',
+  },
+  { id: 'rojo', name: 'Rojo', nameEn: 'Red', hex: '#c62828' },
+  {
+    id: 'naranja-intenso',
+    name: 'Naranja intenso',
+    nameEn: 'Bright orange',
+    hex: '#ff4500',
+  },
+  { id: 'naranja', name: 'Naranja', nameEn: 'Orange', hex: '#ff7a1a' },
+  { id: 'durazno', name: 'Durazno', nameEn: 'Peach', hex: '#ffb347' },
+  { id: 'amarillo', name: 'Amarillo', nameEn: 'Yellow', hex: '#ffdd00' },
+  { id: 'lima', name: 'Lima', nameEn: 'Lime', hex: '#d4ff00' },
+  {
+    id: 'verde-manzana',
+    name: 'Verde manzana',
+    nameEn: 'Apple green',
+    hex: '#8fbf40',
+  },
+  { id: 'verde', name: 'Verde', nameEn: 'Green', hex: '#3d9b3d' },
+  {
+    id: 'verde-bosque',
+    name: 'Verde bosque',
+    nameEn: 'Forest green',
+    hex: '#1f5a28',
+  },
+  {
+    id: 'verde-botella',
+    name: 'Verde botella',
+    nameEn: 'Bottle green',
+    hex: '#14351c',
+  },
+  { id: 'oliva', name: 'Oliva', nameEn: 'Olive', hex: '#5a6230' },
+  { id: 'hueso', name: 'Hueso', nameEn: 'Bone', hex: '#f4efe4' },
+  { id: 'beige', name: 'Beige', nameEn: 'Beige', hex: '#e2c8b0' },
+  { id: 'tan', name: 'Tan', nameEn: 'Tan', hex: '#c4a06a' },
+  { id: 'suela', name: 'Suela', nameEn: 'Sole brown', hex: '#8b5a2b' },
+  { id: 'marron', name: 'Marrón', nameEn: 'Brown', hex: '#5c3317' },
+  { id: 'crema', name: 'Crema', nameEn: 'Cream', hex: '#fff3c4' },
+  { id: 'dorado', name: 'Dorado', nameEn: 'Gold', hex: '#d4a017' },
 ];
 
 export function colorSwatch(id: string) {
@@ -441,7 +485,15 @@ export function rewriteMonturaGamuzaText(value: string) {
     .replaceAll('"asiento_gamuza"', '"asiento_descarne"');
 }
 
-function monturaMaterialLabel(id: string) {
+function monturaMaterialLabel(id: string, lang: ConfigLang = 'es') {
+  if (lang === 'en') {
+    const en: Record<string, string> = {
+      descarne: 'Sueded reverse leather',
+      cuero_forrado: 'Lined leather',
+      suela: 'Sole leather',
+    };
+    return en[id] || id;
+  }
   return (
     MONTURA_MATERIALS.find((material) => material.id === id)?.label || id
   );
@@ -1865,194 +1917,437 @@ export function stockKey(kind: ConfiguredKind, raw: ProductConfig) {
   });
 }
 
-function colorName(id: string) {
-  return colorSwatch(id)?.name || id;
+function colorName(id: string, lang: ConfigLang = 'es') {
+  const swatch = colorSwatch(id);
+  if (!swatch) return id;
+  if (lang === 'en') return swatch.nameEn || swatch.name;
+  return swatch.name;
 }
 
 function fontName(id: string) {
   return FONTS.find((font) => font.id === id)?.label || id;
 }
 
-export function configLabels(kind: ConfiguredKind, raw: ProductConfig) {
+export function configLabels(
+  kind: ConfiguredKind,
+  raw: ProductConfig,
+  lang: ConfigLang = 'es',
+) {
+  const yes = lang === 'en' ? 'Yes' : 'Sí';
+  const no = lang === 'en' ? 'No' : 'No';
+  const withWord = lang === 'en' ? 'With' : 'Con';
+  const without = lang === 'en' ? 'Without' : 'Sin';
   const labels: Record<string, string> = {};
+  const key = (es: string, en: string) => (lang === 'en' ? en : es);
   if (kind === 'montura') {
     const c = raw as MonturaConfig;
-    labels.Tipo = c.tipo === 'americana' ? 'Americana' : 'Bauti';
-    labels.Material = monturaMaterialLabel(c.material);
-    labels.Color = c.color === 'negro' ? 'Negro' : 'Marrón';
-    labels.Tamaño = c.tamano;
-    labels['Acabado asiento'] =
-      c.acabadoAsiento === 'perforado' ? 'Perforado' : 'Liso';
-    labels['Material asiento'] = monturaMaterialLabel(c.materialAsiento);
-    labels.Faldín = c.faldin ? 'Con' : 'Sin';
-    labels.Corte = c.corte === 'tapita' ? 'Tapita' : 'Costura';
-    labels['Porta estribera inglés'] = c.portaEstriberaIngles ? 'Sí' : 'No';
+    labels[key('Tipo', 'Type')] =
+      c.tipo === 'americana' ? 'Americana' : 'Bauti';
+    labels[key('Material', 'Material')] = monturaMaterialLabel(c.material, lang);
+    labels[key('Color', 'Color')] =
+      c.color === 'negro'
+        ? lang === 'en'
+          ? 'Black'
+          : 'Negro'
+        : lang === 'en'
+          ? 'Brown'
+          : 'Marrón';
+    labels[key('Tamaño', 'Size')] = c.tamano;
+    labels[key('Acabado asiento', 'Seat finish')] =
+      c.acabadoAsiento === 'perforado'
+        ? lang === 'en'
+          ? 'Perforated'
+          : 'Perforado'
+        : lang === 'en'
+          ? 'Smooth'
+          : 'Liso';
+    labels[key('Material asiento', 'Seat material')] = monturaMaterialLabel(
+      c.materialAsiento,
+      lang,
+    );
+    labels[key('Faldín', 'Skirt')] = c.faldin ? withWord : without;
+    labels[key('Corte', 'Cut')] =
+      c.corte === 'tapita'
+        ? lang === 'en'
+          ? 'Flap'
+          : 'Tapita'
+        : lang === 'en'
+          ? 'Stitch'
+          : 'Costura';
+    labels[key('Porta estribera inglés', 'English stirrup holder')] =
+      c.portaEstriberaIngles ? yes : no;
     if (c.iniciales) {
-      labels.Iniciales = c.inicialesTexto;
-      labels['Color iniciales'] = colorName(c.inicialesColor);
-      labels.Tipografía = fontName(c.inicialesTipografia);
-      labels['Ubicación iniciales'] = {
-        atras: 'Atrás',
-        faldon: 'Faldón',
-        faldin: 'Faldín',
+      labels[key('Iniciales', 'Initials')] = c.inicialesTexto;
+      labels[key('Color iniciales', 'Initials color')] = colorName(
+        c.inicialesColor,
+        lang,
+      );
+      labels[key('Tipografía', 'Typography')] = fontName(c.inicialesTipografia);
+      labels[key('Ubicación iniciales', 'Initials placement')] = {
+        atras: lang === 'en' ? 'Back' : 'Atrás',
+        faldon: lang === 'en' ? 'Flap' : 'Faldón',
+        faldin: lang === 'en' ? 'Skirt' : 'Faldín',
       }[c.inicialesUbicacion];
     }
     return labels;
   }
   if (kind === 'rodillera') {
     const c = raw as RodilleraConfig;
-    labels.Tipo =
-      RODILLERA_TIPOS.find((tipo) => tipo.id === c.tipo)?.label || c.tipo;
-    labels.Modelo =
+    const tipoEn: Record<string, string> = {
+      velcro: 'Velcro',
+      doble_velcro: 'Double velcro',
+      hebilla: 'Buckle',
+    };
+    const colorEn: Record<string, string> = {
+      negro: 'Black',
+      tabaco: 'Tobacco',
+      chocolate: 'Chocolate',
+    };
+    const sizeEn: Record<string, string> = {
+      chica: 'Small',
+      mediano: 'Medium',
+      grande: 'Large',
+    };
+    const placeEn: Record<string, string> = {
+      izquierda: 'Left',
+      derecha: 'Right',
+      centro: 'Center',
+    };
+    labels[key('Tipo', 'Type')] =
+      lang === 'en'
+        ? tipoEn[c.tipo] || c.tipo
+        : RODILLERA_TIPOS.find((tipo) => tipo.id === c.tipo)?.label || c.tipo;
+    labels[key('Modelo', 'Model')] =
       RODILLERA_MODELOS.find((modelo) => modelo.id === c.modelo)?.label ||
       c.modelo;
-    labels.Color =
-      RODILLERA_COLORS.find((color) => color.id === c.color)?.label || c.color;
-    labels['Protector centro'] =
-      RODILLERA_COLORS.find((color) => color.id === c.protectorCentroColor)
-        ?.label || c.protectorCentroColor;
-    labels.Tamaño =
-      RODILLERA_SIZES.find((size) => size.id === c.tamano)?.label || c.tamano;
+    labels[key('Color', 'Color')] =
+      lang === 'en'
+        ? colorEn[c.color] || c.color
+        : RODILLERA_COLORS.find((color) => color.id === c.color)?.label ||
+          c.color;
+    labels[key('Protector centro', 'Center protector')] =
+      lang === 'en'
+        ? colorEn[c.protectorCentroColor] || c.protectorCentroColor
+        : RODILLERA_COLORS.find((color) => color.id === c.protectorCentroColor)
+            ?.label || c.protectorCentroColor;
+    labels[key('Tamaño', 'Size')] =
+      lang === 'en'
+        ? sizeEn[c.tamano] || c.tamano
+        : RODILLERA_SIZES.find((size) => size.id === c.tamano)?.label ||
+          c.tamano;
     if (c.iniciales) {
-      labels.Iniciales = `${c.inicialesTexto} · ${
-        RODILLERA_SIZES.find((size) => size.id === c.inicialesTamano)?.label ||
-        c.inicialesTamano
-      }`;
-      labels['Color iniciales'] = colorName(c.inicialesColor);
-      labels.Tipografía = fontName(c.inicialesTipografia);
-      labels['Ubicación iniciales'] =
-        RODILLERA_PLACES.find((place) => place.id === c.inicialesUbicacion)
-          ?.label || c.inicialesUbicacion;
+      const sizeLabel =
+        lang === 'en'
+          ? sizeEn[c.inicialesTamano] || c.inicialesTamano
+          : RODILLERA_SIZES.find((size) => size.id === c.inicialesTamano)
+              ?.label || c.inicialesTamano;
+      labels[key('Iniciales', 'Initials')] = `${c.inicialesTexto} · ${sizeLabel}`;
+      labels[key('Color iniciales', 'Initials color')] = colorName(
+        c.inicialesColor,
+        lang,
+      );
+      labels[key('Tipografía', 'Typography')] = fontName(c.inicialesTipografia);
+      labels[key('Ubicación iniciales', 'Initials placement')] =
+        lang === 'en'
+          ? placeEn[c.inicialesUbicacion] || c.inicialesUbicacion
+          : RODILLERA_PLACES.find((place) => place.id === c.inicialesUbicacion)
+              ?.label || c.inicialesUbicacion;
     }
     if (c.bordado) {
-      labels.Bordado =
-        RODILLERA_SIZES.find((size) => size.id === c.bordadoTamano)?.label ||
-        c.bordadoTamano;
-      labels['Ubicación bordado'] =
-        RODILLERA_PLACES.find((place) => place.id === c.bordadoUbicacion)
-          ?.label || c.bordadoUbicacion;
-      labels['Color bordado'] = colorName(c.bordadoColor);
+      labels[key('Bordado', 'Embroidery')] =
+        lang === 'en'
+          ? sizeEn[c.bordadoTamano] || c.bordadoTamano
+          : RODILLERA_SIZES.find((size) => size.id === c.bordadoTamano)?.label ||
+            c.bordadoTamano;
+      labels[key('Ubicación bordado', 'Embroidery placement')] =
+        lang === 'en'
+          ? placeEn[c.bordadoUbicacion] || c.bordadoUbicacion
+          : RODILLERA_PLACES.find((place) => place.id === c.bordadoUbicacion)
+              ?.label || c.bordadoUbicacion;
+      labels[key('Color bordado', 'Embroidery color')] = colorName(
+        c.bordadoColor,
+        lang,
+      );
     }
     return labels;
   }
   if (kind === 'bota') {
     const c = raw as BotaConfig;
-    labels.Modelo =
-      BOTA_MODELOS.find((modelo) => modelo.id === c.modelo)?.label || c.modelo;
-    labels.Material =
-      BOTA_MATERIALS.find((material) => material.id === c.material)?.label ||
-      c.material;
-    labels.Color =
-      BOTA_COLORS.find((color) => color.id === c.color)?.label || c.color;
-    labels.Acabado =
-      BOTA_ACABADOS.find((acabado) => acabado.id === c.acabado)?.label ||
-      c.acabado;
+    const modeloEn: Record<string, string> = {
+      standard_doble_cuero: 'Standard double leather',
+      standard_triple_cuero: 'Standard triple leather',
+      polo_argentino_doble_cuero: 'Argentine polo double leather premium',
+      polo_argentino_triple_cuero: 'Argentine polo triple leather premium',
+      texanas: 'Western boots',
+    };
+    const materialEn: Record<string, string> = {
+      cuero_vaca: 'Cow leather',
+      cuero_bufalo: 'Buffalo leather',
+    };
+    const colorEn: Record<string, string> = {
+      negro: 'Black',
+      tabaco: 'Tobacco',
+      chocolate: 'Chocolate',
+    };
+    const acabadoEn: Record<string, string> = {
+      brillante: 'Glossy',
+      matte: 'Matte',
+    };
+    const measureEn: Record<string, string> = {
+      altoCana: 'Shaft height',
+      largoPie: 'Foot length',
+      contornoSuperior: 'Upper circumference',
+      contornoMedio: 'Mid circumference',
+      contornoTobillo: 'Ankle circumference',
+      contornoTalon: 'Heel circumference',
+      contornoEmpeine: 'Instep circumference',
+    };
+    const placeEn: Record<string, string> = {
+      izquierda: 'Left',
+      derecha: 'Right',
+    };
+    labels[key('Modelo', 'Model')] =
+      lang === 'en'
+        ? modeloEn[c.modelo] || c.modelo
+        : BOTA_MODELOS.find((modelo) => modelo.id === c.modelo)?.label ||
+          c.modelo;
+    labels[key('Material', 'Material')] =
+      lang === 'en'
+        ? materialEn[c.material] || c.material
+        : BOTA_MATERIALS.find((material) => material.id === c.material)?.label ||
+          c.material;
+    labels[key('Color', 'Color')] =
+      lang === 'en'
+        ? colorEn[c.color] || c.color
+        : BOTA_COLORS.find((color) => color.id === c.color)?.label || c.color;
+    labels[key('Acabado', 'Finish')] =
+      lang === 'en'
+        ? acabadoEn[c.acabado] || c.acabado
+        : BOTA_ACABADOS.find((acabado) => acabado.id === c.acabado)?.label ||
+          c.acabado;
     for (const measure of BOTA_MEASURES) {
-      labels[`${measure.n}. ${measure.label}`] =
-        c.medidas[measure.id] || '—';
+      const measureKey =
+        lang === 'en'
+          ? `${measure.n}. ${measureEn[measure.id] || measure.label}`
+          : `${measure.n}. ${measure.label}`;
+      labels[measureKey] = c.medidas[measure.id] || '—';
     }
-    labels.Parche = c.parche ? 'Con' : 'Sin';
-    labels['Pasador rodillera'] = c.pasadorRodillera ? 'Con' : 'Sin';
-    labels['Tope espuelas'] = c.topeEspuelas ? 'Con' : 'Sin';
-    labels.Engrasado = c.engrasado ? 'Sí' : 'No';
+    labels[key('Parche', 'Patch')] = c.parche ? withWord : without;
+    labels[key('Pasador rodillera', 'Knee pad strap')] = c.pasadorRodillera
+      ? withWord
+      : without;
+    labels[key('Tope espuelas', 'Spur stop')] = c.topeEspuelas
+      ? withWord
+      : without;
+    labels[key('Engrasado', 'Oiled')] = c.engrasado ? yes : no;
     if (c.iniciales) {
-      labels.Iniciales = c.inicialesTexto;
-      labels['Color iniciales'] = colorName(c.inicialesColor);
-      labels.Tipografía = fontName(c.inicialesTipografia);
-      labels['Ubicación iniciales'] =
-        BOTA_PLACES.find((place) => place.id === c.inicialesUbicacion)
-          ?.label || c.inicialesUbicacion;
+      labels[key('Iniciales', 'Initials')] = c.inicialesTexto;
+      labels[key('Color iniciales', 'Initials color')] = colorName(
+        c.inicialesColor,
+        lang,
+      );
+      labels[key('Tipografía', 'Typography')] = fontName(c.inicialesTipografia);
+      labels[key('Ubicación iniciales', 'Initials placement')] =
+        lang === 'en'
+          ? placeEn[c.inicialesUbicacion] || c.inicialesUbicacion
+          : BOTA_PLACES.find((place) => place.id === c.inicialesUbicacion)
+              ?.label || c.inicialesUbicacion;
     }
     return labels;
   }
   const c = raw as CascoConfig;
   if (isNewCascoConfig(c)) {
-    labels.Modelo =
-      c.modelo === 'h1' ? 'H1 homologado' : 'Standard sin homologar';
-    labels.Estilo = viseraLabel(c.visera);
-    labels.Material = materialLabel(c.material);
+    labels[key('Modelo', 'Model')] =
+      c.modelo === 'h1'
+        ? lang === 'en'
+          ? 'Certified H1'
+          : 'H1 homologado'
+        : lang === 'en'
+          ? 'Standard uncertified'
+          : 'Standard sin homologar';
+    labels[key('Estilo', 'Style')] = viseraLabel(c.visera, lang);
+    labels[key('Material', 'Material')] = materialLabel(c.material, lang);
     if (c.material === 'prints' && c.estampado)
-      labels.Estampado = estampadoLabel(c.estampado);
-    if (c.colores.top) labels.Casquete = c.colores.top.nombre;
-    if (c.colores.peak) labels.Visera = c.colores.peak.nombre;
+      labels[key('Estampado', 'Print')] = estampadoLabel(c.estampado, lang);
+    if (c.colores.top)
+      labels[key('Casquete', 'Shell')] = cascoChosenColorName(
+        c.colores.top,
+        lang,
+      );
+    if (c.colores.peak)
+      labels[key('Visera', 'Peak')] = cascoChosenColorName(
+        c.colores.peak,
+        lang,
+      );
     if (c.visera === 'argentine' && c.colores.peakBand)
-      labels['Banda de visera'] = c.colores.peakBand.nombre;
-    if (c.colores.underPeak) labels['Bajo visera'] = c.colores.underPeak.nombre;
-    labels.Correaje = c.colores.strap
-      ? c.colores.strap.nombre
-      : 'Sin correaje';
-    labels.Tapones = c.colores.airholes.nombre;
-    labels['Logo Iconic'] = c.logoIconic.nombre;
-    labels['Ubicación logo Iconic'] = 'Lado derecho';
-    labels.Talle =
-      c.talle && typeof c.talle === 'object' ? talleLabel(c.talle) : 'Sin elegir';
+      labels[key('Banda de visera', 'Peak band')] = cascoChosenColorName(
+        c.colores.peakBand,
+        lang,
+      );
+    if (c.colores.underPeak)
+      labels[key('Bajo visera', 'Under peak')] = cascoChosenColorName(
+        c.colores.underPeak,
+        lang,
+      );
+    labels[key('Correaje', 'Chin strap')] = c.colores.strap
+      ? cascoChosenColorName(c.colores.strap, lang)
+      : lang === 'en'
+        ? 'No chin strap'
+        : 'Sin correaje';
+    labels[key('Tapones', 'Airholes')] = cascoChosenColorName(
+      c.colores.airholes,
+      lang,
+    );
+    labels[key('Logo Iconic', 'Iconic logo')] = cascoChosenColorName(
+      c.logoIconic,
+      lang,
+    );
+    labels[key('Ubicación logo Iconic', 'Iconic logo placement')] =
+      lang === 'en' ? 'Right side' : 'Lado derecho';
+    labels[key('Talle', 'Size')] =
+      c.talle && typeof c.talle === 'object'
+        ? talleLabel(c.talle)
+        : lang === 'en'
+          ? 'Not selected'
+          : 'Sin elegir';
     if (c.iniciales) {
-      labels.Iniciales = `${c.iniciales.texto} · ${inicialesMm(c.iniciales.posicion, c.iniciales.tamano)} mm`;
-      labels['Ubicación iniciales'] = posicionLabel(c.iniciales.posicion);
-      labels['Color de hilo'] = c.iniciales.colorHilo.nombre;
-      labels.Tipografía = fontName(c.iniciales.tipografia);
+      labels[key('Iniciales', 'Initials')] =
+        `${c.iniciales.texto} · ${inicialesMm(c.iniciales.posicion, c.iniciales.tamano)} mm`;
+      labels[key('Ubicación iniciales', 'Initials placement')] = posicionLabel(
+        c.iniciales.posicion,
+        lang,
+      );
+      labels[key('Color de hilo', 'Thread color')] = cascoChosenColorName(
+        c.iniciales.colorHilo,
+        lang,
+      );
+      labels[key('Tipografía', 'Typography')] = fontName(c.iniciales.tipografia);
     }
     if (c.bandera) {
-      labels.Bandera = c.bandera.pais;
-      labels['Ubicación bandera'] = posicionLabel(c.bandera.posicion);
+      labels[key('Bandera', 'Flag')] = c.bandera.pais;
+      labels[key('Ubicación bandera', 'Flag placement')] = posicionLabel(
+        c.bandera.posicion,
+        lang,
+      );
     }
     if (c.logoPropio) {
-      labels['Logo propio'] =
-        `${logoTamanoLabel(c.logoPropio.tamano)} · ${posicionLabel(c.logoPropio.posicion)}`;
-      labels['Color logo propio'] = c.logoPropio.colorHilo.nombre;
+      labels[key('Logo propio', 'Custom logo')] =
+        `${logoTamanoLabel(c.logoPropio.tamano, lang)} · ${posicionLabel(c.logoPropio.posicion, lang)}`;
+      labels[key('Color logo propio', 'Custom logo color')] =
+        cascoChosenColorName(c.logoPropio.colorHilo, lang);
     }
     const designCount = configDesignPhotos('casco', c).length;
-    if (designCount === 1) labels.Diseño = 'Imagen adjunta';
-    else if (designCount > 1) labels.Diseño = `${designCount} imágenes adjuntas`;
+    if (designCount === 1)
+      labels[key('Diseño', 'Design')] =
+        lang === 'en' ? 'Attached image' : 'Imagen adjunta';
+    else if (designCount > 1)
+      labels[key('Diseño', 'Design')] =
+        lang === 'en'
+          ? `${designCount} attached images`
+          : `${designCount} imágenes adjuntas`;
     return labels;
   }
-  labels.Modelo =
-    c.modelo === 'h1' ? 'H1 homologado' : 'Standard sin homologar';
-  labels['Tipo de vicera'] =
-    c.vicera === 'lock' ? 'Lock / English' : 'Argentina';
-  labels.Tamaño =
+  labels[key('Modelo', 'Model')] =
+    c.modelo === 'h1'
+      ? lang === 'en'
+        ? 'Certified H1'
+        : 'H1 homologado'
+      : lang === 'en'
+        ? 'Standard uncertified'
+        : 'Standard sin homologar';
+  labels[key('Tipo de vicera', 'Peak type')] =
+    c.vicera === 'lock'
+      ? 'Lock / English'
+      : lang === 'en'
+        ? 'Argentine'
+        : 'Argentina';
+  labels[key('Tamaño', 'Size')] =
     HELMET_SIZES.find((size) => size.id === c.tamano)?.label || c.tamano;
-  labels['Material externo'] =
-    HELMET_MATERIALS.find((material) => material.id === c.materialExterno)
-      ?.label || c.materialExterno;
-  labels['Color casco'] = colorName(c.colorCasco);
-  labels['Vicera arriba'] = colorName(c.colorViceraArriba);
-  labels['Vicera abajo'] = colorName(c.colorViceraAbajo);
+  const helmetMaterialEn: Record<string, string> = {
+    tela: 'Cloth',
+    cuero: 'Leather',
+    softshell: 'Softshell',
+    prints: 'Print',
+  };
+  labels[key('Material externo', 'Outer material')] =
+    lang === 'en'
+      ? helmetMaterialEn[c.materialExterno] || c.materialExterno
+      : HELMET_MATERIALS.find((material) => material.id === c.materialExterno)
+          ?.label || c.materialExterno;
+  labels[key('Color casco', 'Helmet color')] = colorName(c.colorCasco, lang);
+  labels[key('Vicera arriba', 'Peak top')] = colorName(c.colorViceraArriba, lang);
+  labels[key('Vicera abajo', 'Peak underside')] = colorName(
+    c.colorViceraAbajo,
+    lang,
+  );
   if (c.vicera === 'argentina')
-    labels['Banda vicera'] = colorName(c.colorBandaVicera);
-  labels.Tapones = colorName(c.colorTapones);
-  labels.Correaje = c.correaje ? colorName(c.correajeColor) : 'Sin correaje';
-  labels['Logo IC'] = c.logoIcUbicacion === 'derecha' ? 'Derecha' : 'Izquierda';
+    labels[key('Banda vicera', 'Peak band')] = colorName(
+      c.colorBandaVicera,
+      lang,
+    );
+  labels[key('Tapones', 'Airholes')] = colorName(c.colorTapones, lang);
+  labels[key('Correaje', 'Chin strap')] = c.correaje
+    ? colorName(c.correajeColor, lang)
+    : lang === 'en'
+      ? 'No chin strap'
+      : 'Sin correaje';
+  labels[key('Logo IC', 'IC logo')] =
+    c.logoIcUbicacion === 'derecha'
+      ? lang === 'en'
+        ? 'Right'
+        : 'Derecha'
+      : lang === 'en'
+        ? 'Left'
+        : 'Izquierda';
   if (c.logoIcColorPersonalizado)
-    labels['Color logo IC'] = colorName(c.logoIcColor);
+    labels[key('Color logo IC', 'IC logo color')] = colorName(
+      c.logoIcColor,
+      lang,
+    );
   if (c.iniciales) {
-    labels.Iniciales = `${c.inicialesTexto} · ${c.inicialesTamano} mm`;
-    labels['Color iniciales'] = colorName(c.inicialesColor);
-    labels.Tipografía = fontName(c.inicialesTipografia);
-    labels['Ubicación iniciales'] =
-      c.inicialesUbicacion === 'derecha' ? 'Derecha' : 'Izquierda';
+    labels[key('Iniciales', 'Initials')] =
+      `${c.inicialesTexto} · ${c.inicialesTamano} mm`;
+    labels[key('Color iniciales', 'Initials color')] = colorName(
+      c.inicialesColor,
+      lang,
+    );
+    labels[key('Tipografía', 'Typography')] = fontName(c.inicialesTipografia);
+    labels[key('Ubicación iniciales', 'Initials placement')] =
+      c.inicialesUbicacion === 'derecha'
+        ? lang === 'en'
+          ? 'Right'
+          : 'Derecha'
+        : lang === 'en'
+          ? 'Left'
+          : 'Izquierda';
   }
   if (c.bandera) {
-    labels.Bandera = c.banderaPais;
-    labels['Ubicación bandera'] = {
-      derecha: 'Derecha',
-      izquierda: 'Izquierda',
-      frente: 'Frente',
-      atras: 'Atrás',
+    labels[key('Bandera', 'Flag')] = c.banderaPais;
+    labels[key('Ubicación bandera', 'Flag placement')] = {
+      derecha: lang === 'en' ? 'Right' : 'Derecha',
+      izquierda: lang === 'en' ? 'Left' : 'Izquierda',
+      frente: lang === 'en' ? 'Front' : 'Frente',
+      atras: lang === 'en' ? 'Back' : 'Atrás',
     }[c.banderaUbicacion];
   }
   if (c.logoPersonalizado) {
-    labels['Logo personalizado'] = c.logoPersonalizadoTamano;
-    labels['Posición logo'] = {
-      derecha: 'Derecha',
-      izquierda: 'Izquierda',
-      frente: 'Frente',
-      atras: 'Atrás',
+    labels[key('Logo personalizado', 'Custom logo')] = c.logoPersonalizadoTamano;
+    labels[key('Posición logo', 'Logo position')] = {
+      derecha: lang === 'en' ? 'Right' : 'Derecha',
+      izquierda: lang === 'en' ? 'Left' : 'Izquierda',
+      frente: lang === 'en' ? 'Front' : 'Frente',
+      atras: lang === 'en' ? 'Back' : 'Atrás',
     }[c.logoPersonalizadoPosicion];
   }
   const designCount = configDesignPhotos('casco', c).length;
-  if (designCount === 1) labels.Diseño = 'Imagen adjunta';
-  else if (designCount > 1) labels.Diseño = `${designCount} imágenes adjuntas`;
+  if (designCount === 1)
+    labels[key('Diseño', 'Design')] =
+      lang === 'en' ? 'Attached image' : 'Imagen adjunta';
+  else if (designCount > 1)
+    labels[key('Diseño', 'Design')] =
+      lang === 'en'
+        ? `${designCount} attached images`
+        : `${designCount} imágenes adjuntas`;
   return labels;
 }
 
@@ -2360,58 +2655,137 @@ function lowerEs(value: string) {
   return value.toLocaleLowerCase('es');
 }
 
-function summarizeMontura(raw: MonturaConfig) {
+function lowerEn(value: string) {
+  return value.toLocaleLowerCase('en');
+}
+
+function summarizeMontura(raw: MonturaConfig, lang: ConfigLang = 'es') {
   const tipo = raw.tipo === 'americana' ? 'Americana' : 'Bauti';
-  const material = monturaMaterialLabel(raw.material);
-  const color = raw.color === 'negro' ? 'Negro' : 'Marrón';
+  const material = monturaMaterialLabel(raw.material, lang);
+  const color =
+    raw.color === 'negro'
+      ? lang === 'en'
+        ? 'Black'
+        : 'Negro'
+      : lang === 'en'
+        ? 'Brown'
+        : 'Marrón';
   const asiento =
-    raw.acabadoAsiento === 'perforado' ? 'Perforado' : 'Liso';
-  const asientoMaterial = monturaMaterialLabel(raw.materialAsiento);
-  const corte = raw.corte === 'tapita' ? 'Tapita' : 'Costura';
-  const lines = [
-    `Montura ${tipo} ${lowerEs(material)} ${lowerEs(color)} ${raw.tamano}`,
-    `Asiento: ${lowerEs(asiento)}, ${lowerEs(asientoMaterial)}`,
-    `Corte: ${lowerEs(corte)}`,
-  ];
-  if (!raw.faldin) lines.push('Sin faldín');
-  if (raw.portaEstriberaIngles) lines.push('Porta estribera inglés');
+    raw.acabadoAsiento === 'perforado'
+      ? lang === 'en'
+        ? 'Perforated'
+        : 'Perforado'
+      : lang === 'en'
+        ? 'Smooth'
+        : 'Liso';
+  const asientoMaterial = monturaMaterialLabel(raw.materialAsiento, lang);
+  const corte =
+    raw.corte === 'tapita'
+      ? lang === 'en'
+        ? 'Flap'
+        : 'Tapita'
+      : lang === 'en'
+        ? 'Stitch'
+        : 'Costura';
+  const lower = lang === 'en' ? lowerEn : lowerEs;
+  const lines =
+    lang === 'en'
+      ? [
+          `Saddle ${tipo} ${lower(material)} ${lower(color)} ${raw.tamano}`,
+          `Seat: ${lower(asiento)}, ${lower(asientoMaterial)}`,
+          `Cut: ${lower(corte)}`,
+        ]
+      : [
+          `Montura ${tipo} ${lower(material)} ${lower(color)} ${raw.tamano}`,
+          `Asiento: ${lower(asiento)}, ${lower(asientoMaterial)}`,
+          `Corte: ${lower(corte)}`,
+        ];
+  if (!raw.faldin)
+    lines.push(lang === 'en' ? 'Without skirt' : 'Sin faldín');
+  if (raw.portaEstriberaIngles)
+    lines.push(
+      lang === 'en' ? 'English stirrup holder' : 'Porta estribera inglés',
+    );
   if (raw.iniciales && raw.inicialesTexto.trim()) {
-    lines.push(`Iniciales: ${raw.inicialesTexto.trim()}`);
+    lines.push(
+      `${lang === 'en' ? 'Initials' : 'Iniciales'}: ${raw.inicialesTexto.trim()}`,
+    );
   }
   return lines.join('\n');
 }
 
-function summarizeRodillera(raw: RodilleraConfig) {
+function summarizeRodillera(raw: RodilleraConfig, lang: ConfigLang = 'es') {
   const modelo =
     RODILLERA_MODELOS.find((item) => item.id === raw.modelo)?.label ||
     raw.modelo;
+  const tipoEn: Record<string, string> = {
+    velcro: 'Velcro',
+    doble_velcro: 'Double velcro',
+    hebilla: 'Buckle',
+  };
+  const colorEn: Record<string, string> = {
+    negro: 'Black',
+    tabaco: 'Tobacco',
+    chocolate: 'Chocolate',
+  };
+  const sizeEn: Record<string, string> = {
+    chica: 'Small',
+    mediano: 'Medium',
+    grande: 'Large',
+  };
   const tipo =
-    RODILLERA_TIPOS.find((item) => item.id === raw.tipo)?.label || raw.tipo;
+    lang === 'en'
+      ? tipoEn[raw.tipo] || raw.tipo
+      : RODILLERA_TIPOS.find((item) => item.id === raw.tipo)?.label || raw.tipo;
   const color =
-    RODILLERA_COLORS.find((item) => item.id === raw.color)?.label || raw.color;
+    lang === 'en'
+      ? colorEn[raw.color] || raw.color
+      : RODILLERA_COLORS.find((item) => item.id === raw.color)?.label ||
+        raw.color;
   const tamano =
-    RODILLERA_SIZES.find((item) => item.id === raw.tamano)?.label || raw.tamano;
+    lang === 'en'
+      ? sizeEn[raw.tamano] || raw.tamano
+      : RODILLERA_SIZES.find((item) => item.id === raw.tamano)?.label ||
+        raw.tamano;
   const protector =
-    RODILLERA_COLORS.find((item) => item.id === raw.protectorCentroColor)
-      ?.label || raw.protectorCentroColor;
-  const lines = [
-    `Rodillera ${lowerEs(modelo)} ${lowerEs(tipo)} ${lowerEs(color)}.`,
-    `Tamaño: ${lowerEs(tamano)}`,
-  ];
+    lang === 'en'
+      ? colorEn[raw.protectorCentroColor] || raw.protectorCentroColor
+      : RODILLERA_COLORS.find((item) => item.id === raw.protectorCentroColor)
+          ?.label || raw.protectorCentroColor;
+  const lower = lang === 'en' ? lowerEn : lowerEs;
+  const lines =
+    lang === 'en'
+      ? [
+          `Knee pad ${lower(modelo)} ${lower(tipo)} ${lower(color)}.`,
+          `Size: ${lower(tamano)}`,
+        ]
+      : [
+          `Rodillera ${lower(modelo)} ${lower(tipo)} ${lower(color)}.`,
+          `Tamaño: ${lower(tamano)}`,
+        ];
   if (raw.protectorCentroColor !== raw.color) {
-    lines.push(`Protector centro: ${lowerEs(protector)}`);
+    lines.push(
+      `${lang === 'en' ? 'Center protector' : 'Protector centro'}: ${lower(protector)}`,
+    );
   }
   if (raw.iniciales && raw.inicialesTexto.trim()) {
-    lines.push(`Iniciales: ${raw.inicialesTexto.trim()}`);
+    lines.push(
+      `${lang === 'en' ? 'Initials' : 'Iniciales'}: ${raw.inicialesTexto.trim()}`,
+    );
   }
-  if (raw.bordado) lines.push('Bordado');
+  if (raw.bordado) lines.push(lang === 'en' ? 'Embroidery' : 'Bordado');
   return lines.join('\n');
 }
 
-export function summarizeConfig(kind: ConfiguredKind, raw: ProductConfig) {
-  if (kind === 'montura') return summarizeMontura(raw as MonturaConfig);
-  if (kind === 'rodillera') return summarizeRodillera(raw as RodilleraConfig);
-  const labels = configLabels(kind, raw);
+export function summarizeConfig(
+  kind: ConfiguredKind,
+  raw: ProductConfig,
+  lang: ConfigLang = 'es',
+) {
+  if (kind === 'montura') return summarizeMontura(raw as MonturaConfig, lang);
+  if (kind === 'rodillera')
+    return summarizeRodillera(raw as RodilleraConfig, lang);
+  const labels = configLabels(kind, raw, lang);
   return Object.entries(labels)
     .map(([key, value]) => `${key}: ${value}`)
     .join(' · ');
@@ -2420,11 +2794,12 @@ export function summarizeConfig(kind: ConfiguredKind, raw: ProductConfig) {
 export function describeConfigured(
   product: { kind?: string; category: string },
   config: unknown,
+  lang: ConfigLang = 'es',
 ) {
   const kind = configuredKindOf(product);
   if (!kind || !config || typeof config !== 'object') return '';
   try {
-    return summarizeConfig(kind, parseConfig(kind, config));
+    return summarizeConfig(kind, parseConfig(kind, config), lang);
   } catch {
     return '';
   }

@@ -153,19 +153,50 @@ export function chosenCascoColor(
   };
 }
 
-export function viseraLabel(id: string) {
+export function viseraLabel(id: string, lang: 'es' | 'en' = 'es') {
+  if (lang === 'en') {
+    const en: Record<string, string> = {
+      argentine: 'Argentine',
+      english: 'English',
+    };
+    return en[id] || id;
+  }
   return CASCO_VISERAS.find((item) => item.id === id)?.nombre || id;
 }
 
-export function materialLabel(id: string) {
+export function materialLabel(id: string, lang: 'es' | 'en' = 'es') {
+  if (lang === 'en') {
+    const en: Record<string, string> = {
+      cloth: 'Cloth',
+      leather: 'Leather',
+      softshell: 'Softshell',
+      prints: 'Print',
+    };
+    return en[id] || id;
+  }
   return CASCO_MATERIALES.find((item) => item.id === id)?.nombre || id;
 }
 
-export function estampadoLabel(id: string) {
+export function estampadoLabel(id: string, lang: 'es' | 'en' = 'es') {
+  if (lang === 'en') {
+    const en: Record<string, string> = {
+      topographic: 'Topographic',
+      halftone: 'Halftone',
+      lightning: 'Lightning',
+    };
+    return en[id] || id;
+  }
   return CASCO_ESTAMPADOS.find((item) => item.id === id)?.nombre || id;
 }
 
-export function posicionLabel(id: string) {
+export function posicionLabel(id: string, lang: 'es' | 'en' = 'es') {
+  if (lang === 'en') {
+    const en: Record<string, string> = {
+      left_side: 'Left side',
+      back: 'Back',
+    };
+    return en[id] || id;
+  }
   return CASCO_POSICIONES.find((item) => item.id === id)?.nombre || id;
 }
 
@@ -177,9 +208,21 @@ export function findCascoTalle(cm: number) {
   return CASCO_TALLES.find((talle) => talle.cm === cm);
 }
 
-export function inicialesTamanoLabel(posicion: CascoPosicion, id: CascoTamano) {
+export function inicialesTamanoLabel(
+  posicion: CascoPosicion,
+  id: CascoTamano,
+  lang: 'es' | 'en' = 'es',
+) {
   const size = CASCO_TAMANOS_INICIALES[posicion].find((item) => item.id === id);
   if (!size) return id;
+  if (lang === 'en') {
+    const en: Record<string, string> = {
+      S: 'Small',
+      M: 'Medium',
+      L: 'Large',
+    };
+    return `${en[id] || id} · ${size.mm} mm`;
+  }
   return `${size.nombre} · ${size.mm} mm`;
 }
 
@@ -189,8 +232,28 @@ export function inicialesMm(posicion: CascoPosicion, id: CascoTamano) {
   );
 }
 
-export function logoTamanoLabel(id: string) {
+export function logoTamanoLabel(id: string, lang: 'es' | 'en' = 'es') {
+  if (lang === 'en') {
+    const en: Record<string, string> = {
+      S: 'Small',
+      M: 'Medium',
+      L: 'Large',
+    };
+    return en[id] || id;
+  }
   return CASCO_TAMANOS_LOGO.find((item) => item.id === id)?.nombre || id;
+}
+
+export function cascoChosenColorName(
+  color: ColorElegido | null | undefined,
+  lang: 'es' | 'en' = 'es',
+) {
+  if (!color) return '';
+  if (lang === 'en') {
+    const found = cascoColor(color.palette, color.position);
+    return found?.nombreEn || color.nombre;
+  }
+  return color.nombre;
 }
 
 export const CASCO_MATERIAL_PRICE_KEY: Record<CascoMaterialTipo, string> = {

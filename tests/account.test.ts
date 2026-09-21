@@ -48,6 +48,8 @@ function order(
     invoice: 1,
     notes: '',
     currency: 'USD',
+    shipping_carrier: '',
+    shipping_amount: 0,
     total,
     cost,
     archived: 0,

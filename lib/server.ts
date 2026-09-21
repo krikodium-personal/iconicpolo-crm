@@ -174,6 +174,18 @@ export async function ensureAccountTables() {
       'paid_partner_id',
       "paid_partner_id text NOT NULL DEFAULT ''",
     ),
+    await addColumn(
+      'orders',
+      orderNames,
+      'shipping_carrier',
+      "shipping_carrier text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'orders',
+      orderNames,
+      'shipping_amount',
+      'shipping_amount integer NOT NULL DEFAULT 0',
+    ),
   ].filter(Boolean);
   if (orderAlters.length)
     await d.batch(orderAlters as ReturnType<typeof stmt>[]);
@@ -676,10 +688,19 @@ export async function allData() {
         pricing: parsePricing(product.pricing),
       };
     }),
-    orders: o.results.map((r) => ({
-      ...obj(r),
-      items: items.filter((item) => item.order_id === obj(r).id),
-    })),
+    orders: o.results.map((r) => {
+      const row = obj(r);
+      return {
+        ...row,
+        shipping_carrier:
+          typeof row.shipping_carrier === 'string' ? row.shipping_carrier : '',
+        shipping_amount:
+          typeof row.shipping_amount === 'number' ? row.shipping_amount : 0,
+        paid_partner_id:
+          typeof row.paid_partner_id === 'string' ? row.paid_partner_id : '',
+        items: items.filter((item) => item.order_id === row.id),
+      };
+    }),
     movements: m.results.map((r) => {
       const row = obj(r);
       let config: Record<string, unknown> = {};
@@ -1216,6 +1237,22 @@ export async function saveOrder(
   const status = choice(b.status, [...ORDER_STATUSES], 'Estado');
   const invoice = integer(b.invoice, 'Facturación', 1);
   const notes = str(b.notes, 'Notas', false, 2000);
+  let shippingCarrier = existing?.shipping_carrier || '';
+  let shippingAmount = existing?.shipping_amount || 0;
+  if (b.shipping_carrier !== undefined) {
+    if (String(b.shipping_carrier || '').trim()) {
+      shippingCarrier = choice(b.shipping_carrier, ['DHL', 'FedEx'], 'Carrier');
+      shippingAmount = integer(
+        b.shipping_amount !== undefined ? b.shipping_amount : shippingAmount,
+        'Costo de envío',
+      );
+    } else {
+      shippingCarrier = '';
+      shippingAmount = 0;
+    }
+  } else if (b.shipping_amount !== undefined && shippingCarrier) {
+    shippingAmount = integer(b.shipping_amount, 'Costo de envío');
+  }
   const currency =
     existing?.currency ||
     (
@@ -1231,7 +1268,7 @@ export async function saveOrder(
   if (existing) {
     statements.push(
       stmt(
-        'UPDATE orders SET customer_id=?,date=?,delivery=?,paid=?,paid_partner_id=?,invoice=?,notes=?,total=?,cost=?,version=? WHERE id=?',
+        'UPDATE orders SET customer_id=?,date=?,delivery=?,paid=?,paid_partner_id=?,invoice=?,notes=?,shipping_carrier=?,shipping_amount=?,total=?,cost=?,version=? WHERE id=?',
         customer,
         orderDate,
         delivery,
@@ -1239,6 +1276,8 @@ export async function saveOrder(
         paidPartnerId,
         invoice,
         notes,
+        shippingCarrier,
+        shippingAmount,
         total,
         cost,
         integer(b.version, 'Versión') + 1,
@@ -1249,7 +1288,7 @@ export async function saveOrder(
   } else {
     statements.push(
       stmt(
-        "INSERT INTO orders(id,number,customer_id,date,delivery,status,paid,paid_partner_id,invoice,notes,currency,total,cost,created_by) VALUES (?,?,?,?,?,'nuevo',?,?,?,?,?,?,?,?)",
+        "INSERT INTO orders(id,number,customer_id,date,delivery,status,paid,paid_partner_id,invoice,notes,currency,shipping_carrier,shipping_amount,total,cost,created_by) VALUES (?,?,?,?,?,'nuevo',?,?,?,?,?,?,?,?,?,?)",
         id,
         number,
         customer,
@@ -1260,6 +1299,8 @@ export async function saveOrder(
         invoice,
         notes,
         currency,
+        shippingCarrier,
+        shippingAmount,
         total,
         cost,
         actor.id,
@@ -1370,6 +1411,29 @@ export async function patchOrder(
     const result = await stmt(
       'UPDATE orders SET invoice=?,version=? WHERE id=?',
       invoice,
+      version,
+      id,
+    ).run();
+    if (!result.meta.changes) throw new Error('Pedido no disponible.');
+    return { ok: true };
+  }
+  if (b.shipping_carrier !== undefined || b.shipping_amount !== undefined) {
+    const shippingCarrier =
+      b.shipping_carrier != null && String(b.shipping_carrier).trim()
+        ? choice(b.shipping_carrier, ['DHL', 'FedEx'], 'Carrier')
+        : '';
+    const shippingAmount = shippingCarrier
+      ? integer(
+          b.shipping_amount !== undefined
+            ? b.shipping_amount
+            : existing.shipping_amount,
+          'Costo de envío',
+        )
+      : 0;
+    const result = await stmt(
+      'UPDATE orders SET shipping_carrier=?,shipping_amount=?,version=? WHERE id=?',
+      shippingCarrier,
+      shippingAmount,
       version,
       id,
     ).run();

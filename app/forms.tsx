@@ -1300,13 +1300,58 @@ function formatOrderDate(value: string) {
   return `${day}/${month}/${year}`;
 }
 
-function itemDescription(item: Item, product?: Product) {
+function itemDescription(
+  item: Item,
+  product?: Product,
+  lang: 'es' | 'en' = 'es',
+) {
   const configured = product
-    ? describeConfigured(product, item.selections.config)
+    ? describeConfigured(product, item.selections.config, lang)
     : '';
   if (configured) return configured;
-  const extras = item.selections.options.map((option) => option.name);
-  return extras.length ? [item.name, ...extras].join('\n') : item.name;
+  const extras = item.selections.options.map((option) =>
+    lang === 'en' ? productNameEn(option.name) : option.name,
+  );
+  const name =
+    lang === 'en' ? productNameEn(item.name, product) : item.name;
+  return extras.length ? [name, ...extras].join('\n') : name;
+}
+
+/** Phrase-level EN for SKU / accessory names on English quotes. */
+function productNameEn(name: string, product?: Product) {
+  const category = product?.category || '';
+  const known: Record<string, string> = {
+    Casco: 'Helmet',
+    Montura: 'Saddle',
+    Rodillera: 'Knee pad',
+    Bota: 'Boot',
+    Botas: 'Boots',
+  };
+  if (known[name]) return known[name];
+  if (known[category] && name === category) return known[category];
+
+  // Longest phrases first so "sobrecincha" / "cabezada completa" win over shorter stems.
+  const phrases: [RegExp, string][] = [
+    [/cabezada completa/gi, 'Complete bridle set'],
+    [/sobrecinchas?/gi, 'Overgirth'],
+    [/sobreinchas?/gi, 'Overgirth'],
+    [/estriberas/gi, 'Stirrup leathers'],
+    [/riendillas/gi, 'Running reins'],
+    [/cabezada/gi, 'Complete bridle set'],
+    [/pechera/gi, 'Breastplate'],
+    [/pretal/gi, 'Breastplate'],
+    [/cincha/gi, 'Girth'],
+    [/estribos/gi, 'Stirrups'],
+    [/desmontable/gi, 'detachable'],
+    [/tiradores/gi, 'straps'],
+    [/\bmarr[oó]n\b/gi, 'brown'],
+    [/\bnegro\b/gi, 'black'],
+  ];
+  let next = name;
+  for (const [pattern, replacement] of phrases) {
+    next = next.replace(pattern, replacement);
+  }
+  return next;
 }
 
 function itemPhoto(
@@ -1443,7 +1488,7 @@ export function OrderDetail({
             );
             return {
               id: item.id,
-              title: itemDescription(item, product),
+              title: itemDescription(item, product, 'es'),
               quantity: item.quantity,
               unitPrice: item.unit_price,
               total: item.total,
@@ -1452,6 +1497,30 @@ export function OrderDetail({
             };
           }),
         })}
+        linesForLang={(lang) =>
+          record.items.map((item) => {
+            const product = data.products.find(
+              (p) => p.id === item.product_id,
+            );
+            return {
+              id: item.id,
+              title: itemDescription(item, product, lang),
+              quantity: item.quantity,
+              unitPrice: item.unit_price,
+              total: item.total,
+              discount: item.discount,
+              photo: itemPhoto(item, product, data.movements),
+            };
+          })
+        }
+        shippingCarrier={
+          record.shipping_carrier === 'FedEx' ||
+          record.shipping_carrier === 'DHL'
+            ? record.shipping_carrier
+            : ''
+        }
+        shippingAmount={record.shipping_amount || 0}
+        onShippingChange={(body) => onPatch(body)}
         onBack={() => onCloseQuote?.()}
       />
     );
@@ -1536,6 +1605,14 @@ export function OrderDetail({
                 {formatMoney(record.total, data.currency)}
               </dd>
             </div>
+            {record.shipping_carrier ? (
+              <div>
+                <dt>Envío · {record.shipping_carrier}</dt>
+                <dd className="amount">
+                  {formatMoney(record.shipping_amount || 0, data.currency)}
+                </dd>
+              </div>
+            ) : null}
             {!orderIsQuote(record.status) ? (
               <>
                 <div>
@@ -1978,6 +2055,8 @@ export function OrderForm({
       '',
     invoice: !!record?.invoice,
     notes: record?.notes || '',
+    shipping_carrier: record?.shipping_carrier || '',
+    shipping_amount: decimal(record?.shipping_amount || 0),
   });
   const activePartners = data.partners.filter((partner) => !partner.archived);
   const [newCustomer, setNewCustomer] = useState({
@@ -2309,6 +2388,10 @@ export function OrderForm({
               : parseDecimal(f.paid) > 0
                 ? f.paid_partner_id
                 : '',
+            shipping_carrier: f.shipping_carrier,
+            shipping_amount: f.shipping_carrier
+              ? parseDecimal(f.shipping_amount)
+              : 0,
             id: record?.id,
             version: record?.version,
             items: items.map((i) => ({
@@ -2925,6 +3008,50 @@ export function OrderForm({
               </div>
             </>
           ) : null}
+          <div className="field">
+            <Check
+              label="Incluir cargos de envío"
+              checked={!!f.shipping_carrier}
+              onChange={(checked) =>
+                set({
+                  ...f,
+                  shipping_carrier: checked ? f.shipping_carrier || 'DHL' : '',
+                  shipping_amount: checked
+                    ? f.shipping_amount || decimal(0)
+                    : decimal(0),
+                })
+              }
+            />
+          </div>
+          {f.shipping_carrier ? (
+            <>
+              <Field label="Carrier">
+                <select
+                  aria-label="Carrier"
+                  value={f.shipping_carrier}
+                  onChange={(e) =>
+                    set({
+                      ...f,
+                      shipping_carrier:
+                        e.target.value === 'FedEx' ? 'FedEx' : 'DHL',
+                    })
+                  }
+                >
+                  <option value="DHL">DHL</option>
+                  <option value="FedEx">FedEx</option>
+                </select>
+              </Field>
+              <Field label="Costo de envío">
+                <input
+                  inputMode="decimal"
+                  value={f.shipping_amount}
+                  onChange={(e) =>
+                    set({ ...f, shipping_amount: e.target.value })
+                  }
+                />
+              </Field>
+            </>
+          ) : null}
           <Field label="Notas del pedido" wide>
             <textarea
               value={f.notes}
@@ -2943,6 +3070,23 @@ export function OrderForm({
         <span>
           Total del pedido <strong>{formatMoney(total, data.currency)}</strong>
         </span>
+        {f.shipping_carrier ? (
+          <span>
+            Envío {f.shipping_carrier}{' '}
+            <b>
+              {formatMoney(
+                (() => {
+                  try {
+                    return parseDecimal(f.shipping_amount);
+                  } catch {
+                    return 0;
+                  }
+                })(),
+                data.currency,
+              )}
+            </b>
+          </span>
+        ) : null}
       </div>
       <p className="hint">
         El descuento del ítem se aplica después del precio elegido y sus
