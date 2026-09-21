@@ -29,6 +29,7 @@ import {
   Check,
   Pencil,
   LogOut,
+  FileText,
 } from 'lucide-react';
 import {
   SidebarProvider,
@@ -125,6 +126,7 @@ import {
   type Product,
   type Order,
   type Movement,
+  type Partner,
 } from '@/lib/types';
 
 const nav: { id: string; title: string; short: string; icon: LucideIcon }[] = [
@@ -159,7 +161,7 @@ const nav: { id: string; title: string; short: string; icon: LucideIcon }[] = [
 type Panel =
   | { type: 'supplier' | 'customer'; record?: Contact }
   | { type: 'product'; record?: Product; editing?: boolean }
-  | { type: 'order'; record?: Order; editing?: boolean }
+  | { type: 'order'; record?: Order; editing?: boolean; quote?: boolean }
   | {
       type: 'stock';
       record: Product;
@@ -184,7 +186,7 @@ function panelIdentity(panel: Panel | null) {
     return `inventory:${panel.record.id}:${panel.itemKey || 'list'}`;
   }
   if (panel.type === 'order') {
-    return `order:${panel.record?.id || 'new'}:${panel.editing ? 'edit' : 'view'}`;
+    return `order:${panel.record?.id || 'new'}:${panel.editing ? 'edit' : panel.quote ? 'quote' : 'view'}`;
   }
   return panel.type;
 }
@@ -473,6 +475,7 @@ function OrderCard({
   onStatus,
   onPay,
   onDelivery,
+  partners,
 }: {
   order: Order;
   customerName: string;
@@ -482,8 +485,13 @@ function OrderCard({
   deleteButton?: ReactNode;
   onOpen: () => void;
   onStatus: (status: string) => Promise<void>;
-  onPay: (pay: string, paid?: number) => Promise<void>;
+  onPay: (
+    pay: string,
+    paid?: number,
+    paid_partner_id?: string,
+  ) => Promise<void>;
   onDelivery: (delivery: string) => Promise<void>;
+  partners: Partner[];
 }) {
   const units = orderUnits(order);
   return (
@@ -526,11 +534,15 @@ function OrderCard({
         <StatusMenu
           value={order.status}
           title="Estado del pedido"
-          description="El stock reservado se descuenta cuando el pedido está entregado."
+          description="Las cotizaciones no reservan stock ni entran en cuenta. El stock reservado se descuenta cuando el pedido está entregado."
           options={[...ORDER_STATUSES]}
           onPick={onStatus}
         />
-        <OrderPayMenu order={order} onChange={onPay} />
+        <OrderPayMenu
+          order={order}
+          partners={partners}
+          onChange={onPay}
+        />
         <OrderDeliveryMenu delivery={order.delivery} onChange={onDelivery} />
       </div>
       <dl className={`record-card-facts${compact ? ' facts-compact' : ''}`}>
@@ -1158,13 +1170,16 @@ export default function CRM({
                       <StatusMenu
                         value={o.status}
                         title="Estado del pedido"
-                        description="El stock reservado se descuenta cuando el pedido está entregado."
+                        description="Las cotizaciones no reservan stock ni entran en cuenta. El stock reservado se descuenta cuando el pedido está entregado."
                         options={[...ORDER_STATUSES]}
                         onPick={(status) => patchOrder(o, { status })}
                       />
                       <OrderPayMenu
                         order={o}
-                        onChange={(pay, paid) => patchOrder(o, { pay, paid })}
+                        partners={data?.partners || []}
+                        onChange={(pay, paid, paid_partner_id) =>
+                          patchOrder(o, { pay, paid, paid_partner_id })
+                        }
                       />
                       <OrderDeliveryMenu
                         delivery={o.delivery}
@@ -1219,8 +1234,11 @@ export default function CRM({
               deleteButton={o.deleted ? null : renderDeleteOrderButton(o)}
               onOpen={() => P({ type: 'order', record: o })}
               onStatus={(status) => patchOrder(o, { status })}
-              onPay={(pay, paid) => patchOrder(o, { pay, paid })}
+              onPay={(pay, paid, paid_partner_id) =>
+                patchOrder(o, { pay, paid, paid_partner_id })
+              }
               onDelivery={(delivery) => patchOrder(o, { delivery })}
+              partners={data?.partners || []}
             />
           ))}
         </div>
@@ -1510,10 +1528,13 @@ export default function CRM({
                         archiveButton={null}
                         onOpen={() => P({ type: 'order', record: o })}
                         onStatus={(status) => patchOrder(o, { status })}
-                        onPay={(pay, paid) => patchOrder(o, { pay, paid })}
+                        onPay={(pay, paid, paid_partner_id) =>
+                          patchOrder(o, { pay, paid, paid_partner_id })
+                        }
                         onDelivery={(delivery) =>
                           patchOrder(o, { delivery })
                         }
+                        partners={data.partners}
                       />
                     )}
                   />
@@ -1564,6 +1585,7 @@ export default function CRM({
                 save={save}
                 view={accountView}
                 initialYear={accountYear}
+                onOpenOrder={(order) => P({ type: 'order', record: order })}
               />
             ) : module === 'tareas' ? (
               <section className="panel records">
@@ -2234,50 +2256,91 @@ export default function CRM({
               ) : panel?.type === 'order' && panel.record && !panel.editing ? (
                 <div className="stock-dialog-heading order-dialog-heading">
                   <div>
-                    <p className="dialog-kicker">Pedido para:</p>
+                    <p className="dialog-kicker">
+                      {panel.quote ? 'Ficha cotización' : 'Pedido para:'}
+                    </p>
                     <DialogTitle>{panelTitle}</DialogTitle>
                     <DialogDescription className="sr-only">
-                      Pedido para {panelTitle}.
+                      {panel.quote
+                        ? `Ficha cotización de ${panelTitle}.`
+                        : `Pedido para ${panelTitle}.`}
                     </DialogDescription>
                   </div>
-                  {orderIsLocked(
-                    (
-                      data?.orders.find((o) => o.id === panel.record?.id) ??
-                      panel.record
-                    ).status,
-                  ) ? (
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => {
-                        const record =
-                          data?.orders.find((o) => o.id === panel.record?.id) ??
-                          panel.record;
-                        if (record)
-                          void save({
-                            action: 'reopen',
-                            id: record.id,
-                            version: record.version,
-                          });
-                      }}
-                    >
-                      Reabrir pedido
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="primary"
-                      onClick={() => {
-                        const record =
-                          data?.orders.find((o) => o.id === panel.record?.id) ??
-                          panel.record;
-                        if (record)
-                          P({ type: 'order', record, editing: true });
-                      }}
-                    >
-                      <Pencil size={16} /> Editar
-                    </button>
-                  )}
+                  <div className="order-dialog-actions">
+                    {panel.quote ? (
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          const record =
+                            data?.orders.find(
+                              (o) => o.id === panel.record?.id,
+                            ) ?? panel.record;
+                          if (record) P({ type: 'order', record });
+                        }}
+                      >
+                        Volver al pedido
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => {
+                            const record =
+                              data?.orders.find(
+                                (o) => o.id === panel.record?.id,
+                              ) ?? panel.record;
+                            if (record)
+                              P({ type: 'order', record, quote: true });
+                          }}
+                        >
+                          <FileText size={16} /> Ficha cotización
+                        </button>
+                        {orderIsLocked(
+                          (
+                            data?.orders.find(
+                              (o) => o.id === panel.record?.id,
+                            ) ?? panel.record
+                          ).status,
+                        ) ? (
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => {
+                              const record =
+                                data?.orders.find(
+                                  (o) => o.id === panel.record?.id,
+                                ) ?? panel.record;
+                              if (record)
+                                void save({
+                                  action: 'reopen',
+                                  id: record.id,
+                                  version: record.version,
+                                });
+                            }}
+                          >
+                            Reabrir pedido
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="primary"
+                            onClick={() => {
+                              const record =
+                                data?.orders.find(
+                                  (o) => o.id === panel.record?.id,
+                                ) ?? panel.record;
+                              if (record)
+                                P({ type: 'order', record, editing: true });
+                            }}
+                          >
+                            <Pencil size={16} /> Editar
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <>
@@ -2385,12 +2448,12 @@ export default function CRM({
                       panel.record
                     }
                     data={data}
-                    onEdit={() => {
+                    quote={!!panel.quote}
+                    onCloseQuote={() => {
                       const record =
                         data.orders.find((o) => o.id === panel.record?.id) ??
                         panel.record;
-                      if (record)
-                        P({ type: 'order', record, editing: true });
+                      if (record) P({ type: 'order', record });
                     }}
                     onPatch={(body) => {
                       const record =

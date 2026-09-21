@@ -42,7 +42,7 @@ export type MonthlyResult = {
 export type LedgerEntry = {
   date: string;
   label: string;
-  kind: 'ganancia' | 'cashout' | 'movimiento';
+  kind: 'ganancia' | 'cobro' | 'cashout' | 'movimiento';
   amount: number;
   currency?: string;
   partner?: string;
@@ -51,6 +51,7 @@ export type LedgerEntry = {
   receipt?: string;
   fx_rate?: number;
   amount_ars?: number;
+  order_id?: string;
   balance: number;
 };
 
@@ -69,7 +70,11 @@ export function monthAnchorDate(key: MonthKey) {
 
 export function collectedOrders(orders: Order[]) {
   return orders.filter(
-    (order) => !order.archived && !order.deleted && order.paid > 0,
+    (order) =>
+      !order.archived &&
+      !order.deleted &&
+      order.paid > 0 &&
+      order.status !== 'cotización',
   );
 }
 
@@ -350,27 +355,32 @@ export function totalsOf(
 }
 
 export function accountLedger(
-  results: MonthlyResult[],
+  _results: MonthlyResult[],
   cashouts: PartnerCashout[],
   partners: Partner[],
   entries: AccountEntry[] = [],
   boardCurrency = 'USD',
   supplierNames: Map<string, string> = new Map(),
+  orders: Order[] = [],
+  customerNames: Map<string, string> = new Map(),
 ): LedgerEntry[] {
   const names = new Map(partners.map((partner) => [partner.id, partner.name]));
+  const orderNumbers = new Map(orders.map((order) => [order.id, order.number]));
+  const cobros = collectedOrders(orders).map((order) => {
+    const customer = customerNames.get(order.customer_id) || 'Sin cliente';
+    return {
+      date: order.date,
+      label: `Cobro · ${order.number}`,
+      kind: 'cobro' as const,
+      amount: order.paid,
+      currency: order.currency || boardCurrency,
+      partner: names.get(order.paid_partner_id) || undefined,
+      notes: customer,
+      order_id: order.id,
+    };
+  });
   const raw: Omit<LedgerEntry, 'balance'>[] = [
-    ...results
-      .filter((row) => row.profit || row.billed || row.mkt || row.commissions)
-      .map((row) => ({
-        date: monthAnchorDate(row.month),
-        label: `Ganancia ${row.label} ${row.year}`,
-        kind: 'ganancia' as const,
-        amount: row.profit,
-        currency: boardCurrency,
-        notes: row.orders
-          ? `${row.orders} pedido${row.orders === 1 ? '' : 's'} cobrado${row.orders === 1 ? '' : 's'}`
-          : '',
-      })),
+    ...cobros,
     ...cashouts.map((cashout) => ({
       date: cashout.date,
       label: 'Cashout',
@@ -381,25 +391,31 @@ export function accountLedger(
       actor: names.get(cashout.created_by || '') || undefined,
       notes: cashout.notes,
     })),
-    ...entries.map((entry) => ({
-      date: entry.date,
-      label: conceptLabel(
-        entry.concept,
-        entry.detail,
-        supplierNames.get(entry.supplier_id || '') || '',
-      ),
-      kind: 'movimiento' as const,
-      amount: -entry.amount,
-      currency: entry.currency,
-      partner: names.get(entry.partner_id),
-      actor: names.get(entry.created_by || '') || undefined,
-      notes: '',
-      receipt: entry.receipt || '',
-      fx_rate: entry.fx_rate || 0,
-      amount_ars: entry.amount_ars || 0,
-    })),
+    ...entries.map((entry) => {
+      const orderNumber = entry.order_id
+        ? orderNumbers.get(entry.order_id)
+        : '';
+      return {
+        date: entry.date,
+        label: conceptLabel(
+          entry.concept,
+          entry.detail,
+          supplierNames.get(entry.supplier_id || '') || '',
+        ),
+        kind: 'movimiento' as const,
+        amount: -entry.amount,
+        currency: entry.currency,
+        partner: names.get(entry.partner_id),
+        actor: names.get(entry.created_by || '') || undefined,
+        notes: orderNumber ? `Pedido ${orderNumber}` : '',
+        receipt: entry.receipt || '',
+        fx_rate: entry.fx_rate || 0,
+        amount_ars: entry.amount_ars || 0,
+        order_id: entry.order_id || undefined,
+      };
+    }),
   ];
-  const kindRank = { ganancia: 0, movimiento: 1, cashout: 2 };
+  const kindRank = { cobro: 0, ganancia: 1, movimiento: 2, cashout: 3 };
   raw.sort((a, b) => {
     const byDate = a.date.localeCompare(b.date);
     if (byDate) return byDate;

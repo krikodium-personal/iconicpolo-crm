@@ -67,6 +67,7 @@ export const orders = sqliteTable(
     delivery: text('delivery').notNull().default(''),
     status: text('status').notNull().default('nuevo'),
     paid: integer('paid').notNull().default(0),
+    paidPartnerId: text('paid_partner_id').notNull().default(''),
     invoice: integer('invoice').notNull().default(0),
     notes: text('notes').notNull().default(''),
     currency: text('currency').notNull().default('ARS'),
@@ -171,6 +172,7 @@ export const accountEntries = sqliteTable(
       .notNull()
       .references(() => partners.id),
     supplierId: text('supplier_id').notNull().default(''),
+    orderId: text('order_id').notNull().default(''),
     receipt: text('receipt').notNull().default(''),
     amount: integer('amount').notNull(),
     currency: text('currency').notNull(),

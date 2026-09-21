@@ -504,6 +504,21 @@ test('delivered orders release the reservation and closed ones keep it', () => {
           id: 'o1',
           number: 'IC-1',
           archived: 0,
+          status: 'cotización',
+          items: [item],
+        },
+      ],
+      products,
+    ).length,
+    0,
+  );
+  assert.equal(
+    reservedHolds(
+      [
+        {
+          id: 'o1',
+          number: 'IC-1',
+          archived: 0,
           deleted: 1,
           status: 'abierto',
           items: [item],

@@ -150,7 +150,7 @@ export async function ensureAccountTables() {
       'CREATE INDEX IF NOT EXISTS idx_cashouts_partner_date ON partner_cashouts (partner_id, date)',
     ),
     d.prepare(
-      "CREATE TABLE IF NOT EXISTS account_entries (id text PRIMARY KEY NOT NULL, concept text NOT NULL, detail text NOT NULL DEFAULT '', partner_id text NOT NULL, supplier_id text NOT NULL DEFAULT '', receipt text NOT NULL DEFAULT '', amount integer NOT NULL, currency text NOT NULL, fx_rate integer NOT NULL DEFAULT 0, amount_ars integer NOT NULL DEFAULT 0, date text NOT NULL, created_at text NOT NULL, created_by text NOT NULL DEFAULT '', FOREIGN KEY (partner_id) REFERENCES partners(id))",
+      "CREATE TABLE IF NOT EXISTS account_entries (id text PRIMARY KEY NOT NULL, concept text NOT NULL, detail text NOT NULL DEFAULT '', partner_id text NOT NULL, supplier_id text NOT NULL DEFAULT '', order_id text NOT NULL DEFAULT '', receipt text NOT NULL DEFAULT '', amount integer NOT NULL, currency text NOT NULL, fx_rate integer NOT NULL DEFAULT 0, amount_ars integer NOT NULL DEFAULT 0, date text NOT NULL, created_at text NOT NULL, created_by text NOT NULL DEFAULT '', FOREIGN KEY (partner_id) REFERENCES partners(id))",
     ),
     d.prepare(
       'CREATE INDEX IF NOT EXISTS idx_account_entries_date ON account_entries (date)',
@@ -166,6 +166,17 @@ export async function ensureAccountTables() {
     ).run();
   }
   await ensureActorColumns();
+  const orderNames = await columnNames('orders');
+  const orderAlters = [
+    await addColumn(
+      'orders',
+      orderNames,
+      'paid_partner_id',
+      "paid_partner_id text NOT NULL DEFAULT ''",
+    ),
+  ].filter(Boolean);
+  if (orderAlters.length)
+    await d.batch(orderAlters as ReturnType<typeof stmt>[]);
   const entryNames = await columnNames('account_entries');
   const entryAlters = [
     await addColumn(
@@ -191,6 +202,12 @@ export async function ensureAccountTables() {
       entryNames,
       'amount_ars',
       'amount_ars integer NOT NULL DEFAULT 0',
+    ),
+    await addColumn(
+      'account_entries',
+      entryNames,
+      'order_id',
+      "order_id text NOT NULL DEFAULT ''",
     ),
   ].filter(Boolean);
   if (entryAlters.length)
@@ -442,7 +459,7 @@ async function reservedHoldsForProducts(
     `SELECT o.id AS order_id, o.number AS order_number, i.product_id, i.quantity, i.selections
      FROM order_items i
      JOIN orders o ON o.id = i.order_id
-     WHERE o.archived=0 AND o.deleted=0 AND o.status != 'entregado' AND o.id != ?
+     WHERE o.archived=0 AND o.deleted=0 AND o.status NOT IN ('entregado','cotización') AND o.id != ?
      AND i.product_id IN (${unique.map(() => '?').join(',')})`,
     exceptOrderId,
     ...unique,
@@ -705,7 +722,14 @@ export async function allData() {
     }),
     expenses: expenses.results as AccountExpense[],
     cashouts: cashouts.results as PartnerCashout[],
-    entries: entries.results as AccountEntry[],
+    entries: (entries.results as AccountEntry[]).map((row) => ({
+      ...row,
+      supplier_id: typeof row.supplier_id === 'string' ? row.supplier_id : '',
+      order_id: typeof row.order_id === 'string' ? row.order_id : '',
+      receipt: typeof row.receipt === 'string' ? row.receipt : '',
+      fx_rate: Number(row.fx_rate) || 0,
+      amount_ars: Number(row.amount_ars) || 0,
+    })),
     currency: s.results[0] ? obj(s.results[0]).currency : 'ARS',
   };
 }
@@ -1174,6 +1198,17 @@ export async function saveOrder(
   const cost = integer(items.reduce((s, i) => s + i.cost, 0));
   const paid = integer(b.paid, 'Cobrado');
   if (paid > total) throw new Error('El cobro no puede superar el total.');
+  const paidPartnerId =
+    paid > 0
+      ? str(b.paid_partner_id, 'Socio que recibió el cobro', true)
+      : '';
+  if (paid > 0) {
+    const partner = await stmt(
+      'SELECT id FROM partners WHERE id=? AND archived=0',
+      paidPartnerId,
+    ).first();
+    if (!partner) throw new Error('Elegí un socio activo que recibió el cobro.');
+  }
   const orderDate = date(b.date, true);
   const delivery = date(b.delivery);
   if (delivery && delivery < orderDate)
@@ -1196,11 +1231,12 @@ export async function saveOrder(
   if (existing) {
     statements.push(
       stmt(
-        'UPDATE orders SET customer_id=?,date=?,delivery=?,paid=?,invoice=?,notes=?,total=?,cost=?,version=? WHERE id=?',
+        'UPDATE orders SET customer_id=?,date=?,delivery=?,paid=?,paid_partner_id=?,invoice=?,notes=?,total=?,cost=?,version=? WHERE id=?',
         customer,
         orderDate,
         delivery,
         paid,
+        paidPartnerId,
         invoice,
         notes,
         total,
@@ -1213,13 +1249,14 @@ export async function saveOrder(
   } else {
     statements.push(
       stmt(
-        "INSERT INTO orders(id,number,customer_id,date,delivery,status,paid,invoice,notes,currency,total,cost,created_by) VALUES (?,?,?,?,?,'nuevo',?,?,?,?,?,?,?)",
+        "INSERT INTO orders(id,number,customer_id,date,delivery,status,paid,paid_partner_id,invoice,notes,currency,total,cost,created_by) VALUES (?,?,?,?,?,'nuevo',?,?,?,?,?,?,?,?)",
         id,
         number,
         customer,
         orderDate,
         delivery,
         paid,
+        paidPartnerId,
         invoice,
         notes,
         currency,
@@ -1354,9 +1391,21 @@ export async function patchOrder(
     throw new Error('El pago parcial tiene que ser mayor a 0 y menor al total.');
   if (paid > existing.total)
     throw new Error('El cobro no puede superar el total.');
+  const paidPartnerId =
+    paid > 0
+      ? str(b.paid_partner_id || existing.paid_partner_id, 'Socio que recibió el cobro', true)
+      : '';
+  if (paid > 0) {
+    const partner = await stmt(
+      'SELECT id FROM partners WHERE id=? AND archived=0',
+      paidPartnerId,
+    ).first();
+    if (!partner) throw new Error('Elegí un socio activo que recibió el cobro.');
+  }
   const result = await stmt(
-    'UPDATE orders SET paid=?,version=? WHERE id=?',
+    'UPDATE orders SET paid=?,paid_partner_id=?,version=? WHERE id=?',
     paid,
+    paidPartnerId,
     version,
     id,
   ).run();
@@ -1892,6 +1941,15 @@ export async function mutate(
         throw new Error('Socio no disponible.');
       const supplierId =
         concept === 'pago_proveedor' ? await requireSupplier(b.supplier_id) : '';
+      let orderId = '';
+      if (concept === 'pago_proveedor' && b.order_id) {
+        orderId = str(b.order_id, 'Pedido', true);
+        const order = await stmt(
+          'SELECT id FROM orders WHERE id=? AND deleted=0',
+          orderId,
+        ).first();
+        if (!order) throw new Error('Pedido no disponible.');
+      }
       const amount = integer(b.amount, 'Monto');
       if (!amount) throw new Error('Monto: debe ser mayor a cero.');
       const currency = choice(b.currency, ['ARS', 'USD'], 'Moneda');
@@ -1901,12 +1959,13 @@ export async function mutate(
       const amountArs =
         currency === 'USD' ? arsFromUsd(amount, fxRate) : amount;
       await stmt(
-        'INSERT INTO account_entries(id,concept,detail,partner_id,supplier_id,receipt,amount,currency,fx_rate,amount_ars,date,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO account_entries(id,concept,detail,partner_id,supplier_id,order_id,receipt,amount,currency,fx_rate,amount_ars,date,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         crypto.randomUUID(),
         concept,
         detail,
         partnerId,
         supplierId,
+        orderId,
         receipt,
         amount,
         currency,

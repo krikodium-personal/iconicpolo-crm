@@ -21,11 +21,13 @@ import {
   parsePercent,
   percent,
   formatMoney,
+  formatRate,
   margin,
   markup,
   lineTotals,
   promoPrice,
   friendsPrice,
+  arsFromUsd,
 } from '@/lib/money';
 import {
   SHARE_TOTAL,
@@ -72,7 +74,15 @@ import {
   OrderPayMenu,
   OrderDeliveryMenu,
   ProductPhoto,
+  DateCalendar,
 } from './ui';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Plus,
   Trash2,
@@ -82,7 +92,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { buildFicha } from '@/lib/ficha';
-import { FichaView } from './ficha';
+import { FichaView, CotizacionFichaView, buildCotizacionData } from './ficha';
 import { whatsapp, whatsappGroup } from '@/lib/whatsapp';
 export type Save = (body: Record<string, unknown>) => Promise<void>;
 export { whatsapp, whatsappGroup };
@@ -1378,21 +1388,27 @@ function draftPhoto(
 export function OrderDetail({
   record,
   data,
-  onEdit,
   onPatch,
   save,
+  quote = false,
+  onCloseQuote,
 }: {
   record: Order;
   data: Data;
-  onEdit: () => void;
   onPatch: (body: Record<string, unknown>) => Promise<void>;
   save: Save;
+  quote?: boolean;
+  onCloseQuote?: () => void;
 }) {
   const [error, E] = useState('');
   const [fichaItem, setFichaItem] = useState<Item | null>(null);
   const closed = orderIsLocked(record.status);
   const units = record.items.reduce((total, item) => total + item.quantity, 0);
   const due = Math.max(0, record.total - record.paid);
+  const paidPartner =
+    record.paid > 0
+      ? data.partners.find((partner) => partner.id === record.paid_partner_id)
+      : undefined;
   if (fichaItem) {
     const product = data.products.find((p) => p.id === fichaItem.product_id);
     const supplier = data.contacts.find(
@@ -1413,15 +1429,40 @@ export function OrderDetail({
       />
     );
   }
+  if (quote) {
+    const customer = data.contacts.find((c) => c.id === record.customer_id);
+    return (
+      <CotizacionFichaView
+        quote={buildCotizacionData({
+          order: record,
+          customerName: customer?.name || '',
+          lines: record.items.map((item) => {
+            const product = data.products.find(
+              (p) => p.id === item.product_id,
+            );
+            return {
+              id: item.id,
+              title: itemDescription(item, product),
+              quantity: item.quantity,
+              unitPrice: item.unit_price,
+              total: item.total,
+              discount: item.discount,
+              photo: itemPhoto(item, product, data.movements),
+            };
+          }),
+        })}
+        onBack={() => onCloseQuote?.()}
+      />
+    );
+  }
   return (
     <div className="pdp">
       <ErrorBox message={error} />
-      {!closed ? (
-        <div className="pdp-actions">
-          <button className="primary" type="button" onClick={onEdit}>
-            <Pencil size={16} /> Editar
-          </button>
-        </div>
+      {record.status === 'cotización' ? (
+        <p className="hint">
+          Esta cotización no reserva stock ni entra en el estado de cuenta.
+          Cuando el cliente confirme, pasala a Nuevo.
+        </p>
       ) : null}
       {closed ? (
         <p className="hint">
@@ -1446,13 +1487,16 @@ export function OrderDetail({
             <StatusMenu
               value={record.status}
               title="Estado del pedido"
-              description="El stock reservado se descuenta cuando el pedido está entregado."
+              description="Las cotizaciones no reservan stock ni entran en cuenta. El stock reservado se descuenta cuando el pedido está entregado."
               options={[...ORDER_STATUSES]}
               onPick={(status) => onPatch({ status })}
             />
             <OrderPayMenu
               order={record}
-              onChange={(pay, paid) => onPatch({ pay, paid })}
+              partners={data.partners}
+              onChange={(pay, paid, paid_partner_id) =>
+                onPatch({ pay, paid, paid_partner_id })
+              }
             />
             <OrderDeliveryMenu
               delivery={record.delivery}
@@ -1492,6 +1536,10 @@ export function OrderDetail({
               <dd className="amount">
                 {formatMoney(record.paid, data.currency)}
               </dd>
+            </div>
+            <div>
+              <dt>Cobró</dt>
+              <dd>{paidPartner?.name || (record.paid > 0 ? 'Sin socio' : '—')}</dd>
             </div>
             <div>
               <dt>Saldo</dt>
@@ -1586,6 +1634,7 @@ export function OrderDetail({
           </div>
         </div>
       </section>
+      <OrderSupplierPayments order={record} data={data} save={save} />
       {record.notes.trim() ? (
         <section className="form-section">
           <h3>Notas</h3>
@@ -1593,6 +1642,300 @@ export function OrderDetail({
         </section>
       ) : null}
     </div>
+  );
+}
+
+function previewArsAmount(amount: string, rate: string) {
+  try {
+    if (!amount.trim() || !rate.trim()) return null;
+    return arsFromUsd(parseDecimal(amount), parseDecimal(rate));
+  } catch {
+    return null;
+  }
+}
+
+function OrderSupplierPayments({
+  order,
+  data,
+  save,
+}: {
+  order: Order;
+  data: Data;
+  save: Save;
+}) {
+  const partners = data.partners.filter((partner) => !partner.archived);
+  const suppliersFromOrder = Array.from(
+    new Set(
+      order.items
+        .map((item) => item.selections.supplier_id)
+        .filter((id): id is string => !!id),
+    ),
+  );
+  const allSuppliers = data.contacts.filter(
+    (contact) => contact.kind === 'supplier' && !contact.archived,
+  );
+  const suppliers = allSuppliers.filter(
+    (supplier) =>
+      !suppliersFromOrder.length || suppliersFromOrder.includes(supplier.id),
+  );
+  const supplierChoices = suppliers.length ? suppliers : allSuppliers;
+  const payments = (data.entries || []).filter(
+    (entry) =>
+      entry.concept === 'pago_proveedor' && entry.order_id === order.id,
+  );
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [form, setForm] = useState({
+    partner_id: partners[0]?.id || '',
+    supplier_id: supplierChoices[0]?.id || '',
+    detail: '',
+    receipt: '',
+    amount: '',
+    currency: data.currency === 'ARS' ? 'ARS' : 'USD',
+    fx_rate: '',
+    date: today(),
+  });
+  const arsPreview =
+    form.currency === 'USD'
+      ? previewArsAmount(form.amount, form.fx_rate)
+      : null;
+  function openForm() {
+    setError('');
+    setForm({
+      partner_id: partners[0]?.id || '',
+      supplier_id: supplierChoices[0]?.id || '',
+      detail: '',
+      receipt: '',
+      amount: '',
+      currency: data.currency === 'ARS' ? 'ARS' : 'USD',
+      fx_rate: '',
+      date: today(),
+    });
+    setOpen(true);
+  }
+  return (
+    <section className="form-section">
+      <div className="section-heading">
+        <h3>Pagos a proveedor</h3>
+        <button
+          type="button"
+          className="secondary"
+          disabled={!partners.length || !supplierChoices.length}
+          onClick={openForm}
+        >
+          <Plus size={15} /> pago
+        </button>
+      </div>
+      {!partners.length ? (
+        <p className="hint">
+          Agregá un socio en Configuración para registrar quién pagó.
+        </p>
+      ) : !supplierChoices.length ? (
+        <p className="hint">
+          Agregá un proveedor para registrar el pago desde este pedido.
+        </p>
+      ) : payments.length ? (
+        <ul className="order-supplier-payments">
+          {payments.map((entry) => {
+            const supplier = data.contacts.find(
+              (contact) => contact.id === entry.supplier_id,
+            );
+            const partner = data.partners.find(
+              (row) => row.id === entry.partner_id,
+            );
+            return (
+              <li key={entry.id}>
+                <div className="order-supplier-payment-top">
+                  <b>
+                    {[supplier?.name, entry.detail].filter(Boolean).join(' · ') ||
+                      'Pago proveedor'}
+                  </b>
+                  <span className="money-neg">
+                    {formatMoney(entry.amount, entry.currency)}
+                  </span>
+                </div>
+                <small>
+                  {entry.date}
+                  {partner ? ` · Pagó ${partner.name}` : ''}
+                  {entry.currency === 'USD' && entry.amount_ars
+                    ? ` · ${formatMoney(entry.amount_ars, 'ARS')} · TC ${formatRate(entry.fx_rate || 0)}`
+                    : ''}
+                  {entry.receipt ? ' · factura' : ''}
+                </small>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="hint">
+          Todavía no hay pagos a proveedor vinculados a este pedido. Podés
+          cargarlos acá o desde Estado de cuenta → Movimientos.
+        </p>
+      )}
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setError('');
+        }}
+      >
+        <DialogContent className="crm-dialog crm-dialog-movement max-[767px]:top-0 max-[767px]:left-0 max-[767px]:right-0 max-[767px]:bottom-0 max-[767px]:translate-x-0 max-[767px]:translate-y-0 max-[767px]:w-full max-[767px]:max-w-none max-[767px]:h-dvh max-[767px]:max-h-dvh max-[767px]:rounded-none max-[767px]:animate-none">
+          <DialogHeader>
+            <DialogTitle>Pago a proveedor</DialogTitle>
+            <DialogDescription>
+              Queda vinculado a {order.number} y aparece en los movimientos del
+              estado de cuenta.
+            </DialogDescription>
+          </DialogHeader>
+          <ErrorBox message={error} />
+          <form
+            className="cashout-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              try {
+                if (!form.detail.trim())
+                  throw new Error('Describí el concepto del gasto.');
+                if (!form.supplier_id)
+                  throw new Error('Elegí el proveedor.');
+                if (!form.partner_id)
+                  throw new Error('Elegí quién pagó.');
+                const amount = parseDecimal(form.amount);
+                const fxRate =
+                  form.currency === 'USD' ? parseDecimal(form.fx_rate) : 0;
+                if (form.currency === 'USD' && !fxRate)
+                  throw new Error('Tipo de cambio: debe ser mayor a cero.');
+                setBusy(true);
+                setError('');
+                void save({
+                  action: 'account_entry',
+                  concept: 'pago_proveedor',
+                  detail: form.detail,
+                  partner_id: form.partner_id,
+                  supplier_id: form.supplier_id,
+                  order_id: order.id,
+                  receipt: form.receipt,
+                  amount,
+                  currency: form.currency,
+                  fx_rate: fxRate,
+                  date: form.date,
+                })
+                  .then(() => setOpen(false))
+                  .catch((err) => setError((err as Error).message))
+                  .finally(() => setBusy(false));
+              } catch (err) {
+                setError((err as Error).message);
+              }
+            }}
+          >
+            <div className="form-grid">
+              <Field label="Pagado por *">
+                <Pick
+                  label="Pagado por"
+                  value={form.partner_id}
+                  onChange={(value) => setForm({ ...form, partner_id: value })}
+                  options={partners.map((partner) => ({
+                    value: partner.id,
+                    label: partner.name,
+                  }))}
+                />
+              </Field>
+              <Field label="Proveedor *" wide>
+                <Pick
+                  label="Proveedor"
+                  value={form.supplier_id}
+                  onChange={(value) =>
+                    setForm({ ...form, supplier_id: value })
+                  }
+                  options={supplierChoices.map((supplier) => ({
+                    value: supplier.id,
+                    label: supplier.name,
+                  }))}
+                />
+              </Field>
+              <Field label="Concepto del gasto *" wide>
+                <input
+                  required
+                  value={form.detail}
+                  onChange={(e) =>
+                    setForm({ ...form, detail: e.target.value })
+                  }
+                />
+              </Field>
+              <Field label="Factura o recibo" wide>
+                <Photos
+                  value={form.receipt ? [form.receipt] : []}
+                  onChange={(urls) =>
+                    setForm({ ...form, receipt: urls[0] || '' })
+                  }
+                  onError={setError}
+                  onBusy={setBusy}
+                  max={1}
+                  camera
+                />
+              </Field>
+              <Field label="Monto *" wide>
+                <div className="amount-currency">
+                  <Pick
+                    label="Moneda"
+                    value={form.currency}
+                    onChange={(value) =>
+                      setForm({
+                        ...form,
+                        currency: value,
+                        fx_rate: value === 'USD' ? form.fx_rate : '',
+                      })
+                    }
+                    options={[
+                      { value: 'ARS', label: 'Pesos' },
+                      { value: 'USD', label: 'Dólares' },
+                    ]}
+                  />
+                  <input
+                    inputMode="decimal"
+                    required
+                    value={form.amount}
+                    onChange={(e) =>
+                      setForm({ ...form, amount: e.target.value })
+                    }
+                  />
+                </div>
+              </Field>
+              {form.currency === 'USD' ? (
+                <>
+                  <Field label="Tipo de cambio *" wide>
+                    <input
+                      inputMode="decimal"
+                      required
+                      placeholder="Pesos por dólar"
+                      value={form.fx_rate}
+                      onChange={(e) =>
+                        setForm({ ...form, fx_rate: e.target.value })
+                      }
+                    />
+                  </Field>
+                  <p className="entry-fx-preview">
+                    {arsPreview != null
+                      ? `Equivale a ${formatMoney(arsPreview, 'ARS')}`
+                      : 'Ingresá el monto y el tipo de cambio para ver el equivalente en pesos.'}
+                  </p>
+                </>
+              ) : null}
+              <Field label="Fecha *" wide>
+                <DateCalendar
+                  label="Fecha"
+                  value={form.date}
+                  onChange={(value) => setForm({ ...form, date: value })}
+                />
+              </Field>
+            </div>
+            <button className="primary" disabled={busy}>
+              {busy ? 'Guardando…' : 'Cargar pago'}
+            </button>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </section>
   );
 }
 
@@ -1615,9 +1958,14 @@ export function OrderForm({
     delivery: record?.delivery || '',
     status: record?.status || 'nuevo',
     paid: decimal(record?.paid || 0),
+    paid_partner_id:
+      record?.paid_partner_id ||
+      data.partners.find((partner) => !partner.archived)?.id ||
+      '',
     invoice: !!record?.invoice,
     notes: record?.notes || '',
   });
+  const activePartners = data.partners.filter((partner) => !partner.archived);
   const [newCustomer, setNewCustomer] = useState({
     name: '',
     phone: '',
@@ -1942,6 +2290,8 @@ export function OrderForm({
             customer: creatingCustomer ? newCustomer : undefined,
             invoice: Number(f.invoice),
             paid: parseDecimal(f.paid),
+            paid_partner_id:
+              parseDecimal(f.paid) > 0 ? f.paid_partner_id : '',
             id: record?.id,
             version: record?.version,
             items: items.map((i) => ({
@@ -2525,6 +2875,26 @@ export function OrderForm({
               value={f.paid}
               onChange={(e) => set({ ...f, paid: e.target.value })}
             />
+          </Field>
+          <Field label="Socio que recibió el cobro">
+            <select
+              aria-label="Socio que recibió el cobro"
+              value={f.paid_partner_id}
+              disabled={!activePartners.length}
+              onChange={(e) =>
+                set({ ...f, paid_partner_id: e.target.value })
+              }
+            >
+              {!activePartners.length ? (
+                <option value="">Sin socios activos</option>
+              ) : (
+                activePartners.map((partner) => (
+                  <option key={partner.id} value={partner.id}>
+                    {partner.name}
+                  </option>
+                ))
+              )}
+            </select>
           </Field>
           <div className="field">
             <span>Facturación</span>

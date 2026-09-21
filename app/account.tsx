@@ -30,10 +30,11 @@ import {
   sharesAreComplete,
   totalsOf,
   yearSheet,
+  type LedgerEntry,
   type MonthlyResult,
 } from '@/lib/account';
 import { decimal, formatMoney, formatRate, parseDecimal, arsFromUsd } from '@/lib/money';
-import type { Data } from '@/lib/types';
+import type { Data, Order } from '@/lib/types';
 
 const today = () =>
   new Date().toLocaleDateString('en-CA', {
@@ -166,11 +167,13 @@ export function AccountBoard({
   save,
   view = 'board',
   initialYear,
+  onOpenOrder,
 }: {
   data: Data;
   save: (body: Record<string, unknown>) => Promise<void>;
   view?: 'board' | 'resultados';
   initialYear?: number;
+  onOpenOrder?: (order: Order) => void;
 }) {
   const results = useMemo(
     () => monthlyResults(data.orders, data.expenses),
@@ -218,6 +221,7 @@ export function AccountBoard({
     detail: '',
     partner_id: data.partners.find((partner) => !partner.archived)?.id || '',
     supplier_id: '',
+    order_id: '',
     receipt: '',
     amount: '',
     currency: data.currency === 'ARS' ? 'ARS' : 'USD',
@@ -250,6 +254,45 @@ export function AccountBoard({
       ),
     [data.contacts],
   );
+  const customerNames = useMemo(
+    () =>
+      new Map(
+        data.contacts
+          .filter((contact) => contact.kind === 'customer')
+          .map((contact) => [contact.id, contact.name]),
+      ),
+    [data.contacts],
+  );
+  const ordersById = useMemo(
+    () => new Map(data.orders.map((order) => [order.id, order])),
+    [data.orders],
+  );
+  const entrySupplierId = entry.supplier_id || suppliers[0]?.id || '';
+  const orderOptions = useMemo(() => {
+    const live = data.orders.filter(
+      (order) =>
+        !order.archived && !order.deleted && order.status !== 'cotización',
+    );
+    const matched = entrySupplierId
+      ? live.filter((order) =>
+          order.items.some(
+            (item) => item.selections.supplier_id === entrySupplierId,
+          ),
+        )
+      : live;
+    const list = matched.length ? matched : live;
+    return [...list]
+      .sort((a, b) => b.date.localeCompare(a.date) || b.number.localeCompare(a.number))
+      .slice(0, 80)
+      .map((order) => ({
+        value: order.id,
+        label: [
+          order.number,
+          customerNames.get(order.customer_id) || 'Sin cliente',
+          order.date,
+        ].join(' · '),
+      }));
+  }, [data.orders, entrySupplierId, customerNames]);
   const sharesReady = sharesAreComplete(partners);
   const selectedPartner =
     partners.find((partner) => partner.id === cashout.partner_id) ||
@@ -273,11 +316,18 @@ export function AccountBoard({
     data.entries || [],
     data.currency,
     supplierNames,
+    data.orders,
+    customerNames,
   );
   const yearLedger = ledger.filter((entry) =>
     entry.date.startsWith(String(year)),
   );
   const money = (cents: number) => formatMoney(cents, data.currency);
+  function openLedgerOrder(entry: LedgerEntry) {
+    if (!entry.order_id || !onOpenOrder) return;
+    const order = ordersById.get(entry.order_id);
+    if (order) onOpenOrder(order);
+  }
   const arsPreview =
     entry.currency === 'USD'
       ? previewArs(entry.amount, entry.fx_rate)
@@ -447,6 +497,7 @@ export function AccountBoard({
                 detail: '',
                 partner_id: partners[0]?.id || '',
                 supplier_id: suppliers[0]?.id || '',
+                order_id: '',
                 receipt: '',
                 amount: '',
                 currency: data.currency === 'ARS' ? 'ARS' : 'USD',
@@ -471,42 +522,68 @@ export function AccountBoard({
             </TableHeader>
             <TableBody>
               {yearLedger.length ? (
-                yearLedger.map((entry, index) => (
-                  <TableRow key={`${entry.date}-${entry.label}-${index}`}>
-                    <TableCell>{entry.date}</TableCell>
-                    <TableCell>
-                      {entry.label}
-                      {entry.partner ? ` · ${entry.partner}` : ''}
-                      {entry.actor ? ` · Registrado por ${entry.actor}` : ''}
-                      {entry.notes ? ` · ${entry.notes}` : ''}
-                      {entry.receipt ? (
-                        <a
-                          className="entry-receipt"
-                          href={entry.receipt}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Factura
-                        </a>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className={entry.amount < 0 ? 'money-neg' : ''}>
-                      {formatMoney(
-                        entry.amount,
-                        entry.currency || data.currency,
-                      )}
-                      {entry.currency === 'USD' && entry.amount_ars ? (
-                        <small className="entry-fx">
-                          {formatMoney(entry.amount_ars, 'ARS')} · TC{' '}
-                          {formatRate(entry.fx_rate || 0)}
-                        </small>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className={entry.balance < 0 ? 'money-neg' : ''}>
-                      {money(entry.balance)}
-                    </TableCell>
-                  </TableRow>
-                ))
+                yearLedger.map((entry, index) => {
+                  const clickable =
+                    !!entry.order_id &&
+                    !!onOpenOrder &&
+                    ordersById.has(entry.order_id);
+                  return (
+                    <TableRow
+                      key={`${entry.date}-${entry.label}-${index}`}
+                      className={clickable ? 'clickable-row' : undefined}
+                      onClick={
+                        clickable ? () => openLedgerOrder(entry) : undefined
+                      }
+                    >
+                      <TableCell>{entry.date}</TableCell>
+                      <TableCell>
+                        {clickable ? (
+                          <button
+                            type="button"
+                            className="record-link"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openLedgerOrder(entry);
+                            }}
+                          >
+                            {entry.label}
+                          </button>
+                        ) : (
+                          entry.label
+                        )}
+                        {entry.partner ? ` · ${entry.partner}` : ''}
+                        {entry.actor ? ` · Registrado por ${entry.actor}` : ''}
+                        {entry.notes ? ` · ${entry.notes}` : ''}
+                        {entry.receipt ? (
+                          <a
+                            className="entry-receipt"
+                            href={entry.receipt}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            Factura
+                          </a>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className={entry.amount < 0 ? 'money-neg' : ''}>
+                        {formatMoney(
+                          entry.amount,
+                          entry.currency || data.currency,
+                        )}
+                        {entry.currency === 'USD' && entry.amount_ars ? (
+                          <small className="entry-fx">
+                            {formatMoney(entry.amount_ars, 'ARS')} · TC{' '}
+                            {formatRate(entry.fx_rate || 0)}
+                          </small>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className={entry.balance < 0 ? 'money-neg' : ''}>
+                        {money(entry.balance)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               ) : (
                 <TableRow>
                   <TableCell colSpan={4}>
@@ -517,31 +594,54 @@ export function AccountBoard({
             </TableBody>
           </Table>
         </div>
-        <div className="record-card-list">
-          {yearLedger.map((entry, index) => (
-            <article
-              className="record-card"
-              key={`${entry.date}-${entry.label}-${index}`}
-            >
-              <div className="record-card-top">
-                <b>{entry.label}</b>
-                <span className={entry.amount < 0 ? 'money-neg' : ''}>
-                  {formatMoney(entry.amount, entry.currency || data.currency)}
-                </span>
-              </div>
-              <small>
-                {entry.date}
-                {entry.partner ? ` · ${entry.partner}` : ''}
-                {entry.actor ? ` · Registrado por ${entry.actor}` : ''}
-                {entry.notes ? ` · ${entry.notes}` : ''}
-                {entry.receipt ? ' · factura' : ''}
-                {entry.currency === 'USD' && entry.amount_ars
-                  ? ` · ${formatMoney(entry.amount_ars, 'ARS')} · TC ${formatRate(entry.fx_rate || 0)}`
-                  : ''}{' '}
-                · saldo {money(entry.balance)}
-              </small>
-            </article>
-          ))}
+        <div className="record-card-list ledger-list">
+          {yearLedger.map((entry, index) => {
+            const clickable =
+              !!entry.order_id &&
+              !!onOpenOrder &&
+              ordersById.has(entry.order_id);
+            return (
+              <article
+                className={`ledger-row${clickable ? ' clickable-row' : ''}`}
+                key={`${entry.date}-${entry.label}-${index}`}
+                onClick={clickable ? () => openLedgerOrder(entry) : undefined}
+              >
+                <div className="ledger-row-top">
+                  {clickable ? (
+                    <button
+                      type="button"
+                      className="record-link"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openLedgerOrder(entry);
+                      }}
+                    >
+                      {entry.label}
+                    </button>
+                  ) : (
+                    <b>{entry.label}</b>
+                  )}
+                  <span className={entry.amount < 0 ? 'money-neg' : ''}>
+                    {formatMoney(
+                      entry.amount,
+                      entry.currency || data.currency,
+                    )}
+                  </span>
+                </div>
+                <small>
+                  {entry.date}
+                  {entry.partner ? ` · ${entry.partner}` : ''}
+                  {entry.actor ? ` · Registrado por ${entry.actor}` : ''}
+                  {entry.notes ? ` · ${entry.notes}` : ''}
+                  {entry.receipt ? ' · factura' : ''}
+                  {entry.currency === 'USD' && entry.amount_ars
+                    ? ` · ${formatMoney(entry.amount_ars, 'ARS')} · TC ${formatRate(entry.fx_rate || 0)}`
+                    : ''}{' '}
+                  · saldo {money(entry.balance)}
+                </small>
+              </article>
+            );
+          })}
         </div>
       </section>
       <section className="panel">
@@ -790,6 +890,10 @@ export function AccountBoard({
                     detail: entry.detail,
                     partner_id: entry.partner_id || partners[0]?.id,
                     supplier_id: entry.supplier_id || suppliers[0]?.id,
+                    order_id:
+                      entry.concept === 'pago_proveedor'
+                        ? entry.order_id
+                        : '',
                     receipt: entry.receipt,
                     amount,
                     currency: entry.currency,
@@ -800,6 +904,7 @@ export function AccountBoard({
                     setEntry({
                       ...entry,
                       detail: '',
+                      order_id: '',
                       receipt: '',
                       amount: '',
                       fx_rate: '',
@@ -827,6 +932,7 @@ export function AccountBoard({
                           : '',
                       supplier_id:
                         value === 'pago_proveedor' ? entry.supplier_id : '',
+                      order_id: value === 'pago_proveedor' ? entry.order_id : '',
                       receipt: value === 'pago_proveedor' ? entry.receipt : '',
                     })
                   }
@@ -857,7 +963,11 @@ export function AccountBoard({
                         label="Proveedor"
                         value={entry.supplier_id || suppliers[0]?.id || ''}
                         onChange={(value) =>
-                          setEntry({ ...entry, supplier_id: value })
+                          setEntry({
+                            ...entry,
+                            supplier_id: value,
+                            order_id: '',
+                          })
                         }
                         options={suppliers.map((supplier) => ({
                           value: supplier.id,
@@ -870,6 +980,22 @@ export function AccountBoard({
                         pago.
                       </p>
                     )}
+                  </Field>
+                  <Field label="Pedido asociado" wide>
+                    <Pick
+                      label="Pedido asociado"
+                      value={entry.order_id || '__none__'}
+                      onChange={(value) =>
+                        setEntry({
+                          ...entry,
+                          order_id: value === '__none__' ? '' : value,
+                        })
+                      }
+                      options={[
+                        { value: '__none__', label: 'Sin pedido' },
+                        ...orderOptions,
+                      ]}
+                    />
                   </Field>
                   <Field label="Concepto del gasto *" wide>
                     <input

@@ -34,6 +34,7 @@ function order(
   total: number,
   cost: number,
   status = 'cerrado',
+  paidPartnerId = 'ivan',
 ): Order {
   return {
     id,
@@ -43,6 +44,7 @@ function order(
     delivery: '',
     status,
     paid: total,
+    paid_partner_id: total > 0 ? paidPartnerId : '',
     invoice: 1,
     notes: '',
     currency: 'USD',
@@ -91,11 +93,9 @@ test('monthly result subtracts product cost, marketing and commissions', () => {
   assert.equal(rows[0]?.margin, 34.15);
 });
 
-test('ledger credits monthly profit and debits partner cashouts', () => {
-  const results = monthlyResults(
-    [order('o1', '2026-01-05', 100_000, 40_000)],
-    [],
-  );
+test('ledger credits order cobros and debits partner cashouts', () => {
+  const paidOrder = order('o1', '2026-01-05', 100_000, 40_000);
+  const results = monthlyResults([paidOrder], []);
   const cashouts: PartnerCashout[] = [
     {
       id: 'c1',
@@ -106,13 +106,25 @@ test('ledger credits monthly profit and debits partner cashouts', () => {
       created_at: '',
     },
   ];
-  const ledger = accountLedger(results, cashouts, partners);
-  assert.equal(ledger[0]?.kind, 'ganancia');
-  assert.equal(ledger[0]?.amount, 60_000);
+  const ledger = accountLedger(
+    results,
+    cashouts,
+    partners,
+    [],
+    'USD',
+    new Map(),
+    [paidOrder],
+    new Map([['c1', 'Cliente Uno']]),
+  );
+  assert.equal(ledger[0]?.kind, 'cobro');
+  assert.equal(ledger[0]?.amount, 100_000);
+  assert.equal(ledger[0]?.partner, 'Ivan');
+  assert.equal(ledger[0]?.order_id, 'o1');
+  assert.equal(ledger[0]?.notes, 'Cliente Uno');
   assert.equal(ledger[1]?.kind, 'cashout');
   assert.equal(ledger[1]?.amount, -20_000);
   assert.equal(ledger[1]?.partner, 'Ivan');
-  assert.equal(ledger.at(-1)?.balance, 40_000);
+  assert.equal(ledger.at(-1)?.balance, 80_000);
   const caja = cashoutsByMonth(cashouts, partners, 2026);
   assert.equal(caja[0]?.label, 'Enero');
   assert.equal(caja[0]?.byPartner.ivan, 20_000);
@@ -123,7 +135,8 @@ test('collected orders count even if they are still open', () => {
   const paidOpen = order('o1', '2026-03-12', 40_000, 15_000, 'nuevo');
   const unpaidClosed = order('o2', '2026-03-12', 80_000, 20_000, 'cerrado');
   unpaidClosed.paid = 0;
-  const rows = monthlyResults([paidOpen, unpaidClosed], []);
+  const quote = order('o3', '2026-03-12', 60_000, 10_000, 'cotización');
+  const rows = monthlyResults([paidOpen, unpaidClosed, quote], []);
   assert.equal(rows[0]?.billed, 40_000);
   assert.equal(rows[0]?.cost, 15_000);
   assert.equal(rows[0]?.profit, 25_000);
@@ -143,10 +156,8 @@ test('deleted orders are excluded from monthly results', () => {
 });
 
 test('ledger includes partner-paid account movements', () => {
-  const results = monthlyResults(
-    [order('o1', '2026-01-05', 100_000, 40_000)],
-    [],
-  );
+  const paidOrder = order('o1', '2026-01-05', 100_000, 40_000);
+  const results = monthlyResults([paidOrder], []);
   const ledger = accountLedger(
     results,
     [],
@@ -158,6 +169,7 @@ test('ledger includes partner-paid account movements', () => {
         detail: 'Cuero crupon',
         partner_id: 'ivan',
         supplier_id: 'sup1',
+        order_id: 'o1',
         amount: 10_000,
         currency: 'USD',
         date: '2026-01-10',
@@ -166,12 +178,17 @@ test('ledger includes partner-paid account movements', () => {
     ],
     'USD',
     new Map([['sup1', 'Talabarteria']]),
+    [paidOrder],
   );
+  assert.equal(ledger[0]?.kind, 'cobro');
+  assert.equal(ledger[0]?.amount, 100_000);
   assert.equal(ledger[1]?.kind, 'movimiento');
   assert.equal(ledger[1]?.label, 'Pago proveedor · Talabarteria · Cuero crupon');
   assert.equal(ledger[1]?.amount, -10_000);
   assert.equal(ledger[1]?.partner, 'Ivan');
-  assert.equal(ledger.at(-1)?.balance, 50_000);
+  assert.equal(ledger[1]?.order_id, 'o1');
+  assert.equal(ledger[1]?.notes, 'Pedido o1');
+  assert.equal(ledger.at(-1)?.balance, 90_000);
 });
 
 test('year sheet fills every month and remaining profit subtracts cashouts', () => {

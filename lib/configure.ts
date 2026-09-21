@@ -2287,7 +2287,12 @@ export function reservedHolds(
   );
   const holds: StockHold[] = [];
   for (const order of orders) {
-    if (order.archived || order.deleted || order.status === 'entregado')
+    if (
+      order.archived ||
+      order.deleted ||
+      order.status === 'entregado' ||
+      order.status === 'cotización'
+    )
       continue;
     if (exceptOrderId && order.id === exceptOrderId) continue;
     for (const item of order.items) {

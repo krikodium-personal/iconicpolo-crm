@@ -8,6 +8,9 @@ import {
   fichaArtworkTitle,
   type FichaData,
 } from '@/lib/ficha';
+import { formatMoney } from '@/lib/money';
+import type { Order } from '@/lib/types';
+import { ProductPhoto } from './ui';
 
 function hexLuminance(hex: string) {
   const n = hex.replace('#', '');
@@ -622,6 +625,485 @@ export function FichaView({
       </p>
       <div className="ficha-preview">
         <FichaSheet ficha={ficha} />
+      </div>
+    </div>
+  );
+}
+
+export type CotizacionLine = {
+  id: string;
+  title: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  discount: number;
+  photo?: string;
+};
+
+export type CotizacionData = {
+  number: string;
+  date: string;
+  dateLabel: string;
+  customerName: string;
+  currency: string;
+  units: number;
+  total: number;
+  notes: string;
+  lines: CotizacionLine[];
+};
+
+export function buildCotizacionData({
+  order,
+  customerName,
+  lines,
+}: {
+  order: Order;
+  customerName: string;
+  lines: CotizacionLine[];
+}): CotizacionData {
+  const [year, month, day] = order.date.split('-');
+  const dateLabel =
+    year && month && day ? `${day}/${month}/${year}` : order.date || 'Sin fecha';
+  return {
+    number: order.number,
+    date: order.date,
+    dateLabel,
+    customerName,
+    currency: order.currency || 'USD',
+    units: lines.reduce((sum, line) => sum + line.quantity, 0),
+    total: order.total,
+    notes: order.notes.trim(),
+    lines,
+  };
+}
+
+function cotizacionFileName(quote: CotizacionData, ext: 'pdf' | 'png') {
+  const raw = `cotizacion-${quote.number}`
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 60)
+    .toLowerCase();
+  return `${raw || 'cotizacion'}.${ext}`;
+}
+
+function cotizacionShareText(quote: CotizacionData) {
+  return [
+    `Cotización Iconic — Nro: ${quote.number}`,
+    quote.customerName ? `Para ${quote.customerName}` : '',
+    `Total ${formatMoney(quote.total, quote.currency)}`,
+    'Adjunto la cotización.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function CotizacionSheet({ quote }: { quote: CotizacionData }) {
+  const money = (cents: number) => formatMoney(cents, quote.currency);
+  return (
+    <article className="ficha-sheet cotizacion-sheet">
+      <header className="ficha-head">
+        <img src="/logo-iconic.png" alt="Iconic" width={64} height={72} />
+        <div>
+          <p>Cotización</p>
+          <h1>Nro: {quote.number}</h1>
+          <small>
+            {[
+              quote.dateLabel,
+              quote.customerName ? `Para ${quote.customerName}` : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </small>
+        </div>
+      </header>
+      <dl className="ficha-meta">
+        <div>
+          <dt>Productos</dt>
+          <dd>{quote.units === 1 ? '1 ud.' : `${quote.units} uds.`}</dd>
+        </div>
+        <div>
+          <dt>Total</dt>
+          <dd>{money(quote.total)}</dd>
+        </div>
+      </dl>
+      <section className="ficha-block">
+        <h2>Productos</h2>
+        {quote.lines.length ? (
+          <ul className="cotizacion-lines">
+            {quote.lines.map((line) => (
+              <li key={line.id}>
+                <div className="cotizacion-line-main">
+                  <div className="stock-item-photo cotizacion-line-photo-wrap">
+                    <ProductPhoto name={line.title} url={line.photo} />
+                    <span className="stock-item-qty">{line.quantity}</span>
+                  </div>
+                  <div>
+                    <p className="cotizacion-line-title">
+                      {line.title.split('\n').map((part, index) => (
+                        <span key={`${line.id}-${index}`}>
+                          {index ? <br /> : null}
+                          {part}
+                        </span>
+                      ))}
+                      {line.discount > 0 ? (
+                        <span className="discount-badge">
+                          {`${(line.discount / 100).toLocaleString('es-AR')}% dto.`}
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="cotizacion-line-meta">
+                      {money(line.unitPrice)}
+                      {line.quantity > 1 ? ` × ${line.quantity}` : ''}
+                    </p>
+                  </div>
+                </div>
+                <strong className="cotizacion-line-total">
+                  {money(line.total)}
+                </strong>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="ficha-description">Sin productos.</p>
+        )}
+      </section>
+      <dl className="ficha-meta">
+        <div>
+          <dt>Total</dt>
+          <dd>{money(quote.total)}</dd>
+        </div>
+      </dl>
+      {quote.notes ? (
+        <section className="ficha-block">
+          <h2>Notas</h2>
+          <p className="ficha-description">{quote.notes}</p>
+        </section>
+      ) : null}
+    </article>
+  );
+}
+
+async function renderCotizacionCanvas(quote: CotizacionData) {
+  const pageW = 794;
+  const pad = 36;
+  const contentW = pageW - pad * 2;
+  const scale = 2;
+  const money = (cents: number) => formatMoney(cents, quote.currency);
+  const [brand, ...photos] = await Promise.all([
+    loadImage('/logo-iconic.png'),
+    ...quote.lines.map((line) =>
+      line.photo ? loadImage(line.photo) : Promise.resolve(null),
+    ),
+  ]);
+  const canvas = document.createElement('canvas');
+  canvas.width = pageW * scale;
+  canvas.height = 6400 * scale;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('No se pudo generar la cotización.');
+  ctx.scale(scale, scale);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, pageW, 6400);
+  let y = pad;
+
+  if (brand) {
+    ctx.fillStyle = '#111111';
+    ctx.beginPath();
+    ctx.roundRect(pad, y, 54, 60, 10);
+    ctx.fill();
+    ctx.drawImage(brand, pad + 8, y + 8, 38, 44);
+  }
+  ctx.fillStyle = '#5e7268';
+  ctx.font = '650 11px system-ui, sans-serif';
+  ctx.fillText('COTIZACIÓN', pad + 62, y + 14);
+  ctx.fillStyle = '#17292b';
+  ctx.font = '700 26px system-ui, sans-serif';
+  ctx.fillText(`Nro: ${quote.number}`, pad + 62, y + 40);
+  ctx.fillStyle = '#5e7268';
+  ctx.font = '400 13px system-ui, sans-serif';
+  ctx.fillText(
+    [quote.dateLabel, quote.customerName ? `Para ${quote.customerName}` : '']
+      .filter(Boolean)
+      .join('  ·  '),
+    pad + 62,
+    y + 58,
+  );
+  y += 78;
+  ctx.strokeStyle = '#134c45';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(pad, y);
+  ctx.lineTo(pageW - pad, y);
+  ctx.stroke();
+  y += 22;
+
+  const meta = [
+    [
+      'Productos',
+      quote.units === 1 ? '1 ud.' : `${quote.units} uds.`,
+    ],
+    ['Total', money(quote.total)],
+  ];
+  meta.forEach((row, index) => {
+    const x = pad + index * (contentW / 2);
+    ctx.fillStyle = '#6d7f72';
+    ctx.font = '650 10px system-ui, sans-serif';
+    ctx.fillText(row[0].toUpperCase(), x, y);
+    ctx.fillStyle = '#17292b';
+    ctx.font = '600 14px system-ui, sans-serif';
+    ctx.fillText(row[1], x, y + 18);
+  });
+  y += 48;
+
+  ctx.fillStyle = '#134c45';
+  ctx.font = '700 11px system-ui, sans-serif';
+  ctx.fillText('PRODUCTOS', pad, y);
+  y += 18;
+
+  for (let i = 0; i < quote.lines.length; i++) {
+    const line = quote.lines[i]!;
+    const photo = photos[i] || null;
+    const startY = y;
+    const thumb = 64;
+    ctx.fillStyle = '#eef1eb';
+    ctx.beginPath();
+    ctx.roundRect(pad, y, thumb, thumb, 7);
+    ctx.fill();
+    if (photo) {
+      const size = fitImage(photo, thumb, thumb);
+      const ox = pad + Math.round((thumb - size.width) / 2);
+      const oy = y + Math.round((thumb - size.height) / 2);
+      ctx.drawImage(photo, ox, oy, size.width, size.height);
+    } else {
+      ctx.fillStyle = '#738873';
+      ctx.font = '600 11px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('·', pad + thumb / 2, y + thumb / 2 + 4);
+      ctx.textAlign = 'left';
+    }
+    const badge = String(line.quantity);
+    ctx.font = '650 11px system-ui, sans-serif';
+    const badgeW = Math.max(22, ctx.measureText(badge).width + 12);
+    const badgeH = 22;
+    const badgeX = pad + thumb - badgeW / 2 - 2;
+    const badgeY = y - 7;
+    ctx.fillStyle = '#134c45';
+    ctx.beginPath();
+    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 999);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.fillText(badge, badgeX + badgeW / 2, badgeY + 15);
+    ctx.textAlign = 'left';
+
+    const textX = pad + thumb + 16;
+    const textW = contentW - thumb - 16 - 110;
+    ctx.fillStyle = '#17292b';
+    ctx.font = '600 14px system-ui, sans-serif';
+    let textY = y + 14;
+    for (const part of wrapText(ctx, line.title, textW)) {
+      ctx.fillText(part, textX, textY);
+      textY += 18;
+    }
+    if (line.discount > 0) {
+      ctx.fillStyle = '#7a6a52';
+      ctx.font = '600 12px system-ui, sans-serif';
+      ctx.fillText(
+        `${(line.discount / 100).toLocaleString('es-AR')}% dto.`,
+        textX,
+        textY,
+      );
+      textY += 16;
+    }
+    ctx.fillStyle = '#6d7f72';
+    ctx.font = '400 12px system-ui, sans-serif';
+    ctx.fillText(
+      `${money(line.unitPrice)}${line.quantity > 1 ? ` × ${line.quantity}` : ''}`,
+      textX,
+      textY,
+    );
+    ctx.fillStyle = '#17292b';
+    ctx.font = '700 14px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(money(line.total), pageW - pad, y + 16);
+    ctx.textAlign = 'left';
+    const rowBottom = Math.max(startY + thumb, textY + 8);
+    y = rowBottom + 16;
+    ctx.strokeStyle = '#e6ece3';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pad, y - 8);
+    ctx.lineTo(pageW - pad, y - 8);
+    ctx.stroke();
+  }
+
+  y += 8;
+  ctx.fillStyle = '#6d7f72';
+  ctx.font = '650 10px system-ui, sans-serif';
+  ctx.fillText('TOTAL', pad, y);
+  ctx.fillStyle = '#17292b';
+  ctx.font = '700 20px system-ui, sans-serif';
+  ctx.fillText(money(quote.total), pad, y + 24);
+  y += 48;
+
+  if (quote.notes) {
+    ctx.fillStyle = '#134c45';
+    ctx.font = '700 11px system-ui, sans-serif';
+    ctx.fillText('NOTAS', pad, y);
+    y += 18;
+    ctx.fillStyle = '#17292b';
+    ctx.font = '400 14px system-ui, sans-serif';
+    for (const part of wrapText(ctx, quote.notes, contentW)) {
+      ctx.fillText(part, pad, y);
+      y += 20;
+    }
+    y += 8;
+  }
+
+  const used = Math.min(6380, Math.ceil(y + pad));
+  const output = document.createElement('canvas');
+  output.width = pageW * scale;
+  output.height = used * scale;
+  const out = output.getContext('2d');
+  if (!out) throw new Error('No se pudo generar la cotización.');
+  out.drawImage(canvas, 0, 0);
+  const jpegBlob = await canvasToBlob(output, 'image/jpeg', 0.92);
+  const pngBlob = await canvasToBlob(output, 'image/png');
+  return {
+    jpeg: await blobToBytes(jpegBlob),
+    png: await blobToBytes(pngBlob),
+    width: output.width,
+    height: output.height,
+  };
+}
+
+export function CotizacionFichaView({
+  quote,
+  onBack,
+}: {
+  quote: CotizacionData;
+  onBack: () => void;
+}) {
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+
+  async function files() {
+    const captured = await renderCotizacionCanvas(quote);
+    const pdf = jpegToPdf(captured.jpeg, captured.width, captured.height);
+    return {
+      pdf: new File([new Uint8Array(pdf)], cotizacionFileName(quote, 'pdf'), {
+        type: 'application/pdf',
+      }),
+      image: new File(
+        [new Uint8Array(captured.png)],
+        cotizacionFileName(quote, 'png'),
+        { type: 'image/png' },
+      ),
+    };
+  }
+
+  async function run(label: string, work: () => Promise<void>) {
+    setError('');
+    setBusy(label);
+    try {
+      await work();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : 'No se pudo generar la cotización.',
+      );
+    } finally {
+      setBusy('');
+    }
+  }
+
+  return (
+    <div className="ficha-view">
+      <button type="button" className="dialog-kicker" onClick={onBack}>
+        ← Volver al pedido
+      </button>
+      <div className="ficha-toolbar">
+        <h3>Ficha cotización</h3>
+        <div className="ficha-actions">
+          <button
+            type="button"
+            className="secondary"
+            disabled={!!busy}
+            onClick={() =>
+              void run('pdf', async () => {
+                const next = await files();
+                downloadBlob(next.pdf, next.pdf.name);
+              })
+            }
+          >
+            <FileDown size={16} />
+            {busy === 'pdf' ? 'Generando…' : 'Descargar PDF'}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={!!busy}
+            onClick={() =>
+              void run('image', async () => {
+                const next = await files();
+                downloadBlob(next.image, next.image.name);
+              })
+            }
+          >
+            <ImageIcon size={16} />
+            {busy === 'image' ? 'Generando…' : 'Descargar imagen'}
+          </button>
+          <button
+            type="button"
+            className="primary"
+            disabled={!!busy}
+            onClick={() =>
+              void run('share', async () => {
+                const next = await files();
+                const text = cotizacionShareText(quote);
+                if (canShareFiles(next.pdf)) {
+                  try {
+                    await navigator.share({
+                      files: [next.pdf],
+                      title: `Cotización · ${quote.number}`,
+                      text,
+                    });
+                  } catch (caught) {
+                    if (
+                      caught instanceof DOMException &&
+                      caught.name === 'AbortError'
+                    )
+                      return;
+                    throw caught;
+                  }
+                  return;
+                }
+                downloadBlob(next.pdf, next.pdf.name);
+                window.open(
+                  'https://wa.me/?text=' + encodeURIComponent(text),
+                  '_blank',
+                  'noopener,noreferrer',
+                );
+              })
+            }
+          >
+            <MessageCircle size={16} />
+            {busy === 'share' ? 'Generando…' : 'WhatsApp'}
+          </button>
+        </div>
+      </div>
+      {error ? <p className="hint ficha-error">{error}</p> : null}
+      <p className="hint">
+        Descargá el PDF o compartilo por WhatsApp. En el celular, Compartir
+        adjunta el archivo; en la computadora se descarga para enviarlo.
+      </p>
+      <div className="ficha-preview">
+        <CotizacionSheet quote={quote} />
       </div>
     </div>
   );

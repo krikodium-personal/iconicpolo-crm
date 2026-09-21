@@ -76,6 +76,8 @@ export type Order = {
   delivery: string;
   status: string;
   paid: number;
+  /** Socio que recibió el cobro del cliente. Vacío si no hay cobro. */
+  paid_partner_id: string;
   invoice: number;
   notes: string;
   currency: string;
@@ -92,8 +94,9 @@ export type Order = {
 export function orderIsLive(order: {
   archived?: number | boolean;
   deleted?: number | boolean;
+  status?: string;
 }) {
-  return !order.archived && !order.deleted;
+  return !order.archived && !order.deleted && !orderIsQuote(order.status || '');
 }
 export type Category = {
   id: string;
@@ -146,6 +149,7 @@ export type AccountEntry = {
   detail: string;
   partner_id: string;
   supplier_id?: string;
+  order_id?: string;
   receipt?: string;
   amount: number;
   currency: 'ARS' | 'USD';
@@ -177,6 +181,7 @@ export type Data = {
   currency: string;
 };
 export const ORDER_STATUSES = [
+  'cotización',
   'nuevo',
   'abierto',
   'en producción',
@@ -184,6 +189,9 @@ export const ORDER_STATUSES = [
   'entregado',
 ] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
+export function orderIsQuote(status: string) {
+  return status === 'cotización';
+}
 export function orderIsDelivered(status: string) {
   return status === 'entregado';
 }
@@ -196,6 +204,7 @@ export function orderPipelineStatus(
   order: { status: string; delivery?: string },
   today = todayInBuenosAires(),
 ) {
+  if (orderIsQuote(order.status)) return order.status;
   return order.status === 'entregado' ||
     !!(order.delivery && order.delivery <= today)
     ? 'entregado'

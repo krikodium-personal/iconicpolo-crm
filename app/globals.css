@@ -1179,6 +1179,10 @@ small.pending-text {
   background: #f0eafb;
   color: #786093;
 }
+.status.cotización {
+  background: #e8f2f8;
+  color: #3d6a86;
+}
 .status.no-pagado {
   background: #eef0f3;
   color: #5e6d7b;
@@ -1326,6 +1330,72 @@ button.status-pick {
 .order-dialog-heading {
   align-items: flex-start;
   flex-wrap: nowrap;
+}
+.order-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+.order-quote-customer {
+  margin: 0 0 12px;
+  font-size: 15px;
+  color: #44584f;
+}
+.cotizacion-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cotizacion-lines li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid #e6ece3;
+}
+.cotizacion-lines li:last-child {
+  border-bottom: 0;
+}
+.cotizacion-line-main {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+.cotizacion-line-photo-wrap {
+  width: 64px;
+  height: 64px;
+}
+.cotizacion-line-photo-wrap .product-photo {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+}
+.cotizacion-line-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.cotizacion-line-title .discount-badge {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.cotizacion-line-meta {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #6d7f72;
+}
+.cotizacion-line-total {
+  flex: none;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.cotizacion-total-fact {
+  margin-top: 8px;
 }
 .dialog-kicker {
   margin: 0 0 4px;
@@ -1645,6 +1715,38 @@ button.dialog-kicker:hover {
 }
 .section-heading h3 {
   margin: 0;
+}
+.order-supplier-payments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.order-supplier-payments li {
+  padding: 12px 0;
+  border-bottom: 1px solid #e6ece3;
+}
+.order-supplier-payments li:last-child {
+  border-bottom: 0;
+}
+.order-supplier-payment-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.order-supplier-payment-top > b {
+  min-width: 0;
+  font-weight: 600;
+}
+.order-supplier-payment-top > span {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.order-supplier-payments small {
+  display: block;
+  margin-top: 4px;
+  color: #6b7c72;
+  line-height: 1.35;
 }
 .order-line {
   border: 1px solid #dce5d9;
@@ -2725,13 +2827,50 @@ fieldset:disabled textarea {
     flex-wrap: wrap;
   }
   .order-dialog-heading {
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+  }
+  .order-dialog-actions {
+    width: 100%;
   }
   .crm-dialog [data-slot='dialog-title'] {
     font-size: 20px;
   }
   .account-board .record-card-list {
     padding: 12px 0 0;
+  }
+  .account-board .ledger-list {
+    gap: 0;
+    padding: 0 20px 16px;
+  }
+  .account-board .ledger-row {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    padding: 14px 0;
+    border-bottom: 1px solid #e6ece3;
+    background: transparent;
+  }
+  .account-board .ledger-row:last-child {
+    border-bottom: 0;
+  }
+  .account-board .ledger-row-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+  }
+  .account-board .ledger-row-top > :first-child {
+    min-width: 0;
+    font-weight: 600;
+  }
+  .account-board .ledger-row-top > span {
+    flex: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .account-board .ledger-row small {
+    color: #6b7c72;
+    line-height: 1.35;
   }
   .mobile-tabbar {
     display: flex;

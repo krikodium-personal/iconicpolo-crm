@@ -20,7 +20,7 @@ import { Camera, Package, Upload, X } from 'lucide-react';
 import { DayPicker } from 'react-day-picker';
 import { es } from 'react-day-picker/locale';
 import 'react-day-picker/style.css';
-import type { Order } from '@/lib/types';
+import type { Order, Partner } from '@/lib/types';
 import { decimal, parseDecimal } from '@/lib/money';
 function selectFieldInput(e: { target: EventTarget }) {
   const input = e.target;
@@ -305,27 +305,40 @@ function payStatus(order: Order) {
 }
 export function OrderPayMenu({
   order,
+  partners,
   onChange,
 }: {
   order: Order;
-  onChange: (pay: string, paid?: number) => Promise<void>;
+  partners: Partner[];
+  onChange: (
+    pay: string,
+    paid?: number,
+    paid_partner_id?: string,
+  ) => Promise<void>;
 }) {
   const value = payStatus(order);
+  const activePartners = partners.filter((partner) => !partner.archived);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState(value);
   const [amount, setAmount] = useState(decimal(order.paid));
+  const [partnerId, setPartnerId] = useState(
+    order.paid_partner_id || activePartners[0]?.id || '',
+  );
   const [error, setError] = useState('');
-  async function pick(option: string) {
-    if (option === 'pago parcial') {
-      setPicked(option);
-      setError('');
+  async function submit(option: string, paidAmount?: number) {
+    if (option !== 'no pagado' && !partnerId) {
+      setError('Elegí qué socio recibió el cobro.');
       return;
     }
     setBusy(true);
     setError('');
     try {
-      await onChange(option);
+      await onChange(
+        option,
+        paidAmount,
+        option === 'no pagado' ? '' : partnerId,
+      );
       setOpen(false);
     } catch (e) {
       setError((e as Error).message);
@@ -333,17 +346,16 @@ export function OrderPayMenu({
       setBusy(false);
     }
   }
-  async function savePartial() {
-    setBusy(true);
-    setError('');
-    try {
-      await onChange('pago parcial', parseDecimal(amount));
-      setOpen(false);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
+  async function pick(option: string) {
+    if (option === 'pago parcial') {
+      setPicked(option);
+      setError('');
+      return;
     }
+    await submit(option);
+  }
+  async function savePartial() {
+    await submit('pago parcial', parseDecimal(amount));
   }
   return (
     <Sheet
@@ -353,6 +365,7 @@ export function OrderPayMenu({
         if (next) {
           setPicked(value);
           setAmount(decimal(order.paid));
+          setPartnerId(order.paid_partner_id || activePartners[0]?.id || '');
           setError('');
         }
       }}
@@ -374,7 +387,8 @@ export function OrderPayMenu({
         <SheetHeader>
           <SheetTitle>Estado de pago</SheetTitle>
           <SheetDescription>
-            Marcá si está cobrado. En un pago parcial, escribí el importe.
+            Marcá si está cobrado, quién de los socios recibió el dinero y, si es
+            parcial, el importe.
           </SheetDescription>
         </SheetHeader>
         <div className="status-sheet-options">
@@ -386,12 +400,32 @@ export function OrderPayMenu({
               className={`status ${option.replaceAll(' ', '-')}${
                 option === picked ? ' is-current' : ''
               }`}
-              onClick={() => pick(option)}
+              onClick={() => void pick(option)}
             >
               {option}
             </button>
           ))}
         </div>
+        {picked !== 'no pagado' ? (
+          <label className="status-sheet-amount">
+            Socio que recibió el cobro
+            <select
+              aria-label="Socio que recibió el cobro"
+              value={partnerId}
+              disabled={busy || !activePartners.length}
+              onChange={(e) => setPartnerId(e.target.value)}
+            >
+              {!activePartners.length ? (
+                <option value="">Sin socios activos</option>
+              ) : null}
+              {activePartners.map((partner) => (
+                <option key={partner.id} value={partner.id}>
+                  {partner.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         {picked === 'pago parcial' ? (
           <>
             <label className="status-sheet-amount">
