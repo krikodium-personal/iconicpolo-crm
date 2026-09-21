@@ -6,6 +6,7 @@ import {
   ORDER_STATUSES,
   actorName,
   orderIsLocked,
+  orderIsQuote,
   type Contact,
   type Product,
   type Order,
@@ -1487,30 +1488,34 @@ export function OrderDetail({
             <StatusMenu
               value={record.status}
               title="Estado del pedido"
-              description="Las cotizaciones no reservan stock ni entran en cuenta. El stock reservado se descuenta cuando el pedido está entregado."
+              description="Las cotizaciones no reservan stock ni entran en cuenta. Cuando el cliente confirme, pasala a Nuevo. El stock reservado se descuenta cuando el pedido está entregado."
               options={[...ORDER_STATUSES]}
               onPick={(status) => onPatch({ status })}
             />
-            <OrderPayMenu
-              order={record}
-              partners={data.partners}
-              onChange={(pay, paid, paid_partner_id) =>
-                onPatch({ pay, paid, paid_partner_id })
-              }
-            />
-            <OrderDeliveryMenu
-              delivery={record.delivery}
-              onChange={(delivery) => onPatch({ delivery })}
-            />
-            <StatusMenu
-              value={record.invoice ? 'factura emitida' : 'sin factura'}
-              title="Facturación"
-              description="Marcá si este pedido ya tiene factura."
-              options={['sin factura', 'factura emitida']}
-              onPick={(value) =>
-                onPatch({ invoice: value === 'factura emitida' ? 1 : 0 })
-              }
-            />
+            {!orderIsQuote(record.status) ? (
+              <>
+                <OrderPayMenu
+                  order={record}
+                  partners={data.partners}
+                  onChange={(pay, paid, paid_partner_id) =>
+                    onPatch({ pay, paid, paid_partner_id })
+                  }
+                />
+                <OrderDeliveryMenu
+                  delivery={record.delivery}
+                  onChange={(delivery) => onPatch({ delivery })}
+                />
+                <StatusMenu
+                  value={record.invoice ? 'factura emitida' : 'sin factura'}
+                  title="Facturación"
+                  description="Marcá si este pedido ya tiene factura."
+                  options={['sin factura', 'factura emitida']}
+                  onPick={(value) =>
+                    onPatch({ invoice: value === 'factura emitida' ? 1 : 0 })
+                  }
+                />
+              </>
+            ) : null}
           </div>
           <ActorNote
             partners={data.partners}
@@ -1531,22 +1536,29 @@ export function OrderDetail({
                 {formatMoney(record.total, data.currency)}
               </dd>
             </div>
-            <div>
-              <dt>Cobrado</dt>
-              <dd className="amount">
-                {formatMoney(record.paid, data.currency)}
-              </dd>
-            </div>
-            <div>
-              <dt>Cobró</dt>
-              <dd>{paidPartner?.name || (record.paid > 0 ? 'Sin socio' : '—')}</dd>
-            </div>
-            <div>
-              <dt>Saldo</dt>
-              <dd className={`amount${due > 0 ? ' money-neg' : ''}`}>
-                {formatMoney(due, data.currency)}
-              </dd>
-            </div>
+            {!orderIsQuote(record.status) ? (
+              <>
+                <div>
+                  <dt>Cobrado</dt>
+                  <dd className="amount">
+                    {formatMoney(record.paid, data.currency)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Cobró</dt>
+                  <dd>
+                    {paidPartner?.name ||
+                      (record.paid > 0 ? 'Sin socio' : '—')}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Saldo</dt>
+                  <dd className={`amount${due > 0 ? ' money-neg' : ''}`}>
+                    {formatMoney(due, data.currency)}
+                  </dd>
+                </div>
+              </>
+            ) : null}
           </dl>
         </article>
       </section>
@@ -1634,7 +1646,9 @@ export function OrderDetail({
           </div>
         </div>
       </section>
-      <OrderSupplierPayments order={record} data={data} save={save} />
+      {!orderIsQuote(record.status) ? (
+        <OrderSupplierPayments order={record} data={data} save={save} />
+      ) : null}
       {record.notes.trim() ? (
         <section className="form-section">
           <h3>Notas</h3>
@@ -2289,9 +2303,12 @@ export function OrderForm({
             customer_id: creatingCustomer ? undefined : f.customer_id,
             customer: creatingCustomer ? newCustomer : undefined,
             invoice: Number(f.invoice),
-            paid: parseDecimal(f.paid),
-            paid_partner_id:
-              parseDecimal(f.paid) > 0 ? f.paid_partner_id : '',
+            paid: orderIsQuote(f.status) ? 0 : parseDecimal(f.paid),
+            paid_partner_id: orderIsQuote(f.status)
+              ? ''
+              : parseDecimal(f.paid) > 0
+                ? f.paid_partner_id
+                : '',
             id: record?.id,
             version: record?.version,
             items: items.map((i) => ({
@@ -2869,41 +2886,45 @@ export function OrderForm({
           )}
         </section>
         <div className="form-grid">
-          <Field label="Importe cobrado">
-            <input
-              inputMode="decimal"
-              value={f.paid}
-              onChange={(e) => set({ ...f, paid: e.target.value })}
-            />
-          </Field>
-          <Field label="Socio que recibió el cobro">
-            <select
-              aria-label="Socio que recibió el cobro"
-              value={f.paid_partner_id}
-              disabled={!activePartners.length}
-              onChange={(e) =>
-                set({ ...f, paid_partner_id: e.target.value })
-              }
-            >
-              {!activePartners.length ? (
-                <option value="">Sin socios activos</option>
-              ) : (
-                activePartners.map((partner) => (
-                  <option key={partner.id} value={partner.id}>
-                    {partner.name}
-                  </option>
-                ))
-              )}
-            </select>
-          </Field>
-          <div className="field">
-            <span>Facturación</span>
-            <Check
-              label="Este pedido se factura"
-              checked={f.invoice}
-              onChange={(v) => set({ ...f, invoice: v })}
-            />
-          </div>
+          {!orderIsQuote(f.status) ? (
+            <>
+              <Field label="Importe cobrado">
+                <input
+                  inputMode="decimal"
+                  value={f.paid}
+                  onChange={(e) => set({ ...f, paid: e.target.value })}
+                />
+              </Field>
+              <Field label="Socio que recibió el cobro">
+                <select
+                  aria-label="Socio que recibió el cobro"
+                  value={f.paid_partner_id}
+                  disabled={!activePartners.length}
+                  onChange={(e) =>
+                    set({ ...f, paid_partner_id: e.target.value })
+                  }
+                >
+                  {!activePartners.length ? (
+                    <option value="">Sin socios activos</option>
+                  ) : (
+                    activePartners.map((partner) => (
+                      <option key={partner.id} value={partner.id}>
+                        {partner.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </Field>
+              <div className="field">
+                <span>Facturación</span>
+                <Check
+                  label="Este pedido se factura"
+                  checked={f.invoice}
+                  onChange={(v) => set({ ...f, invoice: v })}
+                />
+              </div>
+            </>
+          ) : null}
           <Field label="Notas del pedido" wide>
             <textarea
               value={f.notes}

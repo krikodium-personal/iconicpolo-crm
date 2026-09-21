@@ -120,6 +120,7 @@ import {
   ORDER_STATUSES,
   orderIsLive,
   orderIsLocked,
+  orderIsQuote,
   orderPipelineStatus,
   type Data,
   type Contact,
@@ -538,12 +539,19 @@ function OrderCard({
           options={[...ORDER_STATUSES]}
           onPick={onStatus}
         />
-        <OrderPayMenu
-          order={order}
-          partners={partners}
-          onChange={onPay}
-        />
-        <OrderDeliveryMenu delivery={order.delivery} onChange={onDelivery} />
+        {!orderIsQuote(order.status) ? (
+          <>
+            <OrderPayMenu
+              order={order}
+              partners={partners}
+              onChange={onPay}
+            />
+            <OrderDeliveryMenu
+              delivery={order.delivery}
+              onChange={onDelivery}
+            />
+          </>
+        ) : null}
       </div>
       <dl className={`record-card-facts${compact ? ' facts-compact' : ''}`}>
         <div>
@@ -554,10 +562,12 @@ function OrderCard({
           <dt>Total</dt>
           <dd className="amount">{money(order.total)}</dd>
         </div>
-        <div>
-          <dt>Cobrado</dt>
-          <dd className="amount">{money(order.paid)}</dd>
-        </div>
+        {!orderIsQuote(order.status) ? (
+          <div>
+            <dt>Cobrado</dt>
+            <dd className="amount">{money(order.paid)}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Ganancia</dt>
           <dd className="amount">{money(order.total - order.cost)}</dd>
@@ -1174,17 +1184,23 @@ export default function CRM({
                         options={[...ORDER_STATUSES]}
                         onPick={(status) => patchOrder(o, { status })}
                       />
-                      <OrderPayMenu
-                        order={o}
-                        partners={data?.partners || []}
-                        onChange={(pay, paid, paid_partner_id) =>
-                          patchOrder(o, { pay, paid, paid_partner_id })
-                        }
-                      />
-                      <OrderDeliveryMenu
-                        delivery={o.delivery}
-                        onChange={(delivery) => patchOrder(o, { delivery })}
-                      />
+                      {!orderIsQuote(o.status) ? (
+                        <>
+                          <OrderPayMenu
+                            order={o}
+                            partners={data?.partners || []}
+                            onChange={(pay, paid, paid_partner_id) =>
+                              patchOrder(o, { pay, paid, paid_partner_id })
+                            }
+                          />
+                          <OrderDeliveryMenu
+                            delivery={o.delivery}
+                            onChange={(delivery) =>
+                              patchOrder(o, { delivery })
+                            }
+                          />
+                        </>
+                      ) : null}
                     </div>
                   </TableCell>
                   <TableCell>{unitsLabel(orderUnits(o))}</TableCell>
