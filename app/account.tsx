@@ -34,7 +34,7 @@ import {
   type MonthlyResult,
 } from '@/lib/account';
 import { decimal, formatMoney, formatRate, parseDecimal, arsFromUsd } from '@/lib/money';
-import type { Data, Order } from '@/lib/types';
+import { orderIsLive, type Data, type Order } from '@/lib/types';
 
 const today = () =>
   new Date().toLocaleDateString('en-CA', {
@@ -120,7 +120,7 @@ function ResultMonth({
       </h3>
       <dl>
         <div>
-          <dt>Fact</dt>
+          <dt>Facturación</dt>
           <dd className="amount">{sheetValue(row.billed, money)}</dd>
         </div>
         <div>
@@ -230,7 +230,6 @@ export function AccountBoard({
   });
   const yearRows = yearSheet(year, results);
   const previewRow = yearRows[monthIndex] || yearRows[0];
-  const yearTotals = totalsOf(yearRows);
   const allProfit = totalsOf(results).profit;
   const leftover = remainingProfit(
     allProfit,
@@ -241,6 +240,12 @@ export function AccountBoard({
   const yearCashouts = data.cashouts
     .filter((row) => row.date.startsWith(String(year)))
     .reduce((sum, row) => sum + row.amount, 0);
+  const activeOrders = data.orders.filter(orderIsLive);
+  const outstanding = activeOrders.reduce(
+    (sum, order) => sum + Math.max(0, order.total - order.paid),
+    0,
+  );
+  const unpaidOrders = activeOrders.filter((order) => order.paid < order.total);
   const partners = data.partners.filter((partner) => !partner.archived);
   const suppliers = data.contacts.filter(
     (contact) => contact.kind === 'supplier' && !contact.archived,
@@ -304,11 +309,6 @@ export function AccountBoard({
     partners,
   );
   const balances = partnerBalances(allProfit, partners, data.cashouts);
-  const yearBalances = partnerBalances(
-    yearTotals.profit,
-    partners,
-    data.cashouts.filter((row) => row.date.startsWith(String(year))),
-  );
   const ledger = accountLedger(
     results,
     data.cashouts,
@@ -319,9 +319,15 @@ export function AccountBoard({
     data.orders,
     customerNames,
   );
-  const yearLedger = ledger.filter((entry) =>
-    entry.date.startsWith(String(year)),
-  );
+  const yearLedger = [
+    ...ledger.filter((entry) => entry.date.startsWith(String(year))),
+  ].reverse();
+  // Running cash ledger (cobros − cashouts − movimientos), not leftover/"En cuenta".
+  // yearLedger is newest-first, so [0] is the year-end balance.
+  const yearEndBalance =
+    yearLedger[0]?.balance ??
+    ledger.filter((entry) => entry.date < `${year}-01-01`).at(-1)?.balance ??
+    0;
   const money = (cents: number) => formatMoney(cents, data.currency);
   function openLedgerOrder(entry: LedgerEntry) {
     if (!entry.order_id || !onOpenOrder) return;
@@ -396,12 +402,6 @@ export function AccountBoard({
   }
   return (
     <div className="account-board">
-      <p className="hint">
-        FACT es lo cobrado, aunque el pedido no esté facturado ni cerrado.
-        Ganancia es lo cobrado menos costo, MKT y comisiones, y se reparte
-        entre los socios según su %. Un cashout no puede superar lo que le
-        queda a ese socio después de su parte.
-      </p>
       <ErrorBox message={error} />
       <div className="seg year-seg" role="tablist" aria-label="Año">
         {years.map((value) => (
@@ -420,9 +420,11 @@ export function AccountBoard({
       <div className="metrics">
         {[
           {
-            label: 'Facturación',
-            value: yearTotals.billed,
-            hint: `${yearTotals.orders} pedido${yearTotals.orders === 1 ? '' : 's'} cobrado${yearTotals.orders === 1 ? '' : 's'}`,
+            label: 'Por cobrar',
+            value: outstanding,
+            hint: unpaidOrders.length
+              ? `${unpaidOrders.length} pedido${unpaidOrders.length === 1 ? '' : 's'} con saldo`
+              : 'Sin saldos pendientes',
           },
           {
             label: 'En cuenta',
@@ -430,20 +432,6 @@ export function AccountBoard({
             hint: sharesReady
               ? 'Suma disponible de los socios'
               : 'Definí los % en Configuración',
-          },
-          {
-            label: 'Ganancia',
-            value: yearTotals.profit,
-            hint: sharesReady
-              ? yearBalances
-                  .map(
-                    (row) =>
-                      `${row.partner.name.split(' ')[0]} ${shareLabel(row.partner.share)} ${money(row.assigned)}`,
-                  )
-                  .join(' · ')
-              : yearTotals.margin == null
-                ? 'Sin cobros en el año'
-                : `Margen ${yearTotals.margin}%`,
           },
           {
             label: 'Cashouts',
@@ -463,7 +451,7 @@ export function AccountBoard({
       <section className="panel account-sheet">
         <div className="panel-heading">
           <h2>Resultados</h2>
-          <CrmLink href={`/tablero?vista=resultados&anio=${year}`}>
+          <CrmLink href={`/?vista=resultados&anio=${year}`}>
             Ver todo <ArrowUpRight size={15} />
           </CrmLink>
         </div>
@@ -487,37 +475,43 @@ export function AccountBoard({
       <section className="panel">
         <div className="panel-heading">
           <h2>Movimientos {year}</h2>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => {
-              E('');
-              setEntry({
-                concept: 'pago_proveedor',
-                detail: '',
-                partner_id: partners[0]?.id || '',
-                supplier_id: suppliers[0]?.id || '',
-                order_id: '',
-                receipt: '',
-                amount: '',
-                currency: data.currency === 'ARS' ? 'ARS' : 'USD',
-                fx_rate: '',
-                date: today(),
-              });
-              setEntryOpen(true);
-            }}
-          >
-            <Plus size={15} /> movimiento
-          </button>
+          <div className="ledger-heading-actions">
+            <span
+              className={`ledger-heading-saldo${yearEndBalance < 0 ? ' money-neg' : ''}`}
+            >
+              Saldo {money(yearEndBalance)}
+            </span>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                E('');
+                setEntry({
+                  concept: 'pago_proveedor',
+                  detail: '',
+                  partner_id: partners[0]?.id || '',
+                  supplier_id: suppliers[0]?.id || '',
+                  order_id: '',
+                  receipt: '',
+                  amount: '',
+                  currency: data.currency === 'ARS' ? 'ARS' : 'USD',
+                  fx_rate: '',
+                  date: today(),
+                });
+                setEntryOpen(true);
+              }}
+            >
+              <Plus size={15} /> movimiento
+            </button>
+          </div>
         </div>
-        <div className="desktop-table">
+        <div className="desktop-table ledger-table">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Movimiento</TableHead>
-                <TableHead>Importe</TableHead>
-                <TableHead>Saldo</TableHead>
+                <TableHead className="ledger-col-date">Fecha</TableHead>
+                <TableHead className="ledger-col-movement">Movimiento</TableHead>
+                <TableHead className="ledger-col-amount">Importe</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -535,8 +529,10 @@ export function AccountBoard({
                         clickable ? () => openLedgerOrder(entry) : undefined
                       }
                     >
-                      <TableCell>{entry.date}</TableCell>
-                      <TableCell>
+                      <TableCell className="ledger-col-date">
+                        {entry.date}
+                      </TableCell>
+                      <TableCell className="ledger-col-movement">
                         {clickable ? (
                           <button
                             type="button"
@@ -566,7 +562,9 @@ export function AccountBoard({
                           </a>
                         ) : null}
                       </TableCell>
-                      <TableCell className={entry.amount < 0 ? 'money-neg' : ''}>
+                      <TableCell
+                        className={`ledger-col-amount${entry.amount < 0 ? ' money-neg' : ''}`}
+                      >
                         {formatMoney(
                           entry.amount,
                           entry.currency || data.currency,
@@ -578,15 +576,12 @@ export function AccountBoard({
                           </small>
                         ) : null}
                       </TableCell>
-                      <TableCell className={entry.balance < 0 ? 'money-neg' : ''}>
-                        {money(entry.balance)}
-                      </TableCell>
                     </TableRow>
                   );
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={4}>
+                  <TableCell colSpan={3}>
                     No hay movimientos para mostrar en {year}.
                   </TableCell>
                 </TableRow>
@@ -636,8 +631,7 @@ export function AccountBoard({
                   {entry.receipt ? ' · factura' : ''}
                   {entry.currency === 'USD' && entry.amount_ars
                     ? ` · ${formatMoney(entry.amount_ars, 'ARS')} · TC ${formatRate(entry.fx_rate || 0)}`
-                    : ''}{' '}
-                  · saldo {money(entry.balance)}
+                    : ''}
                 </small>
               </article>
             );

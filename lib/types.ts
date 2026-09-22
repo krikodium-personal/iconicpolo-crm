@@ -1,4 +1,7 @@
 import type { ConfiguredPricing } from './configure';
+import type { TaskKind } from './tasks';
+
+export type { TaskKind };
 
 export type Contact = {
   id: string;
@@ -172,6 +175,20 @@ export type PartnerCashout = {
   created_at: string;
   created_by?: string;
 };
+export type Task = {
+  id: string;
+  created_at: string;
+  due_date: string;
+  partner_id: string;
+  supplier_id: string;
+  customer_id: string;
+  kind: TaskKind;
+  kind_other: string;
+  description: string;
+  done: number;
+  created_by?: string;
+  version: number;
+};
 export type Data = {
   contacts: Contact[];
   products: Product[];
@@ -182,6 +199,7 @@ export type Data = {
   expenses: AccountExpense[];
   cashouts: PartnerCashout[];
   entries: AccountEntry[];
+  tasks: Task[];
   currency: string;
 };
 export const ORDER_STATUSES = [

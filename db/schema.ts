@@ -186,3 +186,26 @@ export const accountEntries = sqliteTable(
   },
   (t) => [index('idx_account_entries_date').on(t.date)],
 );
+export const tasks = sqliteTable(
+  'tasks',
+  {
+    id: text('id').primaryKey(),
+    createdAt: text('created_at').notNull(),
+    dueDate: text('due_date').notNull(),
+    partnerId: text('partner_id')
+      .notNull()
+      .references(() => partners.id),
+    supplierId: text('supplier_id').notNull().default(''),
+    customerId: text('customer_id').notNull().default(''),
+    kind: text('kind').notNull(),
+    kindOther: text('kind_other').notNull().default(''),
+    description: text('description').notNull().default(''),
+    done: integer('done').notNull().default(0),
+    createdBy: text('created_by').notNull().default(''),
+    version: integer('version').notNull().default(1),
+  },
+  (t) => [
+    index('idx_tasks_due').on(t.dueDate, t.done),
+    index('idx_tasks_partner').on(t.partnerId),
+  ],
+);

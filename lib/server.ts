@@ -21,6 +21,7 @@ import {
   type AccountExpense,
   type AccountEntry,
   type PartnerCashout,
+  type Task,
 } from './types';
 import {
   assertSharesComplete,
@@ -29,6 +30,7 @@ import {
   sharesAreComplete,
   totalsOf,
 } from './account';
+import { TASK_KINDS } from './tasks';
 import { whatsappGroup } from './whatsapp';
 import { setPartnerAccess } from './auth';
 import {
@@ -109,6 +111,24 @@ async function requireSupplier(id: unknown, keep?: string) {
   ).first();
   if (!row) throw new Error('Proveedor inválido.');
   return supplier;
+}
+/** Optional supplier: empty string allowed. */
+async function optionalSupplier(id: unknown, keep?: string) {
+  const supplier = str(id ?? '', 'Proveedor');
+  if (!supplier) return '';
+  return requireSupplier(supplier, keep);
+}
+/** Optional customer (contact kind=customer): empty string allowed. */
+async function optionalCustomer(id: unknown, keep?: string) {
+  const customer = str(id ?? '', 'Cliente');
+  if (!customer) return '';
+  const row = await stmt(
+    "SELECT id FROM contacts WHERE id=? AND kind='customer' AND (archived=0 OR id=?)",
+    customer,
+    keep || '',
+  ).first();
+  if (!row) throw new Error('Cliente inválido.');
+  return customer;
 }
 export function attributes(v: unknown) {
   const a = obj(v);
@@ -224,6 +244,39 @@ export async function ensureAccountTables() {
   ].filter(Boolean);
   if (entryAlters.length)
     await d.batch(entryAlters as ReturnType<typeof stmt>[]);
+  await ensureTasksTable();
+}
+
+export async function ensureTasksTable() {
+  const d = db();
+  await d.batch([
+    d.prepare(
+      "CREATE TABLE IF NOT EXISTS tasks (id text PRIMARY KEY NOT NULL, created_at text NOT NULL, due_date text NOT NULL, partner_id text NOT NULL, supplier_id text NOT NULL DEFAULT '', customer_id text NOT NULL DEFAULT '', kind text NOT NULL, kind_other text NOT NULL DEFAULT '', description text NOT NULL DEFAULT '', done integer NOT NULL DEFAULT 0, created_by text NOT NULL DEFAULT '', version integer NOT NULL DEFAULT 1, FOREIGN KEY (partner_id) REFERENCES partners(id))",
+    ),
+    d.prepare(
+      'CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks (due_date, done)',
+    ),
+    d.prepare(
+      'CREATE INDEX IF NOT EXISTS idx_tasks_partner ON tasks (partner_id)',
+    ),
+  ]);
+  const taskNames = await columnNames('tasks');
+  const taskAlters = [
+    await addColumn(
+      'tasks',
+      taskNames,
+      'customer_id',
+      "customer_id text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'tasks',
+      taskNames,
+      'kind_other',
+      "kind_other text NOT NULL DEFAULT ''",
+    ),
+  ].filter(Boolean);
+  if (taskAlters.length)
+    await d.batch(taskAlters as ReturnType<typeof stmt>[]);
 }
 
 async function addColumn(
@@ -651,7 +704,7 @@ export async function allData() {
   await ensureAccountTables();
   await ensureConfiguredCatalog();
   const d = db();
-  const [c, p, o, i, m, cat, s, partners, expenses, cashouts, entries] =
+  const [c, p, o, i, m, cat, s, partners, expenses, cashouts, entries, tasks] =
     await d.batch([
     d.prepare('SELECT * FROM contacts ORDER BY name'),
     d.prepare(
@@ -671,6 +724,9 @@ export async function allData() {
     ),
     d.prepare(
       'SELECT * FROM account_entries ORDER BY date DESC, created_at DESC',
+    ),
+    d.prepare(
+      'SELECT * FROM tasks ORDER BY done ASC, due_date ASC, created_at DESC',
     ),
   ]);
   const items = i.results.map((r) => decode<Item>(r, ['selections']));
@@ -750,6 +806,16 @@ export async function allData() {
       receipt: typeof row.receipt === 'string' ? row.receipt : '',
       fx_rate: Number(row.fx_rate) || 0,
       amount_ars: Number(row.amount_ars) || 0,
+    })),
+    tasks: (tasks.results as Task[]).map((row) => ({
+      ...row,
+      supplier_id: typeof row.supplier_id === 'string' ? row.supplier_id : '',
+      customer_id: typeof row.customer_id === 'string' ? row.customer_id : '',
+      kind_other: typeof row.kind_other === 'string' ? row.kind_other : '',
+      description: typeof row.description === 'string' ? row.description : '',
+      done: Number(row.done) ? 1 : 0,
+      version: Number(row.version) || 1,
+      created_by: typeof row.created_by === 'string' ? row.created_by : '',
     })),
     currency: s.results[0] ? obj(s.results[0]).currency : 'ARS',
   };
@@ -2050,6 +2116,83 @@ export async function mutate(
           ? undefined
           : str(b.password, 'Contraseña', true, 80);
       await setPartnerAccess(id, email, password);
+      return { ok: true };
+    }
+    case 'task': {
+      await ensureTasksTable();
+      const id = b.id ? str(b.id, 'ID', true) : crypto.randomUUID();
+      const dueDate = date(b.due_date, true);
+      const partnerId = str(b.partner_id, 'Responsable', true);
+      if (
+        !(await stmt(
+          'SELECT id FROM partners WHERE id=? AND archived=0',
+          partnerId,
+        ).first())
+      )
+        throw new Error('Responsable no disponible.');
+      const kind = choice(b.kind, [...TASK_KINDS], 'Tipo de tarea') as Task['kind'];
+      const kindOther =
+        kind === 'otro'
+          ? str(b.kind_other || '', 'Tipo personalizado', true, 120)
+          : '';
+      const description = str(b.description || '', 'Descripción', false, 2000);
+      const done = b.done == null ? undefined : integer(b.done, 'Hecha', 1);
+      if (b.id) {
+        const existing = await stmt(
+          'SELECT * FROM tasks WHERE id=?',
+          id,
+        ).first<Task>();
+        if (!existing) throw new Error('Tarea no disponible.');
+        const supplierId = await optionalSupplier(
+          b.supplier_id,
+          existing.supplier_id,
+        );
+        const customerId = await optionalCustomer(
+          b.customer_id,
+          existing.customer_id,
+        );
+        const nextDone = done == null ? Number(existing.done) || 0 : done;
+        const r = await stmt(
+          'UPDATE tasks SET due_date=?,partner_id=?,supplier_id=?,customer_id=?,kind=?,kind_other=?,description=?,done=?,version=? WHERE id=? AND version=?',
+          dueDate,
+          partnerId,
+          supplierId,
+          customerId,
+          kind,
+          kindOther,
+          description,
+          nextDone,
+          integer(b.version, 'Versión') + 1,
+          id,
+          integer(b.version, 'Versión'),
+        ).run();
+        if (!r.meta.changes) throw new Error('Tarea no disponible.');
+        return { id };
+      }
+      const supplierId = await optionalSupplier(b.supplier_id);
+      const customerId = await optionalCustomer(b.customer_id);
+      await stmt(
+        'INSERT INTO tasks(id,created_at,due_date,partner_id,supplier_id,customer_id,kind,kind_other,description,done,created_by,version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+        id,
+        new Date().toISOString(),
+        dueDate,
+        partnerId,
+        supplierId,
+        customerId,
+        kind,
+        kindOther,
+        description,
+        done ?? 0,
+        actor.id,
+        1,
+      ).run();
+      return { id };
+    }
+    case 'task_delete': {
+      await ensureTasksTable();
+      const id = str(b.id, 'ID', true);
+      const r = await stmt('DELETE FROM tasks WHERE id=?', id).run();
+      if (!r.meta.changes) throw new Error('Tarea no disponible.');
       return { ok: true };
     }
     case 'order_delete': {

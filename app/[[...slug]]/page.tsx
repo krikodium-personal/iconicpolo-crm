@@ -11,8 +11,9 @@ export default async function Page({
 }) {
   const { slug } = await params;
   if (slug && slug.length > 1) notFound();
-  const module = slug?.[0] || 'dashboard';
-  if (!modules.includes(module as (typeof modules)[number])) notFound();
+  const moduleRaw = slug?.[0] || 'dashboard';
+  if (!modules.includes(moduleRaw as (typeof modules)[number])) notFound();
+  const module = moduleRaw === 'tablero' ? 'dashboard' : moduleRaw;
   const { estado, vista, anio } = await searchParams;
   const initialFilter =
     module === 'pedidos' &&
@@ -25,7 +26,10 @@ export default async function Page({
       module={module}
       initialFilter={initialFilter}
       accountView={
-        module === 'tablero' && vista === 'resultados' ? 'resultados' : 'board'
+        vista === 'resultados' &&
+        (moduleRaw === 'tablero' || module === 'dashboard')
+          ? 'resultados'
+          : 'board'
       }
       accountYear={Number.isFinite(year) ? year : undefined}
     />

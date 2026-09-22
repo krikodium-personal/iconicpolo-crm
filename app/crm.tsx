@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import useEmblaCarousel from 'embla-carousel-react';
 import type { LucideIcon } from 'lucide-react';
 import {
-  LayoutDashboard,
   ListTodo,
   Package,
   Users,
@@ -22,9 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   RefreshCw,
-  TrendingUp,
   ArrowRight,
-  CircleDollarSign,
   Landmark,
   Check,
   Pencil,
@@ -76,6 +73,7 @@ import {
 } from '@/components/ui/empty';
 import { AuthSkeleton, ModuleSkeleton } from './screen-skeletons';
 import { CrmLink } from './crm-nav';
+import { TasksBoard } from './tasks';
 import {
   ContactForm,
   ProductForm,
@@ -129,18 +127,13 @@ import {
   type Movement,
   type Partner,
 } from '@/lib/types';
+import { tasksNeedAttention } from '@/lib/tasks';
 
 const nav: { id: string; title: string; short: string; icon: LucideIcon }[] = [
   {
     id: 'dashboard',
-    title: 'Vista general',
-    short: 'Inicio',
-    icon: LayoutDashboard,
-  },
-  {
-    id: 'tablero',
     title: 'Estado de cuenta',
-    short: 'Tablero',
+    short: 'Inicio',
     icon: Landmark,
   },
   { id: 'pedidos', title: 'Pedidos', short: 'Pedidos', icon: ShoppingBag },
@@ -680,6 +673,7 @@ export default function CRM({
   accountView?: 'board' | 'resultados';
   accountYear?: number;
 }) {
+  const viewModule = module === 'tablero' ? 'dashboard' : module;
   const [data, D] = useState<Data | null>(null),
     [error, E] = useState(''),
     [notice, setNotice] = useState<{ id: number; text: string } | null>(null),
@@ -970,29 +964,20 @@ export default function CRM({
               : 'order',
     });
   }
-  const title = nav.find((n) => n.id === module)?.title || 'Vista general';
+  const title =
+    nav.find((n) => n.id === viewModule)?.title || 'Estado de cuenta';
   const currency = data?.currency || 'ARS';
   const money = (n: number) => formatMoney(n, currency);
   const search = (...values: (string | undefined)[]) =>
     values.join(' ').toLowerCase().includes(query.toLowerCase());
   const activeOrders = data?.orders.filter(orderIsLive) || [];
-  const billed = activeOrders.reduce((sum, order) => sum + order.total, 0);
-  const collected = activeOrders.reduce((sum, order) => sum + order.paid, 0);
-  const outstanding = activeOrders.reduce(
-    (sum, order) => sum + Math.max(0, order.total - order.paid),
-    0,
-  );
-  const profit = activeOrders.reduce(
-    (sum, order) => sum + order.total - order.cost,
-    0,
-  );
-  const unpaidOrders = activeOrders.filter((order) => order.paid < order.total);
   const openOrders = activeOrders
     .filter((order) => !orderIsLocked(order.status))
     .sort(
       (a, b) =>
         b.date.localeCompare(a.date) || b.number.localeCompare(a.number),
     );
+  const tasksAlert = tasksNeedAttention(data?.tasks || []);
   function latestOrder(customerId: string) {
     return activeOrders
       .filter((order) => order.customer_id === customerId)
@@ -1327,15 +1312,24 @@ export default function CRM({
               {nav.map(({ id, title, icon: Icon }) => (
                 <SidebarMenuItem key={id}>
                   <SidebarMenuButton
-                    isActive={module === id}
+                    isActive={viewModule === id}
                     render={
                       <CrmLink
-                        aria-label={title}
+                        aria-label={
+                          id === 'tareas' && tasksAlert
+                            ? `${title} (hay vencimientos)`
+                            : title
+                        }
                         href={id === 'dashboard' ? '/' : `/${id}`}
                       />
                     }
                   >
-                    <Icon />
+                    <span className="nav-icon-wrap">
+                      <Icon />
+                      {id === 'tareas' && tasksAlert ? (
+                        <span className="nav-alert-dot" aria-hidden />
+                      ) : null}
+                    </span>
                     {title}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -1411,37 +1405,34 @@ export default function CRM({
             <div className="page-title">
               <div>
                 <p className="eyebrow">
-                  {module === 'dashboard'
-                    ? 'TU NEGOCIO, EN PERSPECTIVA'
-                    : module === 'tablero'
-                      ? 'RESULTADO Y CAJA'
-                      : module === 'tareas'
-                        ? 'SEGUIMIENTO OPERATIVO'
-                        : 'ICONIC · GESTIÓN COMERCIAL'}
+                  {viewModule === 'dashboard'
+                    ? 'RESULTADO Y CAJA'
+                    : viewModule === 'tareas'
+                      ? 'SEGUIMIENTO OPERATIVO'
+                      : 'ICONIC · GESTIÓN COMERCIAL'}
                 </p>
                 <div className="page-heading-row">
                   <h1>{title}</h1>
-                  {module === 'tablero' && accountView === 'resultados' ? (
-                    <CrmLink href="/tablero">Volver</CrmLink>
+                  {viewModule === 'dashboard' &&
+                  accountView === 'resultados' ? (
+                    <CrmLink href="/">Volver</CrmLink>
                   ) : null}
                 </div>
                 <p>
-                  {module === 'dashboard'
-                    ? 'Una mirada a las ventas, los clientes y lo que viene.'
-                    : module === 'tablero'
-                      ? 'Facturación, costos, ganancia y cashouts de socios.'
-                      : module === 'tareas'
-                        ? 'Pendientes, responsables y avance de cada trabajo.'
-                        : module === 'productos'
+                  {viewModule === 'dashboard'
+                    ? 'Facturación, costos, ganancia, cashouts y el recorrido de tus pedidos.'
+                    : viewModule === 'tareas'
+                      ? 'Pendientes, responsables y avance de cada trabajo.'
+                      : viewModule === 'productos'
                           ? 'Tu catálogo, sus precios y cada movimiento de stock.'
-                          : module === 'clientes'
+                          : viewModule === 'clientes'
                             ? 'Cada relación, con su historia y su próxima oportunidad.'
-                            : module === 'proveedores'
+                            : viewModule === 'proveedores'
                               ? 'Las personas y talleres detrás de tus productos.'
                               : 'De la primera consulta a la entrega.'}
                 </p>
               </div>
-              {module !== 'tareas' && module !== 'tablero' && (
+              {viewModule !== 'tareas' && viewModule !== 'dashboard' && (
                 <button
                   className="primary"
                   disabled={!data?.categories.length}
@@ -1460,7 +1451,7 @@ export default function CRM({
             </div>
             <ErrorBox message={error} />
             {!data ? (
-              <ModuleSkeleton module={module} />
+              <ModuleSkeleton module={viewModule} />
             ) : !data.categories.length ? (
               <section className="onboarding">
                 <span className="onboarding-icon">
@@ -1491,47 +1482,8 @@ export default function CRM({
                   Los ejemplos incluyen productos, clientes y pedidos ficticios.
                 </small>
               </section>
-            ) : module === 'dashboard' ? (
+            ) : viewModule === 'dashboard' ? (
               <>
-                <div className="metrics">
-                  {[
-                    {
-                      label: 'Cobrado',
-                      value: money(collected),
-                      hint: `${activeOrders.filter((order) => order.paid > 0).length} pedidos con cobro`,
-                      icon: CircleDollarSign,
-                    },
-                    {
-                      label: 'Ganancia bruta',
-                      value: money(profit),
-                      hint: 'Venta menos costo del producto',
-                      icon: TrendingUp,
-                    },
-                    {
-                      label: 'Por cobrar',
-                      value: money(outstanding),
-                      hint: unpaidOrders.length
-                        ? `${unpaidOrders.length} pedido${unpaidOrders.length === 1 ? '' : 's'} con saldo`
-                        : 'Sin saldos pendientes',
-                      icon: Landmark,
-                    },
-                    {
-                      label: 'Ventas',
-                      value: money(billed),
-                      hint: `${activeOrders.length} pedido${activeOrders.length === 1 ? '' : 's'} activos`,
-                      icon: ShoppingBag,
-                    },
-                  ].map(({ label, value, hint, icon: Icon }) => (
-                    <article className="metric" key={label}>
-                      <p>
-                        {label}
-                        <Icon size={18} />
-                      </p>
-                      <strong>{value}</strong>
-                      <span>{hint}</span>
-                    </article>
-                  ))}
-                </div>
                 <div className="dashboard-grid">
                   <OpenOrdersCarousel
                     orders={openOrders}
@@ -1554,69 +1506,22 @@ export default function CRM({
                       />
                     )}
                   />
-                  <section className="panel flow-panel">
-                    <div className="panel-heading">
-                      <h2>El recorrido de tus pedidos</h2>
-                      <span>Estado actual</span>
-                    </div>
-                    <div className="pipeline">
-                      {[...ORDER_STATUSES].map(
-                        (s, i) => (
-                          <CrmLink
-                            href={`/pedidos?estado=${encodeURIComponent(s)}`}
-                            key={s}
-                          >
-                            <span>
-                              0{i + 1} / {s}
-                            </span>
-                            <strong>
-                              {
-                                activeOrders.filter(
-                                  (o) => orderPipelineStatus(o) === s,
-                                ).length
-                              }
-                            </strong>
-                            <div className="pipeline-track">
-                              <div
-                                style={{
-                                  width: `${activeOrders.length ? (activeOrders.filter((o) => orderPipelineStatus(o) === s).length / activeOrders.length) * 100 : 0}%`,
-                                }}
-                              />
-                            </div>
-                          </CrmLink>
-                        ),
-                      )}
-                    </div>
-                  </section>
                 </div>
+                <AccountBoard
+                  data={data}
+                  save={save}
+                  view={accountView}
+                  initialYear={accountYear}
+                  onOpenOrder={(order) => P({ type: 'order', record: order })}
+                />
                 <p className="report-note">
                   Pedidos activos · Cobrado y por cobrar según cada
                   pedido · Ganancia bruta es venta menos costo, sin impuestos
                   ni gastos.
                 </p>
               </>
-            ) : module === 'tablero' ? (
-              <AccountBoard
-                data={data}
-                save={save}
-                view={accountView}
-                initialYear={accountYear}
-                onOpenOrder={(order) => P({ type: 'order', record: order })}
-              />
-            ) : module === 'tareas' ? (
-              <section className="panel records">
-                <Empty className="empty">
-                  <EmptyHeader>
-                    <EmptyTitle>Seguimiento de tareas</EmptyTitle>
-                    <EmptyDescription>
-                      Esta sección va a concentrar pendientes, responsables y
-                      avance. Todavía no hay un flujo definido: cuando lo
-                      definamos, armamos estados, plazos y cómo se relaciona con
-                      pedidos y clientes.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              </section>
+            ) : viewModule === 'tareas' ? (
+              <TasksBoard data={data} save={save} />
             ) : (
               <>
                 {module === 'productos' && data && !archived ? (
@@ -2168,10 +2073,20 @@ export default function CRM({
             <CrmLink
               key={id}
               href={id === 'dashboard' ? '/' : `/${id}`}
-              className={`mobile-tab ${module === id ? 'active' : ''}`}
-              aria-current={module === id ? 'page' : undefined}
+              className={`mobile-tab ${viewModule === id ? 'active' : ''}`}
+              aria-label={
+                id === 'tareas' && tasksAlert
+                  ? `${short} (hay vencimientos)`
+                  : undefined
+              }
+              aria-current={viewModule === id ? 'page' : undefined}
             >
-              <Icon size={22} />
+              <span className="nav-icon-wrap">
+                <Icon size={22} />
+                {id === 'tareas' && tasksAlert ? (
+                  <span className="nav-alert-dot" aria-hidden />
+                ) : null}
+              </span>
               {short}
             </CrmLink>
           ))}

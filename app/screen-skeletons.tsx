@@ -132,9 +132,45 @@ function DashboardSkeleton() {
     <div
       className="skel-screen"
       aria-busy="true"
-      aria-label="Cargando vista general"
+      aria-label="Cargando estado de cuenta"
     >
-      <MetricSkeletons />
+      <div className="account-board">
+        <div className="skel-row skel-year-seg">
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton key={i} className="h-10 w-20 rounded-md" />
+          ))}
+        </div>
+        <MetricSkeletons count={3} />
+        <section className="panel account-sheet">
+          <div className="panel-heading">
+            <Skeleton className="h-5 w-28" />
+            <Skeleton className="h-4 w-20" />
+          </div>
+          <div className="skel-panel-body">
+            <div className="skel-row">
+              <Skeleton className="h-10 w-36 rounded-lg" />
+              <Skeleton className="h-10 w-28 rounded-lg" />
+            </div>
+            <Skeleton className="skel-result-block" />
+          </div>
+        </section>
+        <section className="panel">
+          <div className="panel-heading">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-9 w-32 rounded-lg" />
+          </div>
+          <div className="skel-movements">
+            {Array.from({ length: 4 }, (_, i) => (
+              <div className="skel-movement-row" key={i}>
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-4 w-24" />
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
       <div className="dashboard-grid">
         <section className="panel open-orders">
           <div className="panel-heading">
@@ -156,90 +192,46 @@ function DashboardSkeleton() {
             ))}
           </div>
         </section>
-        <section className="panel flow-panel">
-          <div className="panel-heading">
-            <Skeleton className="h-5 w-52" />
-            <Skeleton className="h-3 w-24" />
-          </div>
-          <div className="pipeline skel-pipeline">
-            {Array.from({ length: 5 }, (_, i) => (
-              <div key={i}>
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="mt-3 h-8 w-12" />
-                <Skeleton className="mt-3 h-2 w-full rounded-full" />
-              </div>
-            ))}
-          </div>
-        </section>
       </div>
     </div>
   );
 }
 
 function TableroSkeleton() {
-  return (
-    <div
-      className="account-board skel-screen"
-      aria-busy="true"
-      aria-label="Cargando estado de cuenta"
-    >
-      <Skeleton className="skel-hint" />
-      <div className="skel-row skel-year-seg">
-        {Array.from({ length: 3 }, (_, i) => (
-          <Skeleton key={i} className="h-10 w-20 rounded-md" />
-        ))}
-      </div>
-      <MetricSkeletons />
-      <section className="panel account-sheet">
-        <div className="panel-heading">
-          <Skeleton className="h-5 w-28" />
-          <Skeleton className="h-4 w-20" />
-        </div>
-        <div className="skel-panel-body">
-          <div className="skel-row">
-            <Skeleton className="h-10 w-36 rounded-lg" />
-            <Skeleton className="h-10 w-28 rounded-lg" />
-          </div>
-          <Skeleton className="skel-result-block" />
-        </div>
-      </section>
-      <section className="panel">
-        <div className="panel-heading">
-          <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-9 w-32 rounded-lg" />
-        </div>
-        <div className="skel-movements">
-          {Array.from({ length: 4 }, (_, i) => (
-            <div className="skel-movement-row" key={i}>
-              <Skeleton className="h-4 w-28" />
-              <Skeleton className="h-4 w-40" />
-              <Skeleton className="h-4 w-20" />
-              <Skeleton className="h-4 w-24" />
-            </div>
-          ))}
-        </div>
-        <div className="record-card-list">
-          {Array.from({ length: 3 }, (_, i) => (
-            <RecordCardSkeleton key={i} />
-          ))}
-        </div>
-      </section>
-    </div>
-  );
+  return <DashboardSkeleton />;
 }
 
 function TareasSkeleton() {
   return (
     <section
-      className="panel records skel-empty-panel"
+      className="panel records tasks-panel"
       aria-busy="true"
       aria-label="Cargando tareas"
     >
-      <div className="skel-empty">
-        <Skeleton className="h-6 w-48" />
-        <Skeleton className="h-3 w-72 max-w-full" />
-        <Skeleton className="h-3 w-64 max-w-full" />
-        <Skeleton className="h-3 w-56 max-w-full" />
+      <div className="toolbar">
+        <div className="toolbar-filters">
+          <Skeleton className="h-10 w-24 rounded-lg" />
+          <Skeleton className="h-10 w-20 rounded-lg" />
+          <Skeleton className="h-10 w-20 rounded-lg" />
+        </div>
+        <Skeleton className="h-10 w-36 rounded-lg" />
+      </div>
+      <div className="task-list">
+        {Array.from({ length: 3 }, (_, i) => (
+          <div key={i} className="task-card">
+            <div className="task-card-top">
+              <Skeleton className="h-6 w-28 rounded-full" />
+              <Skeleton className="h-4 w-16" />
+            </div>
+            <Skeleton className="h-4 w-3/4" />
+            <div className="task-meta">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );

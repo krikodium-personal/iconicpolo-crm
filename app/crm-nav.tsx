@@ -28,7 +28,8 @@ const CrmNavContext = createContext<CrmNav | null>(null);
 export function parseCrmHref(href: string): CrmRoute {
   const url = new URL(href, 'http://local.crm');
   const segment = url.pathname.replace(/^\//, '').split('/').filter(Boolean)[0];
-  const mod = segment || 'dashboard';
+  const modRaw = segment || 'dashboard';
+  const mod = modRaw === 'tablero' ? 'dashboard' : modRaw;
   const estado = url.searchParams.get('estado') || undefined;
   const vista = url.searchParams.get('vista') || undefined;
   const anio = url.searchParams.get('anio') || undefined;
@@ -41,7 +42,9 @@ export function parseCrmHref(href: string): CrmRoute {
         ? (estado as string)
         : 'all',
     accountView:
-      mod === 'tablero' && vista === 'resultados' ? 'resultados' : 'board',
+      (modRaw === 'tablero' || mod === 'dashboard') && vista === 'resultados'
+        ? 'resultados'
+        : 'board',
     accountYear: Number.isFinite(year) ? year : undefined,
   };
 }
