@@ -37,6 +37,7 @@ import {
   cabezadaStockKey,
   isCabezadaProduct,
   parseCabezadaConfig,
+  tryParseCabezadaConfig,
 } from './cabezada';
 import { whatsappGroup } from './whatsapp';
 import { setPartnerAccess } from './auth';
@@ -1815,9 +1816,11 @@ export async function mutate(
         configJson = JSON.stringify(config);
         key = stockKey(configured, config);
       } else if (isCabezadaProduct(product)) {
-        const config = parseCabezadaConfig(b.config);
-        configJson = JSON.stringify(config);
-        key = cabezadaStockKey(config);
+        const config = tryParseCabezadaConfig(b.config);
+        if (config) {
+          configJson = JSON.stringify(config);
+          key = cabezadaStockKey(config);
+        }
       }
       const location = choice(b.location, ['ivan', 'kriko'], 'Ubicación');
       const supplier = await optionalSupplier(b.supplier_id);
@@ -1882,9 +1885,11 @@ export async function mutate(
         configJson = JSON.stringify(config);
         key = stockKey(configured, config);
       } else if (isCabezadaProduct(product)) {
-        const config = parseCabezadaConfig(b.config);
-        configJson = JSON.stringify(config);
-        key = cabezadaStockKey(config);
+        const config = tryParseCabezadaConfig(b.config);
+        if (config) {
+          configJson = JSON.stringify(config);
+          key = cabezadaStockKey(config);
+        }
       }
       const location = choice(b.location, ['ivan', 'kriko'], 'Ubicación');
       const supplier = await optionalSupplier(

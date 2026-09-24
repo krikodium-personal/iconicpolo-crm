@@ -1249,7 +1249,8 @@ export function ProductDetail({
           </p>
         ) : isCabezadaProduct(record) ? (
           <p className="hint">
-            El stock de cabezadas se guarda por cantidad de riendas (1 o 2).
+            Podés indicar si la cabezada tiene 1 o 2 riendas para separar el
+            stock.
           </p>
         ) : null}
         {movements.map((m) => {
@@ -3754,8 +3755,6 @@ export function StockForm({
         B(true);
         try {
           if (configured) parseConfig(configured, config);
-          if (isCabezada && !cabezadaConfig)
-            throw new Error('Elegí si la cabezada tiene 1 o 2 riendas.');
           if (!place) throw new Error('Elegí si el stock está en Ivan o Kriko.');
           if (inbound && paidPartner) {
             if (!partners.length)
@@ -3854,13 +3853,13 @@ export function StockForm({
           </Field>
         )}
         {isCabezada ? (
-          <Field label="Riendas *">
+          <Field label="Riendas">
             <Pick
               label="Riendas"
               value={riendas}
               onChange={setRiendas}
               options={[
-                { value: '', label: 'Seleccionar' },
+                { value: '', label: 'Sin especificar' },
                 ...CABEZADA_RIENDAS_OPTIONS.map((option) => ({
                   value: option.value,
                   label: option.label,
