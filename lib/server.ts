@@ -11,6 +11,7 @@ import {
   ORDER_STATUSES,
   orderIsDelivered,
   orderIsLocked,
+  orderIsQuote,
   type Product,
   type Item,
   type Order,
@@ -31,6 +32,12 @@ import {
   totalsOf,
 } from './account';
 import { TASK_KINDS } from './tasks';
+import {
+  cabezadaRiendasLabel,
+  cabezadaStockKey,
+  isCabezadaProduct,
+  parseCabezadaConfig,
+} from './cabezada';
 import { whatsappGroup } from './whatsapp';
 import { setPartnerAccess } from './auth';
 import {
@@ -112,11 +119,46 @@ async function requireSupplier(id: unknown, keep?: string) {
   if (!row) throw new Error('Proveedor inválido.');
   return supplier;
 }
+/** Socio que recupera el capital (costo) de una venta. Obligatorio si hay costo. */
+async function requireCostPartner(id: unknown, cost: number) {
+  if (cost <= 0) return '';
+  const partnerId = str(id, 'Socio que recupera el costo', true);
+  const partner = await stmt(
+    'SELECT id FROM partners WHERE id=? AND archived=0',
+    partnerId,
+  ).first();
+  if (!partner)
+    throw new Error('Elegí un socio activo que recupera el costo del proveedor.');
+  return partnerId;
+}
+/** For inbound stock: whether cost was paid to supplier, and by which partner. */
+async function stockCostPayment(b: Record<string, unknown>, inbound: boolean) {
+  if (!inbound) return { costPaid: 0, paidPartnerId: '' };
+  const costPaid = b.cost_paid === true || b.cost_paid === 1 || b.cost_paid === '1';
+  if (!costPaid) return { costPaid: 0, paidPartnerId: '' };
+  const partnerId = str(b.paid_partner_id, 'Socio que pagó el costo', true);
+  const partner = await stmt(
+    'SELECT id FROM partners WHERE id=? AND archived=0',
+    partnerId,
+  ).first();
+  if (!partner) throw new Error('Elegí un socio activo que pagó el costo.');
+  return { costPaid: 1, paidPartnerId: partnerId };
+}
 /** Optional supplier: empty string allowed. */
 async function optionalSupplier(id: unknown, keep?: string) {
   const supplier = str(id ?? '', 'Proveedor');
   if (!supplier) return '';
   return requireSupplier(supplier, keep);
+}
+/** Keep product catalog supplier in sync when stock names one. */
+async function syncProductSupplier(productId: string, supplierId: string) {
+  if (!supplierId) return null;
+  return stmt(
+    'UPDATE products SET supplier_id=?,version=version+1 WHERE id=? AND (supplier_id IS NULL OR supplier_id!=?)',
+    supplierId,
+    productId,
+    supplierId,
+  );
 }
 /** Optional customer (contact kind=customer): empty string allowed. */
 async function optionalCustomer(id: unknown, keep?: string) {
@@ -193,6 +235,12 @@ export async function ensureAccountTables() {
       orderNames,
       'paid_partner_id',
       "paid_partner_id text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'orders',
+      orderNames,
+      'cost_partner_id',
+      "cost_partner_id text NOT NULL DEFAULT ''",
     ),
     await addColumn(
       'orders',
@@ -419,6 +467,20 @@ export async function ensureConfiguredCatalog() {
           ),
         ]
       : []),
+    ...(!movementNames.has('cost_paid')
+      ? [
+          stmt(
+            'ALTER TABLE stock_movements ADD cost_paid integer NOT NULL DEFAULT 0',
+          ),
+        ]
+      : []),
+    ...(!movementNames.has('paid_partner_id')
+      ? [
+          stmt(
+            "ALTER TABLE stock_movements ADD paid_partner_id text NOT NULL DEFAULT ''",
+          ),
+        ]
+      : []),
     ...(!productNames.has('pricing')
       ? [stmt("ALTER TABLE products ADD pricing text NOT NULL DEFAULT '{}'")]
       : []),
@@ -480,9 +542,22 @@ function usesWarehouseStock(item: Item, product?: Product) {
 
 function warehouseConfig(item: Item, product?: Product) {
   const kind = product ? configuredKindOf(product) : null;
-  if (!kind || !item.selections.config) return { key: '', configJson: '{}' };
-  const config = parseConfig(kind, item.selections.config);
-  return { key: stockKey(kind, config), configJson: JSON.stringify(config) };
+  if (kind && item.selections.config) {
+    const config = parseConfig(kind, item.selections.config);
+    return { key: stockKey(kind, config), configJson: JSON.stringify(config) };
+  }
+  if (product && isCabezadaProduct(product) && item.selections.config) {
+    try {
+      const config = parseCabezadaConfig(item.selections.config);
+      return {
+        key: cabezadaStockKey(config),
+        configJson: JSON.stringify(config),
+      };
+    } catch {
+      return { key: '', configJson: '{}' };
+    }
+  }
+  return { key: '', configJson: '{}' };
 }
 
 async function productsByIds(ids: string[]) {
@@ -754,6 +829,8 @@ export async function allData() {
           typeof row.shipping_amount === 'number' ? row.shipping_amount : 0,
         paid_partner_id:
           typeof row.paid_partner_id === 'string' ? row.paid_partner_id : '',
+        cost_partner_id:
+          typeof row.cost_partner_id === 'string' ? row.cost_partner_id : '',
         items: items.filter((item) => item.order_id === row.id),
       };
     }),
@@ -783,6 +860,9 @@ export async function allData() {
         supplier_id:
           typeof row.supplier_id === 'string' ? row.supplier_id : '',
         photos: photos(row.photos),
+        cost_paid: Number(row.cost_paid) ? 1 : 0,
+        paid_partner_id:
+          typeof row.paid_partner_id === 'string' ? row.paid_partner_id : '',
       };
     }),
     categories: cat.results.map((r) => decode<Category>(r, ['fields'])),
@@ -1231,13 +1311,22 @@ export async function saveOrder(
               : mode === 'promo'
                 ? promoPrice(p)
                 : p.price;
+        const cabezada = isCabezadaProduct(p)
+          ? parseCabezadaConfig(input.config)
+          : null;
         snapshot = {
           product_id: p.id,
           name: p.name,
           sku: p.sku,
           selections: {
             options,
-            attributes: selected,
+            attributes: cabezada
+              ? {
+                  ...selected,
+                  Riendas: cabezadaRiendasLabel(cabezada),
+                }
+              : selected,
+            ...(cabezada ? { config: cabezada } : {}),
             supplier_id: await requireSupplier(input.supplier_id),
             from_stock: !!input.from_stock || undefined,
             stock_qty: input.from_stock
@@ -1301,6 +1390,12 @@ export async function saveOrder(
   if (delivery && delivery < orderDate)
     throw new Error('La entrega no puede ser anterior al pedido.');
   const status = choice(b.status, [...ORDER_STATUSES], 'Estado');
+  const costPartnerId = orderIsQuote(status)
+    ? ''
+    : await requireCostPartner(
+        b.cost_partner_id ?? existing?.cost_partner_id,
+        cost,
+      );
   const invoice = integer(b.invoice, 'Facturación', 1);
   const notes = str(b.notes, 'Notas', false, 2000);
   let shippingCarrier = existing?.shipping_carrier || '';
@@ -1334,12 +1429,13 @@ export async function saveOrder(
   if (existing) {
     statements.push(
       stmt(
-        'UPDATE orders SET customer_id=?,date=?,delivery=?,paid=?,paid_partner_id=?,invoice=?,notes=?,shipping_carrier=?,shipping_amount=?,total=?,cost=?,version=? WHERE id=?',
+        'UPDATE orders SET customer_id=?,date=?,delivery=?,paid=?,paid_partner_id=?,cost_partner_id=?,invoice=?,notes=?,shipping_carrier=?,shipping_amount=?,total=?,cost=?,version=? WHERE id=?',
         customer,
         orderDate,
         delivery,
         paid,
         paidPartnerId,
+        costPartnerId,
         invoice,
         notes,
         shippingCarrier,
@@ -1354,7 +1450,7 @@ export async function saveOrder(
   } else {
     statements.push(
       stmt(
-        "INSERT INTO orders(id,number,customer_id,date,delivery,status,paid,paid_partner_id,invoice,notes,currency,shipping_carrier,shipping_amount,total,cost,created_by) VALUES (?,?,?,?,?,'nuevo',?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO orders(id,number,customer_id,date,delivery,status,paid,paid_partner_id,cost_partner_id,invoice,notes,currency,shipping_carrier,shipping_amount,total,cost,created_by) VALUES (?,?,?,?,?,'nuevo',?,?,?,?,?,?,?,?,?,?,?)",
         id,
         number,
         customer,
@@ -1362,6 +1458,7 @@ export async function saveOrder(
         delivery,
         paid,
         paidPartnerId,
+        costPartnerId,
         invoice,
         notes,
         currency,
@@ -1532,10 +1629,20 @@ export async function patchOrder(
     ).first();
     if (!partner) throw new Error('Elegí un socio activo que recibió el cobro.');
   }
+  const costPartnerId =
+    paid > 0
+      ? await requireCostPartner(
+          b.cost_partner_id ?? existing.cost_partner_id,
+          Number(existing.cost) || 0,
+        )
+      : typeof existing.cost_partner_id === 'string'
+        ? existing.cost_partner_id
+        : '';
   const result = await stmt(
-    'UPDATE orders SET paid=?,paid_partner_id=?,version=? WHERE id=?',
+    'UPDATE orders SET paid=?,paid_partner_id=?,cost_partner_id=?,version=? WHERE id=?',
     paid,
     paidPartnerId,
+    costPartnerId,
     version,
     id,
   ).run();
@@ -1707,9 +1814,14 @@ export async function mutate(
         const config = parseConfig(configured, b.config);
         configJson = JSON.stringify(config);
         key = stockKey(configured, config);
+      } else if (isCabezadaProduct(product)) {
+        const config = parseCabezadaConfig(b.config);
+        configJson = JSON.stringify(config);
+        key = cabezadaStockKey(config);
       }
       const location = choice(b.location, ['ivan', 'kriko'], 'Ubicación');
-      const supplier = await requireSupplier(b.supplier_id);
+      const supplier = await optionalSupplier(b.supplier_id);
+      const payment = await stockCostPayment(b, q > 0);
       if (q < 0) {
         const have = await stmt(
           "SELECT COALESCE(SUM(quantity),0) qty FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? AND COALESCE(location,'')=?",
@@ -1723,7 +1835,7 @@ export async function mutate(
           );
       }
       await stmt(
-        'INSERT INTO stock_movements (id,product_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO stock_movements (id,product_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos,created_by,cost_paid,paid_partner_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
         crypto.randomUUID(),
         id,
         q,
@@ -1735,7 +1847,11 @@ export async function mutate(
         supplier,
         JSON.stringify(photos(b.photos)),
         actor.id,
+        payment.costPaid,
+        payment.paidPartnerId,
       ).run();
+      const sync = await syncProductSupplier(id, supplier);
+      if (sync) await sync.run();
       return { ok: true };
     }
     case 'stock_update': {
@@ -1765,9 +1881,13 @@ export async function mutate(
         const config = parseConfig(configured, b.config);
         configJson = JSON.stringify(config);
         key = stockKey(configured, config);
+      } else if (isCabezadaProduct(product)) {
+        const config = parseCabezadaConfig(b.config);
+        configJson = JSON.stringify(config);
+        key = cabezadaStockKey(config);
       }
       const location = choice(b.location, ['ivan', 'kriko'], 'Ubicación');
-      const supplier = await requireSupplier(
+      const supplier = await optionalSupplier(
         b.supplier_id,
         typeof current.supplier_id === 'string' ? current.supplier_id : '',
       );
@@ -1780,6 +1900,7 @@ export async function mutate(
       )
         throw new Error('Movimiento inválido.');
       const q = rawQty * (Number(current.quantity) < 0 ? -1 : 1);
+      const payment = await stockCostPayment(b, q > 0);
       const have = await stmt(
         "SELECT COALESCE(SUM(quantity),0) qty FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? AND id!=?",
         id,
@@ -1802,10 +1923,11 @@ export async function mutate(
           );
       }
       const d = db();
+      const sync = await syncProductSupplier(id, supplier);
       await d.batch([
         stmt('DROP TRIGGER IF EXISTS stock_immutable_update'),
         stmt(
-          'UPDATE stock_movements SET quantity=?,reason=?,config=?,config_key=?,location=?,supplier_id=?,photos=? WHERE id=?',
+          'UPDATE stock_movements SET quantity=?,reason=?,config=?,config_key=?,location=?,supplier_id=?,photos=?,cost_paid=?,paid_partner_id=? WHERE id=?',
           q,
           typeof b.reason === 'string' ? str(b.reason, 'Motivo', false, 500) : '',
           configJson,
@@ -1813,8 +1935,11 @@ export async function mutate(
           location,
           supplier,
           JSON.stringify(photos(b.photos)),
+          payment.costPaid,
+          payment.paidPartnerId,
           movementId,
         ),
+        ...(sync ? [sync] : []),
         stmt(
           "CREATE TRIGGER stock_immutable_update BEFORE UPDATE ON stock_movements BEGIN SELECT RAISE(ABORT,'STOCK_IMMUTABLE'); END",
         ),

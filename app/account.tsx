@@ -23,6 +23,7 @@ import {
   MONTHS,
   accountLedger,
   cashoutLimit,
+  financialSituation,
   monthlyResults,
   partnerBalances,
   remainingProfit,
@@ -309,6 +310,16 @@ export function AccountBoard({
     partners,
   );
   const balances = partnerBalances(allProfit, partners, data.cashouts);
+  const situation = financialSituation(
+    allProfit,
+    partners,
+    data.cashouts,
+    data.orders,
+    data.movements,
+    data.products,
+    data.entries || [],
+    data.currency,
+  );
   const ledger = accountLedger(
     results,
     data.cashouts,
@@ -637,6 +648,95 @@ export function AccountBoard({
             );
           })}
         </div>
+      </section>
+      <section className="panel">
+        <div className="panel-heading">
+          <h2>Situación financiera</h2>
+        </div>
+        <p className="hint">
+          Inversión = costos de stock pagados + movimientos. En cada venta, un
+          socio recupera el costo del proveedor; la ganancia se reparte según el
+          %. Ejemplo: costo 200, venta 300 → quien recupera cobra 250 y el otro
+          50.
+        </p>
+        {partners.length ? (
+          <>
+            <div className="desktop-table">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Socio</TableHead>
+                    <TableHead>Inversión</TableHead>
+                    <TableHead>Capital recuperado</TableHead>
+                    <TableHead>Pendiente</TableHead>
+                    <TableHead>Ganancia</TableHead>
+                    <TableHead>Liquidación</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {situation.map((row) => (
+                    <TableRow key={row.partner.id}>
+                      <TableCell>
+                        {row.partner.name}
+                        <small>{shareLabel(row.partner.share)}</small>
+                      </TableCell>
+                      <TableCell>{money(row.investment)}</TableCell>
+                      <TableCell>
+                        {row.recovered ? money(row.recovered) : '—'}
+                      </TableCell>
+                      <TableCell
+                        className={row.pending > 0 ? 'money-neg' : ''}
+                      >
+                        {money(row.pending)}
+                      </TableCell>
+                      <TableCell>{money(row.profit)}</TableCell>
+                      <TableCell>{money(row.settlement)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="record-card-list partner-balance-cards">
+              {situation.map((row) => (
+                <article className="record-card" key={row.partner.id}>
+                  <div className="record-card-top">
+                    <b>
+                      {row.partner.name}
+                      {row.partner.share
+                        ? ` · ${shareLabel(row.partner.share)}`
+                        : ''}
+                    </b>
+                    <span className={row.pending > 0 ? 'money-neg' : ''}>
+                      {money(row.pending)}
+                    </span>
+                  </div>
+                  <dl className="record-card-facts">
+                    <div>
+                      <dt>Inversión</dt>
+                      <dd>{money(row.investment)}</dd>
+                    </div>
+                    <div>
+                      <dt>Recuperado</dt>
+                      <dd>{row.recovered ? money(row.recovered) : '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>Ganancia</dt>
+                      <dd>{money(row.profit)}</dd>
+                    </div>
+                    <div>
+                      <dt>Liquidación</dt>
+                      <dd>{money(row.settlement)}</dd>
+                    </div>
+                  </dl>
+                </article>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="hint">
+            Agregá socios en Configuración para ver la situación financiera.
+          </p>
+        )}
       </section>
       <section className="panel">
         <div className="panel-heading">

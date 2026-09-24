@@ -26,6 +26,10 @@ import {
   type CascoVisera,
   type ColorElegido,
 } from './casco-catalog.ts';
+import {
+  cabezadaStockKey,
+  parseCabezadaConfig,
+} from './cabezada.ts';
 
 export {
   CASCO_ESTAMPADOS,
@@ -2545,6 +2549,22 @@ export function itemStockHold(
       configKey = stockKey(kind, parseConfig(kind, item.selections.config));
     } catch {
       return null;
+    }
+  } else if (item.selections.config) {
+    const raw = item.selections.config as { riendas?: unknown };
+    if (
+      raw.riendas === 1 ||
+      raw.riendas === 2 ||
+      raw.riendas === '1' ||
+      raw.riendas === '2'
+    ) {
+      try {
+        configKey = cabezadaStockKey(
+          parseCabezadaConfig(item.selections.config),
+        );
+      } catch {
+        return null;
+      }
     }
   }
   return {

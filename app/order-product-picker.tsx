@@ -12,6 +12,12 @@ import {
   type ProductConfig,
   type StockHold,
 } from '@/lib/configure';
+import {
+  cabezadaRiendasLabel,
+  isCabezadaProduct,
+  tryParseCabezadaConfig,
+  type CabezadaConfig,
+} from '@/lib/cabezada';
 import { formatMoney, friendsPrice } from '@/lib/money';
 import type { Data, Product } from '@/lib/types';
 import { TypeCards } from './type-config';
@@ -19,11 +25,17 @@ import { ProductPhoto } from './ui';
 
 const PENDING = 'Pendiente de definir';
 
+type OrderPickConfig = ProductConfig | CabezadaConfig;
+
 function isPending(value: string | undefined) {
   return value === PENDING;
 }
 
 function stockLabel(product: Product, config: Record<string, unknown>) {
+  if (isCabezadaProduct(product)) {
+    const riendas = tryParseCabezadaConfig(config);
+    if (riendas) return cabezadaRiendasLabel(riendas);
+  }
   const kind = configuredKindOf(product);
   if (!kind || !Object.keys(config || {}).length)
     return 'Combinación sin detalle';
@@ -49,7 +61,7 @@ function OrderStockPicker({
   exceptOrderId?: string;
   onPick: (
     product: Product,
-    config?: ProductConfig,
+    config?: OrderPickConfig,
     supplierId?: string,
     fromStock?: boolean,
     stockQty?: number,
@@ -84,13 +96,15 @@ function OrderStockPicker({
       {rows.length ? (
         <div className="order-stock-list">
           {rows.map((row) => {
-            let config: ProductConfig | undefined;
+            let config: OrderPickConfig | undefined;
             if (kind) {
               try {
                 config = parseConfig(kind, row.config);
               } catch {
                 config = undefined;
               }
+            } else if (isCabezadaProduct(product)) {
+              config = tryParseCabezadaConfig(row.config) || undefined;
             }
             const copy = (
               <div>
@@ -179,7 +193,7 @@ export function OrderProductPicker({
   exceptOrderId?: string;
   onPick: (
     product: Product,
-    config?: ProductConfig,
+    config?: OrderPickConfig,
     supplierId?: string,
     fromStock?: boolean,
     stockQty?: number,

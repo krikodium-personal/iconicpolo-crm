@@ -113,6 +113,11 @@ import {
   reservedHolds,
   stockAvailability,
 } from '@/lib/configure';
+import {
+  cabezadaRiendasLabel,
+  isCabezadaProduct,
+  tryParseCabezadaConfig,
+} from '@/lib/cabezada';
 import { TypeCards, TypeConfigForm } from './type-config';
 import {
   ORDER_STATUSES,
@@ -203,11 +208,31 @@ function inventoryItemContext(
       (movement.location || '') === row.location,
   );
   const described = describeConfigured(record, row.config);
+  const cabezada = isCabezadaProduct(record)
+    ? tryParseCabezadaConfig(row.config)
+    : null;
+  const title = cabezada
+    ? `${record.name} · ${cabezadaRiendasLabel(cabezada)}`
+    : (described.split('\n')[0] || record.name).trim() || record.name;
   return {
     row,
     inbound,
-    title: (described.split('\n')[0] || record.name).trim() || record.name,
+    title,
   };
+}
+/** Product catalog supplier, falling back to latest inbound stock movement. */
+function catalogSupplierId(
+  product: Product,
+  movements: Movement[],
+) {
+  if (product.supplier_id) return product.supplier_id;
+  const inbound = movements.find(
+    (movement) =>
+      movement.product_id === product.id &&
+      movement.quantity > 0 &&
+      !!movement.supplier_id,
+  );
+  return inbound?.supplier_id || '';
 }
 type Archived = {
   entity: 'products' | 'orders' | 'contacts';
@@ -483,6 +508,7 @@ function OrderCard({
     pay: string,
     paid?: number,
     paid_partner_id?: string,
+    cost_partner_id?: string,
   ) => Promise<void>;
   onDelivery: (delivery: string) => Promise<void>;
   partners: Partner[];
@@ -1174,8 +1200,13 @@ export default function CRM({
                           <OrderPayMenu
                             order={o}
                             partners={data?.partners || []}
-                            onChange={(pay, paid, paid_partner_id) =>
-                              patchOrder(o, { pay, paid, paid_partner_id })
+                            onChange={(pay, paid, paid_partner_id, cost_partner_id) =>
+                              patchOrder(o, {
+                                pay,
+                                paid,
+                                paid_partner_id,
+                                cost_partner_id,
+                              })
                             }
                           />
                           <OrderDeliveryMenu
@@ -1235,8 +1266,13 @@ export default function CRM({
               deleteButton={o.deleted ? null : renderDeleteOrderButton(o)}
               onOpen={() => P({ type: 'order', record: o })}
               onStatus={(status) => patchOrder(o, { status })}
-              onPay={(pay, paid, paid_partner_id) =>
-                patchOrder(o, { pay, paid, paid_partner_id })
+              onPay={(pay, paid, paid_partner_id, cost_partner_id) =>
+                patchOrder(o, {
+                  pay,
+                  paid,
+                  paid_partner_id,
+                  cost_partner_id,
+                })
               }
               onDelivery={(delivery) => patchOrder(o, { delivery })}
               partners={data?.partners || []}
@@ -1496,8 +1532,13 @@ export default function CRM({
                         archiveButton={null}
                         onOpen={() => P({ type: 'order', record: o })}
                         onStatus={(status) => patchOrder(o, { status })}
-                        onPay={(pay, paid, paid_partner_id) =>
-                          patchOrder(o, { pay, paid, paid_partner_id })
+                        onPay={(pay, paid, paid_partner_id, cost_partner_id) =>
+                          patchOrder(o, {
+                            pay,
+                            paid,
+                            paid_partner_id,
+                            cost_partner_id,
+                          })
                         }
                         onDelivery={(delivery) =>
                           patchOrder(o, { delivery })
@@ -1675,6 +1716,7 @@ export default function CRM({
                                   onChange={selectVisible}
                                 />
                               </TableHead>
+                              <TableHead>Stock</TableHead>
                               <TableHead>Producto</TableHead>
                               <TableHead>Categoría / proveedor</TableHead>
                               <TableHead className="text-right">
@@ -1689,7 +1731,6 @@ export default function CRM({
                               <TableHead className="text-right">
                                 Margen lista
                               </TableHead>
-                              <TableHead>Stock</TableHead>
                               <TableHead>
                                 <span className="sr-only">Acciones</span>
                               </TableHead>
@@ -1706,7 +1747,9 @@ export default function CRM({
                                 p.attributes['Precio F&F'] ===
                                 'Pendiente de definir';
                               const supplier = data.contacts.find(
-                                (c) => c.id === p.supplier_id,
+                                (c) =>
+                                  c.id ===
+                                  catalogSupplierId(p, data.movements),
                               )?.name;
                               const openProduct = () =>
                                 P({ type: 'product', record: p });
@@ -1723,6 +1766,13 @@ export default function CRM({
                                         toggleProduct(p.id, checked)
                                       }
                                     />
+                                  </TableCell>
+                                  <TableCell>
+                                    <span
+                                      className={`stock-pill ${p.stock <= 2 ? 'low' : ''}`}
+                                    >
+                                      {p.stock} uds.
+                                    </span>
                                   </TableCell>
                                   <TableCell>
                                     <button
@@ -1815,13 +1865,6 @@ export default function CRM({
                                     )}
                                   </TableCell>
                                   <TableCell>
-                                    <span
-                                      className={`stock-pill ${p.stock <= 2 ? 'low' : ''}`}
-                                    >
-                                      {p.stock} uds.
-                                    </span>
-                                  </TableCell>
-                                  <TableCell>
                                     <div className="row-actions">
                                       {!archived && (
                                         <button
@@ -1874,8 +1917,11 @@ export default function CRM({
                                 ?.name
                             }
                             supplierName={
-                              data.contacts.find((c) => c.id === p.supplier_id)
-                                ?.name
+                              data.contacts.find(
+                                (c) =>
+                                  c.id ===
+                                  catalogSupplierId(p, data.movements),
+                              )?.name
                             }
                             selected={liveSelected.includes(p.id)}
                             archived={archived}
@@ -2279,8 +2325,8 @@ export default function CRM({
                   <DialogDescription>
                     {panel?.type === 'stock'
                       ? panel.movement
-                        ? 'Editá este registro de stock.'
-                        : 'Cada ingreso y salida queda en el historial.'
+                        ? 'Editá cantidad, ubicación, proveedor y quién pagó el costo.'
+                        : 'Cada ingreso y salida queda en el historial. Indicá quién pagó el costo al proveedor.'
                       : panel?.type === 'order'
                         ? 'Precios, costos y características se guardan con el pedido.'
                         : panel?.type === 'product' &&
@@ -2347,6 +2393,24 @@ export default function CRM({
                         data.products.find((p) => p.id === panel.record?.id) ??
                         panel.record;
                       if (record) P({ type: 'stock', record });
+                    }}
+                    onViewStock={() => {
+                      const record =
+                        data.products.find((p) => p.id === panel.record?.id) ??
+                        panel.record;
+                      if (record) P({ type: 'inventory', record });
+                    }}
+                    onEditStock={(movement) => {
+                      const record =
+                        data.products.find((p) => p.id === panel.record?.id) ??
+                        panel.record;
+                      if (record)
+                        P({
+                          type: 'stock',
+                          record,
+                          movement,
+                          back: 'inventory',
+                        });
                     }}
                   />
                 ) : (
@@ -2430,6 +2494,17 @@ export default function CRM({
                     data={data}
                     itemKey={panel.itemKey}
                     onOpenOrder={(order) => P({ type: 'order', record: order })}
+                    onEdit={(movement) =>
+                      P({
+                        type: 'stock',
+                        record:
+                          data.products.find((p) => p.id === panel.record.id) ??
+                          panel.record,
+                        movement,
+                        back: 'inventory',
+                        itemKey: panel.itemKey,
+                      })
+                    }
                     onDelete={(movement, name) =>
                       setRemove({
                         type: 'stock',
@@ -2484,8 +2559,23 @@ export default function CRM({
                   save={save}
                   movement={panel.movement}
                   onConfigDirtyChange={setConfigDirty}
+                  onEditMovement={
+                    panel.movement
+                      ? undefined
+                      : (movement) =>
+                          P({
+                            type: 'stock',
+                            record:
+                              data.products.find(
+                                (p) => p.id === panel.record.id,
+                              ) ?? panel.record,
+                            movement,
+                            back: panel.back,
+                            itemKey: panel.itemKey,
+                          })
+                  }
                   onCancel={
-                    panel.itemKey
+                    panel.back === 'inventory' || panel.itemKey
                       ? () => {
                           const record =
                             data.products.find(

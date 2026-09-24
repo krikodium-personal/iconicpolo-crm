@@ -464,3 +464,105 @@ export function cashoutsByMonth(
     };
   }).filter((row) => row.total || Object.values(row.byPartner).some(Boolean));
 }
+
+export type FinancialPosition = {
+  partner: Partner;
+  /** Aportes: stock pagado + movimientos de cuenta. */
+  investment: number;
+  /** Costo de ventas cobradas donde este socio recupera capital. */
+  recovered: number;
+  /** Inversión menos capital recuperado. */
+  pending: number;
+  /** Parte de la ganancia según %. */
+  profit: number;
+  cashouts: number;
+  /** Ganancia menos cashouts. */
+  available: number;
+  /**
+   * Liquidación típica de cobros: capital recuperado + ganancia.
+   * (Ej.: costo 200 + 50% de 100 = 250.)
+   */
+  settlement: number;
+};
+
+/** Costo recuperable de un pedido cobrado (prorrateado si el cobro es parcial). */
+export function orderCostRecovered(order: Order) {
+  if (order.paid <= 0 || order.cost <= 0) return 0;
+  if (!order.total || order.paid >= order.total) return order.cost;
+  return Number(
+    (BigInt(order.cost) * BigInt(order.paid) + BigInt(order.total) / 2n) /
+      BigInt(order.total),
+  );
+}
+
+/**
+ * Situación financiera por socio:
+ * - Inversión = costos de stock que pagó + movimientos de cuenta que pagó
+ * - Recuperado = costos de ventas cobradas asignados a ese socio
+ * - Ganancia = % sobre la ganancia del negocio (igual que caja de socios)
+ */
+export function financialSituation(
+  profit: number,
+  partners: Partner[],
+  cashouts: PartnerCashout[],
+  orders: Order[],
+  movements: {
+    product_id: string;
+    quantity: number;
+    cost_paid?: number;
+    paid_partner_id?: string;
+  }[],
+  products: { id: string; cost: number }[],
+  entries: AccountEntry[] = [],
+  currency?: string,
+): FinancialPosition[] {
+  const productCost = new Map(products.map((p) => [p.id, p.cost]));
+  const investment = new Map<string, number>();
+  const recovered = new Map<string, number>();
+  function add(map: Map<string, number>, id: string, amount: number) {
+    if (!id || !amount) return;
+    map.set(id, (map.get(id) || 0) + amount);
+  }
+  for (const movement of movements) {
+    if (
+      movement.quantity <= 0 ||
+      !movement.cost_paid ||
+      !movement.paid_partner_id
+    )
+      continue;
+    const unit = productCost.get(movement.product_id) || 0;
+    add(investment, movement.paid_partner_id, unit * movement.quantity);
+  }
+  for (const entry of entries) {
+    if (!entry.partner_id) continue;
+    let amount = 0;
+    if (!currency || entry.currency === currency) amount = entry.amount;
+    else if (currency === 'ARS' && entry.currency === 'USD')
+      amount = entry.amount_ars || 0;
+    add(investment, entry.partner_id, amount);
+  }
+  for (const order of collectedOrders(orders)) {
+    if (!order.cost_partner_id) continue;
+    add(recovered, order.cost_partner_id, orderCostRecovered(order));
+  }
+  const assigned = allocateShares(profit, partners);
+  return partners
+    .filter((partner) => !partner.archived)
+    .map((partner) => {
+      const invested = investment.get(partner.id) || 0;
+      const gotBack = recovered.get(partner.id) || 0;
+      const share = assigned.get(partner.id) || 0;
+      const taken = partnerTaken(partner.id, cashouts);
+      return {
+        partner,
+        investment: invested,
+        recovered: gotBack,
+        pending: invested - gotBack,
+        profit: share,
+        cashouts: taken,
+        available: share - taken,
+        settlement: gotBack + share,
+      };
+    });
+}
+

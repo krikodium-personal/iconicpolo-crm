@@ -8,7 +8,9 @@ import {
   assertSharesComplete,
   cashoutLimit,
   cashoutsByMonth,
+  financialSituation,
   monthlyResults,
+  orderCostRecovered,
   partnerBalances,
   partnerRemaining,
   remainingProfit,
@@ -18,9 +20,11 @@ import {
 } from '../lib/account.ts';
 import type {
   AccountExpense,
+  Movement,
   Order,
   Partner,
   PartnerCashout,
+  Product,
 } from '../lib/types.ts';
 
 const partners: Partner[] = [
@@ -35,6 +39,7 @@ function order(
   cost: number,
   status = 'cerrado',
   paidPartnerId = 'ivan',
+  costPartnerId = '',
 ): Order {
   return {
     id,
@@ -45,6 +50,7 @@ function order(
     status,
     paid: total,
     paid_partner_id: total > 0 ? paidPartnerId : '',
+    cost_partner_id: costPartnerId,
     invoice: 1,
     notes: '',
     currency: 'USD',
@@ -294,4 +300,63 @@ test('year totals keep the same profit formula', () => {
   assert.equal(year.cost, 50_000);
   assert.equal(year.mkt, 5_000);
   assert.equal(year.profit, 75_000);
+});
+
+test('financial situation: cost recovery + profit split', () => {
+  const christian: Partner = {
+    id: 'christian',
+    name: 'Christian',
+    share: 5000,
+    archived: 0,
+    version: 1,
+  };
+  const duo: Partner[] = [
+    { id: 'ivan', name: 'Ivan', share: 5000, archived: 0, version: 1 },
+    christian,
+  ];
+  const products: Pick<Product, 'id' | 'cost'>[] = [
+    { id: 'casco', cost: 20_000 },
+  ];
+  const movements: Pick<
+    Movement,
+    'product_id' | 'quantity' | 'cost_paid' | 'paid_partner_id'
+  >[] = [
+    {
+      product_id: 'casco',
+      quantity: 1,
+      cost_paid: 1,
+      paid_partner_id: 'ivan',
+    },
+  ];
+  const sale = order(
+    'o-casco',
+    '2026-03-01',
+    30_000,
+    20_000,
+    'entregado',
+    'ivan',
+    'ivan',
+  );
+  const profit = totalsOf(monthlyResults([sale], [])).profit;
+  assert.equal(profit, 10_000);
+  assert.equal(orderCostRecovered(sale), 20_000);
+  const rows = financialSituation(
+    profit,
+    duo,
+    [],
+    [sale],
+    movements,
+    products,
+  );
+  const ivan = rows.find((row) => row.partner.id === 'ivan');
+  const cris = rows.find((row) => row.partner.id === 'christian');
+  assert.equal(ivan?.investment, 20_000);
+  assert.equal(ivan?.recovered, 20_000);
+  assert.equal(ivan?.pending, 0);
+  assert.equal(ivan?.profit, 5_000);
+  assert.equal(ivan?.settlement, 25_000);
+  assert.equal(cris?.investment, 0);
+  assert.equal(cris?.recovered, 0);
+  assert.equal(cris?.profit, 5_000);
+  assert.equal(cris?.settlement, 5_000);
 });

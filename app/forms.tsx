@@ -62,6 +62,15 @@ import {
   type ProductConfig,
   type StockHold,
 } from '@/lib/configure';
+import {
+  CABEZADA_RIENDAS_OPTIONS,
+  cabezadaRiendasLabel,
+  cabezadaStockKey,
+  isCabezadaProduct,
+  parseCabezadaConfig,
+  tryParseCabezadaConfig,
+  type CabezadaConfig,
+} from '@/lib/cabezada';
 import { Configurator } from './configure-form';
 import { OrderProductPicker } from './order-product-picker';
 import {
@@ -99,7 +108,7 @@ export type Save = (body: Record<string, unknown>) => Promise<void>;
 export { whatsapp, whatsappGroup };
 const options = (values: string[]) =>
   values.map((value) => ({ value, label: value }));
-function snapshotConfig(config?: ProductConfig) {
+function snapshotConfig(config?: ProductConfig | CabezadaConfig) {
   return JSON.stringify(config ?? null);
 }
 const NEW_CUSTOMER = '__new__';
@@ -1018,14 +1027,25 @@ export function ProductDetail({
   data,
   onEdit,
   onStock,
+  onEditStock,
+  onViewStock,
 }: {
   record: Product;
   data: Data;
   onEdit: () => void;
   onStock: () => void;
+  onEditStock?: (movement: Movement) => void;
+  onViewStock?: () => void;
 }) {
   const category = data.categories.find((c) => c.id === record.category);
-  const supplier = data.contacts.find((c) => c.id === record.supplier_id);
+  const supplierId =
+    record.supplier_id ||
+    data.movements.find(
+      (m) =>
+        m.product_id === record.id && m.quantity > 0 && !!m.supplier_id,
+    )?.supplier_id ||
+    '';
+  const supplier = data.contacts.find((c) => c.id === supplierId);
   const costPending = record.attributes.Costo === 'Pendiente de definir';
   const pricePending =
     record.attributes['Precio de lista'] === 'Pendiente de definir';
@@ -1054,6 +1074,11 @@ export function ProductDetail({
         <button className="secondary" type="button" onClick={onStock}>
           Registrar stock
         </button>
+        {onViewStock ? (
+          <button className="secondary" type="button" onClick={onViewStock}>
+            Ver / editar stock
+          </button>
+        ) : null}
       </div>
       <ActorNote
         partners={data.partners}
@@ -1222,12 +1247,31 @@ export function ProductDetail({
             El stock se guarda por combinación. Ingresá unidades eligiendo las
             mismas variantes que en un pedido, sin cliente.
           </p>
+        ) : isCabezadaProduct(record) ? (
+          <p className="hint">
+            El stock de cabezadas se guarda por cantidad de riendas (1 o 2).
+          </p>
         ) : null}
         {movements.map((m) => {
           const kind = configuredKindOf(record);
+          const cabezada = isCabezadaProduct(record)
+            ? tryParseCabezadaConfig(m.config)
+            : null;
           const detail =
             kind && m.config && Object.keys(m.config).length
               ? summarizeConfig(kind, m.config as ProductConfig)
+              : cabezada
+                ? cabezadaRiendasLabel(cabezada)
+                : '';
+          const canEdit =
+            !!onEditStock && m.quantity > 0 && !m.order_id;
+          const paidLabel =
+            m.quantity > 0
+              ? m.cost_paid
+                ? `Pagado · ${
+                    actorName(data.partners, m.paid_partner_id) || 'Sin socio'
+                  }`
+                : 'Costo pendiente'
               : '';
           return (
             <div key={m.id} className="history-line">
@@ -1236,11 +1280,12 @@ export function ProductDetail({
               ) : null}
               <div>
                 {m.reason || (m.quantity > 0 ? 'Stock' : 'Devolución')}
-                {m.location || m.supplier_id ? (
+                {m.location || m.supplier_id || paidLabel ? (
                   <small>
                     {[
                       m.location ? stockPlaceLabel(m.location) : '',
                       data.contacts.find((c) => c.id === m.supplier_id)?.name,
+                      paidLabel,
                     ]
                       .filter(Boolean)
                       .join(' · ')}
@@ -1255,6 +1300,17 @@ export function ProductDetail({
                 {m.quantity > 0 ? '+' : ''}
                 {m.quantity}
               </strong>
+              {canEdit ? (
+                <button
+                  type="button"
+                  className="icon-button"
+                  title="Editar stock y quién pagó el costo"
+                  aria-label="Editar stock y quién pagó el costo"
+                  onClick={() => onEditStock?.(m)}
+                >
+                  <Pencil size={16} />
+                </button>
+              ) : null}
             </div>
           );
         })}
@@ -1275,7 +1331,7 @@ type DraftItem = {
   manual_price: string;
   option_ids: string[];
   attributes: Record<string, string>;
-  config?: ProductConfig;
+  config?: ProductConfig | CabezadaConfig;
   supplier_id?: string;
   from_stock?: boolean;
   stock_qty?: number;
@@ -1314,6 +1370,21 @@ function itemDescription(
   );
   const name =
     lang === 'en' ? productNameEn(item.name, product) : item.name;
+  const cabezada =
+    product && isCabezadaProduct(product)
+      ? tryParseCabezadaConfig(item.selections.config)
+      : null;
+  const riendas = cabezada
+    ? lang === 'en'
+      ? cabezada.riendas === 1
+        ? '1 rein'
+        : '2 reins'
+      : cabezadaRiendasLabel(cabezada)
+    : '';
+  if (riendas)
+    return extras.length
+      ? [name, riendas, ...extras].join('\n')
+      : `${name} · ${riendas}`;
   return extras.length ? [name, ...extras].join('\n') : name;
 }
 
@@ -1455,6 +1526,9 @@ export function OrderDetail({
     record.paid > 0
       ? data.partners.find((partner) => partner.id === record.paid_partner_id)
       : undefined;
+  const costPartner = record.cost_partner_id
+    ? data.partners.find((partner) => partner.id === record.cost_partner_id)
+    : undefined;
   if (fichaItem) {
     const product = data.products.find((p) => p.id === fichaItem.product_id);
     const supplier = data.contacts.find(
@@ -1566,8 +1640,13 @@ export function OrderDetail({
                 <OrderPayMenu
                   order={record}
                   partners={data.partners}
-                  onChange={(pay, paid, paid_partner_id) =>
-                    onPatch({ pay, paid, paid_partner_id })
+                  onChange={(pay, paid, paid_partner_id, cost_partner_id) =>
+                    onPatch({
+                      pay,
+                      paid,
+                      paid_partner_id,
+                      cost_partner_id,
+                    })
                   }
                 />
                 <OrderDeliveryMenu
@@ -1626,6 +1705,13 @@ export function OrderDetail({
                   <dd>
                     {paidPartner?.name ||
                       (record.paid > 0 ? 'Sin socio' : '—')}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Recupera costo</dt>
+                  <dd>
+                    {costPartner?.name ||
+                      (record.cost > 0 ? 'Sin definir' : '—')}
                   </dd>
                 </div>
                 <div>
@@ -2053,6 +2139,10 @@ export function OrderForm({
       record?.paid_partner_id ||
       data.partners.find((partner) => !partner.archived)?.id ||
       '',
+    cost_partner_id:
+      record?.cost_partner_id ||
+      data.partners.find((partner) => !partner.archived)?.id ||
+      '',
     invoice: !!record?.invoice,
     notes: record?.notes || '',
     shipping_carrier: record?.shipping_carrier || '',
@@ -2069,13 +2159,16 @@ export function OrderForm({
     record?.items.map((i) => {
       const product = data.products.find((p) => p.id === i.product_id);
       const kind = product ? configuredKindOf(product) : null;
-      let config = i.selections.config as ProductConfig | undefined;
+      let config: ProductConfig | CabezadaConfig | undefined = i.selections
+        .config as ProductConfig | undefined;
       if (kind && i.selections.config) {
         try {
           config = parseConfig(kind, i.selections.config);
         } catch {
           /* keep stored config */
         }
+      } else if (product && isCabezadaProduct(product) && i.selections.config) {
+        config = tryParseCabezadaConfig(i.selections.config) || undefined;
       }
       return {
         key: i.id,
@@ -2152,7 +2245,7 @@ export function OrderForm({
   function applyProduct(
     product: Product,
     key?: string,
-    config?: ProductConfig,
+    config?: ProductConfig | CabezadaConfig | Record<string, unknown>,
     supplierId?: string,
     fromStock = false,
     stockQty?: number,
@@ -2164,15 +2257,21 @@ export function OrderForm({
     const available = fromStock
       ? Math.max(1, Math.floor(Number(stockQty) || 1))
       : undefined;
+    let nextConfig: ProductConfig | CabezadaConfig | undefined;
+    if (kind) {
+      nextConfig = config
+        ? parseConfig(kind, config)
+        : defaultConfig(kind);
+    } else if (isCabezadaProduct(product)) {
+      if (config && Object.keys(config).length) {
+        nextConfig = parseCabezadaConfig(config);
+      }
+    }
     const next = {
       product_id: product.id,
       option_ids: [] as string[],
       attributes: productFieldValues(product, fields),
-      config: kind
-        ? config
-          ? parseConfig(kind, config)
-          : defaultConfig(kind)
-        : undefined,
+      config: nextConfig,
       supplier_id: supplierId || product.supplier_id || '',
       from_stock: fromStock,
       stock_qty: available,
@@ -2261,6 +2360,8 @@ export function OrderForm({
         ),
       };
     }
+    if (isCabezadaProduct(p) && !tryParseCabezadaConfig(i.config))
+      throw new Error('Elegí si la cabezada tiene 1 o 2 riendas.');
     const category = data.categories.find((c) => c.id === p.category);
     const fields = category?.fields || [];
     for (const field of closedFields(fields)) {
@@ -2326,6 +2427,19 @@ export function OrderForm({
           if (items.some((item) => !item.supplier_id))
             throw new Error('Elegí el proveedor de cada producto.');
           if (
+            items.some((item) => {
+              const product = data.products.find(
+                (p) => p.id === item.product_id,
+              );
+              return (
+                !!product &&
+                isCabezadaProduct(product) &&
+                !tryParseCabezadaConfig(item.config)
+              );
+            })
+          )
+            throw new Error('Elegí si la cabezada tiene 1 o 2 riendas.');
+          if (
             items.some(
               (item) =>
                 item.from_stock &&
@@ -2388,6 +2502,7 @@ export function OrderForm({
               : parseDecimal(f.paid) > 0
                 ? f.paid_partner_id
                 : '',
+            cost_partner_id: orderIsQuote(f.status) ? '' : f.cost_partner_id,
             shipping_carrier: f.shipping_carrier,
             shipping_amount: f.shipping_carrier
               ? parseDecimal(f.shipping_amount)
@@ -2579,6 +2694,10 @@ export function OrderForm({
             const selecting = !i.snapshot && (picking === i.key || !i.product_id);
             const kind = configuredKindOf(p);
             const canConfigure = !!kind && !i.from_stock && !selecting;
+            const lineRiendas =
+              p && isCabezadaProduct(p)
+                ? tryParseCabezadaConfig(i.config)
+                : null;
             return (
               <div className="order-line" key={i.key}>
                 <div className="section-heading">
@@ -2672,7 +2791,12 @@ export function OrderForm({
                       url={draftPhoto(i, p, data.movements)}
                     />
                     <div className="order-picked-copy">
-                      <b>{p?.name || 'Producto'}</b>
+                      <b>
+                        {p?.name || 'Producto'}
+                        {lineRiendas
+                          ? ` · ${cabezadaRiendasLabel(lineRiendas)}`
+                          : ''}
+                      </b>
                       <small>
                         {p
                           ? i.from_stock
@@ -2755,6 +2879,32 @@ export function OrderForm({
                       ]}
                     />
                   </Field>
+                  {!i.snapshot &&
+                  p &&
+                  isCabezadaProduct(p) &&
+                  !i.from_stock ? (
+                    <Field label="Riendas *">
+                      <Pick
+                        label="Riendas"
+                        value={lineRiendas ? String(lineRiendas.riendas) : ''}
+                        onChange={(v) =>
+                          update(i.key, {
+                            config:
+                              v === '1' || v === '2'
+                                ? parseCabezadaConfig({ riendas: Number(v) })
+                                : undefined,
+                          })
+                        }
+                        options={[
+                          { value: '', label: 'Seleccionar' },
+                          ...CABEZADA_RIENDAS_OPTIONS.map((option) => ({
+                            value: option.value,
+                            label: option.label,
+                          })),
+                        ]}
+                      />
+                    </Field>
+                  ) : null}
                   {!i.snapshot && (
                     <>
                       <Field label="Precio base">
@@ -2795,7 +2945,10 @@ export function OrderForm({
                 {p && canConfigure ? (
                   <Configurator
                     kind={kind!}
-                    value={i.config || defaultConfig(kind!)}
+                    value={
+                      (i.config as ProductConfig | undefined) ||
+                      defaultConfig(kind!)
+                    }
                     onChange={(config) => update(i.key, { config })}
                     movements={data.movements}
                     productId={p.id}
@@ -2812,6 +2965,8 @@ export function OrderForm({
                     </small>
                     {configuredKindOf(p) && i.config ? (
                       <b>{configLine(p, i.config)}</b>
+                    ) : lineRiendas ? (
+                      <b>{cabezadaRiendasLabel(lineRiendas)}</b>
                     ) : (
                       Object.entries(i.attributes).map(([k, v]) => (
                         <span key={k}>
@@ -2998,6 +3153,26 @@ export function OrderForm({
                   )}
                 </select>
               </Field>
+              <Field label="Quién recupera el costo *">
+                <select
+                  aria-label="Quién recupera el costo del proveedor"
+                  value={f.cost_partner_id}
+                  disabled={!activePartners.length}
+                  onChange={(e) =>
+                    set({ ...f, cost_partner_id: e.target.value })
+                  }
+                >
+                  {!activePartners.length ? (
+                    <option value="">Sin socios activos</option>
+                  ) : (
+                    activePartners.map((partner) => (
+                      <option key={partner.id} value={partner.id}>
+                        {partner.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </Field>
               <div className="field">
                 <span>Facturación</span>
                 <Check
@@ -3141,6 +3316,12 @@ function stockItemHeading(
   record: Product,
   config: Record<string, unknown>,
 ) {
+  if (isCabezadaProduct(record)) {
+    const riendas = tryParseCabezadaConfig(config);
+    if (riendas)
+      return `${record.name} · ${cabezadaRiendasLabel(riendas)}`;
+    return record.name;
+  }
   if (!configuredKindOf(record)) return record.name;
   return configLine(record, config).split('\n')[0] || record.name;
 }
@@ -3177,12 +3358,14 @@ export function StockItemDetail({
   data,
   itemKey,
   onOpenOrder,
+  onEdit,
   onDelete,
 }: {
   record: Product;
   data: Data;
   itemKey: string;
   onOpenOrder?: (order: Order) => void;
+  onEdit?: (movement: Movement) => void;
   onDelete?: (movement: Movement, name: string) => void;
 }) {
   const item = inventoryItemContext(data, record, itemKey);
@@ -3212,27 +3395,44 @@ export function StockItemDetail({
     } catch {
       labels = {};
     }
+  } else if (isCabezadaProduct(record)) {
+    const riendas = tryParseCabezadaConfig(row.config);
+    if (riendas) labels = { Riendas: cabezadaRiendasLabel(riendas) };
   }
   const supplier = data.contacts.find((c) => c.id === row.supplier_id);
+  const paidBy = inbound?.cost_paid
+    ? actorName(data.partners, inbound.paid_partner_id) || 'Sin socio'
+    : '';
   const heading = stockItemHeading(record, row.config);
   return (
     <div className="pdp stock-item-detail">
       <StockItemPhotos urls={photos} name={record.name} />
-      {inbound && onDelete ? (
+      {inbound && (onEdit || onDelete) ? (
         <div className="pdp-actions">
-          <button
-            type="button"
-            className="secondary danger"
-            disabled={!!row.reserved}
-            title={
-              row.reserved
-                ? 'No se puede borrar: hay pedidos que reservan esta unidad.'
-                : 'Borrar del stock'
-            }
-            onClick={() => onDelete(inbound, heading)}
-          >
-            <Trash2 size={16} /> Borrar
-          </button>
+          {onEdit ? (
+            <button
+              type="button"
+              className="primary"
+              onClick={() => onEdit(inbound)}
+            >
+              <Pencil size={16} /> Editar
+            </button>
+          ) : null}
+          {onDelete ? (
+            <button
+              type="button"
+              className="secondary danger"
+              disabled={!!row.reserved}
+              title={
+                row.reserved
+                  ? 'No se puede borrar: hay pedidos que reservan esta unidad.'
+                  : 'Borrar del stock'
+              }
+              onClick={() => onDelete(inbound, heading)}
+            >
+              <Trash2 size={16} /> Borrar
+            </button>
+          ) : null}
         </div>
       ) : null}
       <section
@@ -3256,6 +3456,12 @@ export function StockItemDetail({
             value={supplier?.name || 'Sin proveedor'}
             pending={!supplier}
           />
+          <Fact
+            label="Costo al proveedor"
+            value={inbound?.cost_paid ? 'Pagado' : 'Pendiente'}
+            pending={!inbound?.cost_paid}
+          />
+          {paidBy ? <Fact label="Pagado por" value={paidBy} /> : null}
           {inbound?.reason ? (
             <Fact label="Motivo" value={inbound.reason} />
           ) : null}
@@ -3354,9 +3560,7 @@ export function StockOverview({
             record.id,
             row,
           );
-          const title = configuredKindOf(record)
-            ? configLine(record, row.config)
-            : record.name;
+          const title = stockItemHeading(record, row.config);
           return (
             <div
               className={`stock-item clickable-row${row.reserved ? ' is-reserved' : ''}`}
@@ -3379,6 +3583,14 @@ export function StockOverview({
                     {[
                       stockPlaceLabel(row.location),
                       data.contacts.find((c) => c.id === row.supplier_id)?.name,
+                      inbound?.cost_paid
+                        ? `Pagado · ${
+                            actorName(data.partners, inbound.paid_partner_id) ||
+                            'Sin socio'
+                          }`
+                        : inbound
+                          ? 'Costo pendiente'
+                          : '',
                       inbound
                         ? actorName(data.partners, inbound.created_by)
                         : '',
@@ -3468,6 +3680,7 @@ export function StockForm({
   movement,
   onConfigDirtyChange,
   onCancel,
+  onEditMovement,
 }: {
   record: Product;
   data: Data;
@@ -3475,9 +3688,13 @@ export function StockForm({
   movement?: Movement;
   onConfigDirtyChange?: (dirty: boolean) => void;
   onCancel?: () => void;
+  onEditMovement?: (movement: Movement) => void;
 }) {
   const configured = configuredKindOf(record);
+  const isCabezada = isCabezadaProduct(record);
   const editing = !!movement;
+  const initialRiendas = tryParseCabezadaConfig(movement?.config);
+  const partners = data.partners.filter((partner) => !partner.archived);
   const [q, Q] = useState(
       movement ? String(Math.abs(movement.quantity)) : '1',
     ),
@@ -3488,6 +3705,12 @@ export function StockForm({
     ),
     [reason, R] = useState(movement?.reason || ''),
     [photos, setPhotos] = useState<string[]>(movement?.photos || []),
+    [riendas, setRiendas] = useState(
+      initialRiendas ? String(initialRiendas.riendas) : '',
+    ),
+    [paidPartner, setPaidPartner] = useState(
+      movement?.cost_paid ? movement.paid_partner_id || '' : '',
+    ),
     [uploading, U] = useState(false),
     [config, setConfig] = useState<ProductConfig>(() => {
       if (!configured) return defaultConfig('montura');
@@ -3508,13 +3731,22 @@ export function StockForm({
       !!configured && snapshotConfig(config) !== configBaseline.current,
     );
   }, [configured, config, onConfigDirtyChange]);
-  const configKey = configured ? stockKey(configured, config) : '';
+  const cabezadaConfig =
+    isCabezada && (riendas === '1' || riendas === '2')
+      ? parseCabezadaConfig({ riendas: Number(riendas) })
+      : null;
+  const configKey = configured
+    ? stockKey(configured, config)
+    : cabezadaConfig
+      ? cabezadaStockKey(cabezadaConfig)
+      : '';
   const available = stockForConfig(
     data.movements,
     record.id,
     configKey,
     place || undefined,
   );
+  const inbound = editing ? (movement?.quantity || 0) > 0 : kind === 'in';
   return (
     <form
       onSubmit={async (e) => {
@@ -3522,8 +3754,26 @@ export function StockForm({
         B(true);
         try {
           if (configured) parseConfig(configured, config);
+          if (isCabezada && !cabezadaConfig)
+            throw new Error('Elegí si la cabezada tiene 1 o 2 riendas.');
           if (!place) throw new Error('Elegí si el stock está en Ivan o Kriko.');
-          if (!supplier) throw new Error('Elegí el proveedor.');
+          if (inbound && paidPartner) {
+            if (!partners.length)
+              throw new Error(
+                'Agregá un socio en Configuración para indicar quién pagó el costo.',
+              );
+            if (!partners.some((partner) => partner.id === paidPartner))
+              throw new Error('Elegí el socio que pagó el costo al proveedor.');
+          }
+          const movementConfig = configured
+            ? config
+            : cabezadaConfig || undefined;
+          const payment = inbound
+            ? {
+                cost_paid: paidPartner ? 1 : 0,
+                paid_partner_id: paidPartner || '',
+              }
+            : { cost_paid: 0, paid_partner_id: '' };
           await save(
             editing
               ? {
@@ -3534,8 +3784,9 @@ export function StockForm({
                   reason,
                   location: place,
                   supplier_id: supplier,
-                  config: configured ? config : undefined,
+                  config: movementConfig,
                   photos,
+                  ...payment,
                 }
               : {
                   action: 'stock',
@@ -3544,8 +3795,9 @@ export function StockForm({
                   reason,
                   location: place,
                   supplier_id: supplier,
-                  config: configured ? config : undefined,
+                  config: movementConfig,
                   photos,
+                  ...payment,
                 },
           );
         } catch (e) {
@@ -3558,8 +3810,11 @@ export function StockForm({
       <ErrorBox message={error} />
       <div className="stock-current">
         <span>
-          {configured ? 'Esta combinación' : 'Disponible'}
+          {configured || cabezadaConfig ? 'Esta combinación' : 'Disponible'}
           {place ? ` · ${stockPlaceLabel(place)}` : ''}
+          {cabezadaConfig
+            ? ` · ${cabezadaRiendasLabel(cabezadaConfig)}`
+            : ''}
         </span>
         <strong>
           {available} <small>unidades</small>
@@ -3598,6 +3853,22 @@ export function StockForm({
             />
           </Field>
         )}
+        {isCabezada ? (
+          <Field label="Riendas *">
+            <Pick
+              label="Riendas"
+              value={riendas}
+              onChange={setRiendas}
+              options={[
+                { value: '', label: 'Seleccionar' },
+                ...CABEZADA_RIENDAS_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: option.label,
+                })),
+              ]}
+            />
+          </Field>
+        ) : null}
         <Field label="Cantidad *">
           <input
             type="number"
@@ -3619,13 +3890,13 @@ export function StockForm({
             }))}
           />
         </Field>
-        <Field label="Proveedor *">
+        <Field label="Proveedor">
           <Pick
             label="Proveedor"
             value={supplier}
             onChange={setSupplier}
             options={[
-              { value: '', label: 'Elegí un proveedor' },
+              { value: '', label: 'Sin proveedor' },
               ...data.contacts
                 .filter(
                   (c) =>
@@ -3636,6 +3907,22 @@ export function StockForm({
             ]}
           />
         </Field>
+        {inbound ? (
+          <Field label="Quién pagó el costo al proveedor">
+            <Pick
+              label="Quién pagó el costo al proveedor"
+              value={paidPartner}
+              onChange={setPaidPartner}
+              options={[
+                { value: '', label: 'Pendiente de pago' },
+                ...partners.map((partner) => ({
+                  value: partner.id,
+                  label: partner.name,
+                })),
+              ]}
+            />
+          </Field>
+        ) : null}
         <Field label="Motivo" wide>
           <input
             value={reason}
@@ -3663,6 +3950,10 @@ export function StockForm({
       {editing ? null : (
         <>
           <h3 className="form-section">Últimos movimientos</h3>
+          <p className="hint">
+            Tocá el lápiz de un ingreso para editar ubicación, proveedor y quién
+            pagó el costo.
+          </p>
           {data.movements
             .filter((m) => m.product_id === record.id)
             .slice(0, 8)
@@ -3677,6 +3968,14 @@ export function StockForm({
                     {[
                       stockPlaceLabel(m.location),
                       data.contacts.find((c) => c.id === m.supplier_id)?.name,
+                      m.quantity > 0
+                        ? m.cost_paid
+                          ? `Pagado · ${
+                              actorName(data.partners, m.paid_partner_id) ||
+                              'Sin socio'
+                            }`
+                          : 'Costo pendiente'
+                        : '',
                     ]
                       .filter(Boolean)
                       .join(' · ')}
@@ -3687,6 +3986,17 @@ export function StockForm({
                   {m.quantity > 0 ? '+' : ''}
                   {m.quantity}
                 </b>
+                {onEditMovement && m.quantity > 0 && !m.order_id ? (
+                  <button
+                    type="button"
+                    className="icon-button"
+                    title="Editar stock y quién pagó el costo"
+                    aria-label="Editar stock y quién pagó el costo"
+                    onClick={() => onEditMovement(m)}
+                  >
+                    <Pencil size={16} />
+                  </button>
+                ) : null}
               </div>
             ))}
         </>
