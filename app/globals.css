@@ -2528,7 +2528,8 @@ fieldset:disabled textarea {
     grid-template-columns: 1fr;
   }
   .crm-dialog {
-    padding: 22px !important;
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 16px
+      calc(24px + env(safe-area-inset-bottom, 0px)) !important;
   }
   .pipeline {
     grid-template-columns: 1fr 1fr;
@@ -2887,8 +2888,14 @@ fieldset:disabled textarea {
     height: 100dvh !important;
     max-height: 100dvh !important;
     border-radius: 0 !important;
-    padding: calc(16px + env(safe-area-inset-top)) 16px
-      calc(72px + env(safe-area-inset-bottom)) !important;
+    /* Status bar / Dynamic Island: absolute close ignores padding, so pad + offset both. */
+    padding: max(54px, calc(16px + env(safe-area-inset-top, 0px))) 16px
+      calc(72px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  .crm-dialog [data-slot='dialog-close'] {
+    top: max(12px, calc(8px + env(safe-area-inset-top, 0px))) !important;
+    right: 10px !important;
+    z-index: 2;
   }
   .stock-dialog-heading {
     flex-wrap: wrap;
