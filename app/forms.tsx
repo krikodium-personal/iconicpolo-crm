@@ -1027,15 +1027,15 @@ export function ProductDetail({
   data,
   onEdit,
   onStock,
-  onEditStock,
   onViewStock,
+  onOpenStock,
 }: {
   record: Product;
   data: Data;
   onEdit: () => void;
   onStock: () => void;
-  onEditStock?: (movement: Movement) => void;
   onViewStock?: () => void;
+  onOpenStock?: (itemKey: string, movement?: Movement) => void;
 }) {
   const category = data.categories.find((c) => c.id === record.category);
   const supplierId =
@@ -1264,8 +1264,9 @@ export function ProductDetail({
               : cabezada
                 ? cabezadaRiendasLabel(cabezada)
                 : '';
-          const canEdit =
-            !!onEditStock && m.quantity > 0 && !m.order_id;
+          const itemKey = `${m.config_key || ''}\t${m.location || ''}`;
+          const canOpen =
+            !!onOpenStock && m.quantity > 0 && !m.order_id;
           const paidLabel =
             m.quantity > 0
               ? m.cost_paid
@@ -1275,7 +1276,20 @@ export function ProductDetail({
                 : 'Costo pendiente'
               : '';
           return (
-            <div key={m.id} className="history-line">
+            <div
+              key={m.id}
+              className={`history-line${canOpen ? ' clickable-row' : ''}`}
+            >
+              {canOpen ? (
+                <button
+                  type="button"
+                  className="row-hit"
+                  aria-label={`Ver detalle de stock ${
+                    m.reason || 'ingreso'
+                  }`}
+                  onClick={() => onOpenStock?.(itemKey, m)}
+                />
+              ) : null}
               {m.photos?.[0] ? (
                 <ProductPhoto name={record.name} url={m.photos[0]} />
               ) : null}
@@ -1301,17 +1315,6 @@ export function ProductDetail({
                 {m.quantity > 0 ? '+' : ''}
                 {m.quantity}
               </strong>
-              {canEdit ? (
-                <button
-                  type="button"
-                  className="icon-button"
-                  title="Editar stock y quién pagó el costo"
-                  aria-label="Editar stock y quién pagó el costo"
-                  onClick={() => onEditStock?.(m)}
-                >
-                  <Pencil size={16} />
-                </button>
-              ) : null}
             </div>
           );
         })}
@@ -3358,6 +3361,7 @@ export function StockItemDetail({
   record,
   data,
   itemKey,
+  movementId,
   onOpenOrder,
   onEdit,
   onDelete,
@@ -3365,46 +3369,60 @@ export function StockItemDetail({
   record: Product;
   data: Data;
   itemKey: string;
+  movementId?: string;
   onOpenOrder?: (order: Order) => void;
   onEdit?: (movement: Movement) => void;
   onDelete?: (movement: Movement, name: string) => void;
 }) {
   const item = inventoryItemContext(data, record, itemKey);
-  if (!item) {
+  const preferred =
+    (movementId &&
+      data.movements.find((movement) => movement.id === movementId)) ||
+    undefined;
+  const inbound = preferred?.quantity && preferred.quantity > 0
+    ? preferred
+    : item?.inbound;
+  if (!item && !inbound) {
     return <p className="hint">Esta unidad ya no está en stock.</p>;
   }
-  const { row, inbound } = item;
-  const unitPhotos = uniquePhotoUrls(
-    data.movements
-      .filter(
-        (movement) =>
-          movement.product_id === record.id &&
-          movement.quantity > 0 &&
-          (movement.config_key || '') === row.config_key &&
-          (movement.location || '') === row.location,
-      )
-      .flatMap((movement) => movement.photos || []),
-  );
+  const row = item?.row;
+  const unitPhotos = uniquePhotoUrls([
+    ...(inbound?.photos || []),
+    ...(row
+      ? data.movements
+          .filter(
+            (movement) =>
+              movement.product_id === record.id &&
+              movement.quantity > 0 &&
+              (movement.config_key || '') === row.config_key &&
+              (movement.location || '') === row.location,
+          )
+          .flatMap((movement) => movement.photos || [])
+      : []),
+  ]);
   const photos = unitPhotos.length
     ? unitPhotos
     : uniquePhotoUrls(record.photos);
   const kind = configuredKindOf(record);
+  const config = row?.config || inbound?.config || {};
   let labels: Record<string, string> = {};
-  if (kind && Object.keys(row.config).length) {
+  if (kind && Object.keys(config).length) {
     try {
-      labels = configLabels(kind, parseConfig(kind, row.config));
+      labels = configLabels(kind, parseConfig(kind, config));
     } catch {
       labels = {};
     }
   } else if (isCabezadaProduct(record)) {
-    const riendas = tryParseCabezadaConfig(row.config);
+    const riendas = tryParseCabezadaConfig(config);
     if (riendas) labels = { Riendas: cabezadaRiendasLabel(riendas) };
   }
-  const supplier = data.contacts.find((c) => c.id === row.supplier_id);
+  const supplierId = row?.supplier_id || inbound?.supplier_id || '';
+  const supplier = data.contacts.find((c) => c.id === supplierId);
   const paidBy = inbound?.cost_paid
     ? actorName(data.partners, inbound.paid_partner_id) || 'Sin socio'
     : '';
-  const heading = stockItemHeading(record, row.config);
+  const heading = stockItemHeading(record, config);
+  const location = row?.location || inbound?.location || '';
   return (
     <div className="pdp stock-item-detail">
       <StockItemPhotos urls={photos} name={record.name} />
@@ -3423,9 +3441,9 @@ export function StockItemDetail({
             <button
               type="button"
               className="secondary danger"
-              disabled={!!row.reserved}
+              disabled={!!row?.reserved}
               title={
-                row.reserved
+                row?.reserved
                   ? 'No se puede borrar: hay pedidos que reservan esta unidad.'
                   : 'Borrar del stock'
               }
@@ -3441,8 +3459,11 @@ export function StockItemDetail({
         style={{ borderTop: 0, marginTop: 0, paddingTop: 8 }}
       >
         <div className="pdp-facts stock-item-facts">
-          <Fact label="Cantidad" value={`${row.quantity} uds.`} />
-          {row.reserved ? (
+          <Fact
+            label="Cantidad"
+            value={`${row?.quantity ?? inbound?.quantity ?? 0} uds.`}
+          />
+          {row?.reserved ? (
             <Fact
               label="Disponible"
               value={`${row.available} uds. · ${row.reserved} reservada${row.reserved === 1 ? '' : 's'}`}
@@ -3450,7 +3471,7 @@ export function StockItemDetail({
           ) : null}
           <Fact
             label="Dónde está"
-            value={stockPlaceLabel(row.location) || 'Sin ubicación'}
+            value={stockPlaceLabel(location) || 'Sin ubicación'}
           />
           <Fact
             label="Proveedor"
@@ -3482,7 +3503,7 @@ export function StockItemDetail({
           ) : null}
         </div>
       </section>
-      {row.reservations.length ? (
+      {row?.reservations.length ? (
         <section className="form-section">
           <h3>Reservas</h3>
           <div className="stock-reserve-actions">

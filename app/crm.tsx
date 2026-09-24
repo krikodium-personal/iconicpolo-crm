@@ -168,7 +168,7 @@ type Panel =
       back?: 'inventory';
       itemKey?: string;
     }
-  | { type: 'inventory'; record: Product; itemKey?: string }
+  | { type: 'inventory'; record: Product; itemKey?: string; movementId?: string }
   | { type: 'settings' };
 type SessionUser = { id: string; name: string; email: string };
 type AuthMode = 'loading' | 'setup' | 'login' | 'ready';
@@ -182,7 +182,7 @@ function panelIdentity(panel: Panel | null) {
     return `stock:${panel.record.id}:${panel.movement?.id || 'new'}`;
   }
   if (panel.type === 'inventory') {
-    return `inventory:${panel.record.id}:${panel.itemKey || 'list'}`;
+    return `inventory:${panel.record.id}:${panel.itemKey || 'list'}:${panel.movementId || ''}`;
   }
   if (panel.type === 'order') {
     return `order:${panel.record?.id || 'new'}:${panel.editing ? 'edit' : panel.quote ? 'quote' : 'view'}`;
@@ -1308,6 +1308,14 @@ export default function CRM({
     panel?.type === 'inventory' && panel.itemKey && data && inventoryRecord
       ? inventoryItemContext(data, inventoryRecord, panel.itemKey)
       : null;
+  const inventoryMovement =
+    panel?.type === 'inventory' && panel.movementId && data
+      ? data.movements.find((movement) => movement.id === panel.movementId)
+      : undefined;
+  const inventoryEditTarget =
+    inventoryMovement && inventoryMovement.quantity > 0
+      ? inventoryMovement
+      : inventoryItem?.inbound;
   if (authMode === 'loading') {
     return <AuthSkeleton />;
   }
@@ -2185,16 +2193,16 @@ export default function CRM({
                       Detalle de la unidad de stock.
                     </DialogDescription>
                   </div>
-                  {inventoryItem?.inbound ? (
+                  {inventoryEditTarget ? (
                     <button
                       type="button"
                       className="primary"
                       onClick={() => {
-                        if (!inventoryRecord || !inventoryItem.inbound) return;
+                        if (!inventoryRecord || !inventoryEditTarget) return;
                         P({
                           type: 'stock',
                           record: inventoryRecord,
-                          movement: inventoryItem.inbound,
+                          movement: inventoryEditTarget,
                           back: 'inventory',
                           itemKey: panel.itemKey,
                         });
@@ -2400,16 +2408,16 @@ export default function CRM({
                         panel.record;
                       if (record) P({ type: 'inventory', record });
                     }}
-                    onEditStock={(movement) => {
+                    onOpenStock={(itemKey, movement) => {
                       const record =
                         data.products.find((p) => p.id === panel.record?.id) ??
                         panel.record;
                       if (record)
                         P({
-                          type: 'stock',
+                          type: 'inventory',
                           record,
-                          movement,
-                          back: 'inventory',
+                          itemKey,
+                          movementId: movement?.id,
                         });
                     }}
                   />
@@ -2493,6 +2501,7 @@ export default function CRM({
                     }
                     data={data}
                     itemKey={panel.itemKey}
+                    movementId={panel.movementId}
                     onOpenOrder={(order) => P({ type: 'order', record: order })}
                     onEdit={(movement) =>
                       P({
