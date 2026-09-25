@@ -160,6 +160,10 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
   if (kind === 'montura') {
     const c = raw as MonturaConfig;
     swatches.push(leatherSwatch('Color', c.color));
+    const placeLabel = {
+      tapita: 'Tapita',
+      faldon: 'Faldón',
+    }[c.personalizacionUbicacion];
     if (c.iniciales) {
       const color = chartSwatch('Color iniciales', c.inicialesColor);
       if (color) swatches.push(color);
@@ -170,10 +174,15 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
           c.inicialesColor,
           c.color,
         ),
-        place: { atras: 'Atrás', faldon: 'Faldón', faldin: 'Faldín' }[
-          c.inicialesUbicacion
-        ],
+        place: placeLabel,
       };
+    }
+    if (c.logoPersonalizado && c.logoPersonalizadoImagen) {
+      artwork.push({
+        kind: 'logo',
+        url: c.logoPersonalizadoImagen,
+        caption: `Logo personalizado · ${placeLabel}`,
+      });
     }
     return { swatches, initials, artwork };
   }

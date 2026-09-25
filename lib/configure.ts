@@ -476,8 +476,25 @@ export const MONTURA_MATERIALS = [
 ] as const;
 export type MonturaMaterial = (typeof MONTURA_MATERIALS)[number]['id'];
 
+/** Ubicación de iniciales o logo (mutuamente excluyentes). */
+export const MONTURA_PERSONALIZACION_PLACES = [
+  { id: 'tapita', label: 'Tapita' },
+  { id: 'faldon', label: 'Faldón' },
+] as const;
+export type MonturaPersonalizacionUbicacion =
+  (typeof MONTURA_PERSONALIZACION_PLACES)[number]['id'];
+
 export function aliasMonturaMaterial(value: unknown) {
   return value === 'gamuza' ? 'descarne' : value;
+}
+
+/** Migra ubicaciones viejas (atrás / faldín) a tapita | faldón. */
+export function aliasMonturaPersonalizacionUbicacion(
+  value: unknown,
+): MonturaPersonalizacionUbicacion {
+  if (value === 'faldon' || value === 'faldin') return 'faldon';
+  if (value === 'tapita' || value === 'atras') return 'tapita';
+  return 'tapita';
 }
 
 export function rewriteMonturaGamuzaText(value: string) {
@@ -721,6 +738,7 @@ export const PRICED_GROUPS: Record<ConfiguredKind, PricedGroup[]> = {
       options: [
         { id: 'portaEstribera', label: 'Porta estribera inglés' },
         { id: 'iniciales', label: 'Iniciales' },
+        { id: 'logoPersonalizado', label: 'Logo personalizado' },
       ],
     },
   ],
@@ -886,6 +904,7 @@ export function selectedPriceKeys(
       ...(config.faldin ? ['faldin'] : []),
       ...(config.portaEstriberaIngles ? ['portaEstribera'] : []),
       ...(config.iniciales ? ['iniciales'] : []),
+      ...(config.logoPersonalizado ? ['logoPersonalizado'] : []),
     ];
   }
   if (kind === 'rodillera') {
@@ -952,11 +971,16 @@ export type MonturaConfig = {
   acabadoAsiento: 'perforado' | 'liso';
   materialAsiento: MonturaMaterial;
   faldin: boolean;
+  /** Iniciales XOR logo: no pueden estar los dos. */
   iniciales: boolean;
   inicialesTexto: string;
   inicialesColor: string;
   inicialesTipografia: string;
-  inicialesUbicacion: 'atras' | 'faldon' | 'faldin';
+  logoPersonalizado: boolean;
+  logoPersonalizadoImagen: string;
+  /** Ubicación de la personalización activa (iniciales o logo). */
+  personalizacionUbicacion: MonturaPersonalizacionUbicacion;
+  comentarios: string;
   corte: 'tapita' | 'costura';
   portaEstriberaIngles: boolean;
 };
@@ -1129,7 +1153,10 @@ export function defaultMontura(): MonturaConfig {
     inicialesTexto: '',
     inicialesColor: DEFAULT_INITIAL_COLOR_ID,
     inicialesTipografia: 'trajan',
-    inicialesUbicacion: 'atras',
+    logoPersonalizado: false,
+    logoPersonalizadoImagen: '',
+    personalizacionUbicacion: 'tapita',
+    comentarios: '',
     corte: 'tapita',
     portaEstriberaIngles: false,
   };
@@ -1333,14 +1360,25 @@ export function parseMontura(raw: unknown): MonturaConfig {
     inicialesTexto: text(b.inicialesTexto).trim(),
     inicialesColor: text(b.inicialesColor, DEFAULT_INITIAL_COLOR_ID),
     inicialesTipografia: text(b.inicialesTipografia, 'trajan'),
-    inicialesUbicacion: oneOf(
-      b.inicialesUbicacion || 'atras',
-      ['atras', 'faldon', 'faldin'],
-      'Ubicación de iniciales',
+    logoPersonalizado: flag(b.logoPersonalizado),
+    logoPersonalizadoImagen: text(b.logoPersonalizadoImagen).trim(),
+    personalizacionUbicacion: aliasMonturaPersonalizacionUbicacion(
+      b.personalizacionUbicacion ?? b.inicialesUbicacion,
     ),
+    comentarios: text(b.comentarios).trim(),
     corte: oneOf(b.corte, ['tapita', 'costura'], 'Corte'),
     portaEstriberaIngles: flag(b.portaEstriberaIngles),
   };
+  if (config.iniciales && config.logoPersonalizado) {
+    throw new Error('Elegí iniciales o logo, no los dos.');
+  }
+  if (config.iniciales || config.logoPersonalizado) {
+    oneOf(
+      config.personalizacionUbicacion,
+      MONTURA_PERSONALIZACION_PLACES.map((place) => place.id),
+      'Ubicación',
+    );
+  }
   if (config.iniciales) {
     if (!config.inicialesTexto) throw new Error('Escribí las iniciales.');
     if (config.inicialesTexto.length > 24)
@@ -1352,6 +1390,11 @@ export function parseMontura(raw: unknown): MonturaConfig {
       'Tipografía',
     );
   }
+  if (config.logoPersonalizado) {
+    requireImage(config.logoPersonalizadoImagen, 'logo personalizado');
+  }
+  if (config.comentarios.length > 500)
+    throw new Error('Comentarios: máximo 500 caracteres.');
   return config;
 }
 
@@ -1980,6 +2023,10 @@ export function configLabels(
           : 'Costura';
     labels[key('Porta estribera inglés', 'English stirrup holder')] =
       c.portaEstriberaIngles ? yes : no;
+    const placeLabel = {
+      tapita: lang === 'en' ? 'Flap tip' : 'Tapita',
+      faldon: lang === 'en' ? 'Skirt flap' : 'Faldón',
+    }[c.personalizacionUbicacion];
     if (c.iniciales) {
       labels[key('Iniciales', 'Initials')] = c.inicialesTexto;
       labels[key('Color iniciales', 'Initials color')] = colorName(
@@ -1987,11 +2034,14 @@ export function configLabels(
         lang,
       );
       labels[key('Tipografía', 'Typography')] = fontName(c.inicialesTipografia);
-      labels[key('Ubicación iniciales', 'Initials placement')] = {
-        atras: lang === 'en' ? 'Back' : 'Atrás',
-        faldon: lang === 'en' ? 'Flap' : 'Faldón',
-        faldin: lang === 'en' ? 'Skirt' : 'Faldín',
-      }[c.inicialesUbicacion];
+      labels[key('Ubicación iniciales', 'Initials placement')] = placeLabel;
+    }
+    if (c.logoPersonalizado) {
+      labels[key('Logo personalizado', 'Custom logo')] = yes;
+      labels[key('Ubicación logo', 'Logo placement')] = placeLabel;
+    }
+    if (c.comentarios) {
+      labels[key('Comentarios', 'Comments')] = c.comentarios;
     }
     return labels;
   }
@@ -2729,6 +2779,14 @@ function summarizeMontura(raw: MonturaConfig, lang: ConfigLang = 'es') {
   if (raw.iniciales && raw.inicialesTexto.trim()) {
     lines.push(
       `${lang === 'en' ? 'Initials' : 'Iniciales'}: ${raw.inicialesTexto.trim()}`,
+    );
+  }
+  if (raw.logoPersonalizado) {
+    lines.push(lang === 'en' ? 'Custom logo' : 'Logo personalizado');
+  }
+  if (raw.comentarios.trim()) {
+    lines.push(
+      `${lang === 'en' ? 'Notes' : 'Comentarios'}: ${raw.comentarios.trim()}`,
     );
   }
   return lines.join('\n');

@@ -29,6 +29,7 @@ import {
   LEATHER_HEX,
   LEATHER_PHOTOS,
   MONTURA_MATERIALS,
+  MONTURA_PERSONALIZACION_PLACES,
   RODILLERA_COLORS,
   RODILLERA_MODELOS,
   RODILLERA_PLACES,
@@ -1042,13 +1043,65 @@ export function Configurator({
             <Pick
               label="Iniciales"
               value={c.iniciales ? 'si' : 'no'}
-              onChange={(v) => set({ iniciales: v === 'si' })}
+              onChange={(v) =>
+                set(
+                  v === 'si'
+                    ? {
+                        iniciales: true,
+                        logoPersonalizado: false,
+                        logoPersonalizadoImagen: '',
+                      }
+                    : { iniciales: false },
+                )
+              }
               options={[
                 { value: 'no', label: 'No' },
                 { value: 'si', label: 'Sí · costo extra' },
               ]}
             />
           </Field>
+          <Field label="Logo personalizado">
+            <Pick
+              label="Logo personalizado"
+              value={c.logoPersonalizado ? 'si' : 'no'}
+              onChange={(v) =>
+                set(
+                  v === 'si'
+                    ? {
+                        logoPersonalizado: true,
+                        iniciales: false,
+                        inicialesTexto: '',
+                      }
+                    : {
+                        logoPersonalizado: false,
+                        logoPersonalizadoImagen: '',
+                      },
+                )
+              }
+              options={[
+                { value: 'no', label: 'No' },
+                { value: 'si', label: 'Sí · costo extra' },
+              ]}
+            />
+          </Field>
+          {c.iniciales || c.logoPersonalizado ? (
+            <Field label="Ubicación *">
+              <Pick
+                label="Ubicación"
+                value={c.personalizacionUbicacion}
+                onChange={(v) =>
+                  set({
+                    personalizacionUbicacion:
+                      v as MonturaConfig['personalizacionUbicacion'],
+                  })
+                }
+                options={MONTURA_PERSONALIZACION_PLACES.map((place) => ({
+                  value: place.id,
+                  label: place.label,
+                }))}
+              />
+            </Field>
+          ) : null}
           {c.iniciales ? (
             <>
               <Field label="Texto de iniciales *">
@@ -1070,23 +1123,6 @@ export function Configurator({
                   }))}
                 />
               </Field>
-              <Field label="Ubicación *">
-                <Pick
-                  label="Ubicación de iniciales"
-                  value={c.inicialesUbicacion}
-                  onChange={(v) =>
-                    set({
-                      inicialesUbicacion:
-                        v as MonturaConfig['inicialesUbicacion'],
-                    })
-                  }
-                  options={[
-                    { value: 'atras', label: 'Atrás' },
-                    { value: 'faldon', label: 'Faldón' },
-                    { value: 'faldin', label: 'Faldín' },
-                  ]}
-                />
-              </Field>
               <ColorPicker
                 label="Color de iniciales *"
                 value={c.inicialesColor}
@@ -1105,6 +1141,38 @@ export function Configurator({
             </>
           ) : null}
         </div>
+        {c.logoPersonalizado ? (
+          <>
+            <Field label="Imagen del logo *" wide>
+              <Photos
+                value={
+                  c.logoPersonalizadoImagen
+                    ? [c.logoPersonalizadoImagen]
+                    : []
+                }
+                max={1}
+                onChange={(urls) =>
+                  set({ logoPersonalizadoImagen: urls[0] || '' })
+                }
+                onError={onError || (() => undefined)}
+                onBusy={onBusy || (() => undefined)}
+              />
+            </Field>
+            <ExtraNote
+              extra={pricePoint(pricing, 'logoPersonalizado')}
+              currency={currency}
+            />
+          </>
+        ) : null}
+        <Field label="Comentarios" wide>
+          <textarea
+            value={c.comentarios}
+            maxLength={500}
+            rows={3}
+            placeholder="Aclaraciones para el taller o el proveedor…"
+            onChange={(e) => set({ comentarios: e.target.value })}
+          />
+        </Field>
         <ConfigSummary
           kind="montura"
           value={c}

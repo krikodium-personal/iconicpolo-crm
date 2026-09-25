@@ -21,6 +21,7 @@ import { Field, Pick, ErrorBox, DateCalendar, Photos } from './ui';
 import {
   ACCOUNT_CONCEPTS,
   MONTHS,
+  accountInflow,
   accountLedger,
   cashoutLimit,
   financialSituation,
@@ -231,9 +232,12 @@ export function AccountBoard({
   });
   const yearRows = yearSheet(year, results);
   const previewRow = yearRows[monthIndex] || yearRows[0];
-  const allProfit = totalsOf(results).profit;
+  const boardTotals = totalsOf(results);
+  const allProfit = boardTotals.profit;
+  // En cuenta = cobros − MKT − comisiones − cashouts − movimientos.
+  // No resta order.cost: el egreso del proveedor solo cuenta como movimiento.
   const leftover = remainingProfit(
-    allProfit,
+    accountInflow(boardTotals),
     data.cashouts,
     data.entries || [],
     data.currency,

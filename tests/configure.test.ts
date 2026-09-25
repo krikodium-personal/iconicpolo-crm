@@ -244,12 +244,50 @@ test('personalization extras do not change the stock key', () => {
     inicialesTexto: 'IC',
     inicialesColor: 'dorado',
     inicialesTipografia: 'didot',
-    inicialesUbicacion: 'faldon',
+    personalizacionUbicacion: 'faldon',
   });
   assert.equal(stockKey('montura', base), stockKey('montura', withInitials));
   assert.equal(
     extraCharges('montura', withInitials).some((c) => c.id === 'iniciales'),
     true,
+  );
+});
+
+test('montura logo xor initials and migrates old location', () => {
+  assert.throws(
+    () =>
+      parseMontura({
+        ...defaultMontura(),
+        iniciales: true,
+        inicialesTexto: 'IC',
+        logoPersonalizado: true,
+        logoPersonalizadoImagen: '/api/images/abc',
+      }),
+    /iniciales o logo/,
+  );
+  const migrated = parseMontura({
+    ...defaultMontura(),
+    iniciales: true,
+    inicialesTexto: 'AB',
+    inicialesUbicacion: 'atras',
+  });
+  assert.equal(migrated.personalizacionUbicacion, 'tapita');
+  const withLogo = parseMontura({
+    ...defaultMontura(),
+    logoPersonalizado: true,
+    logoPersonalizadoImagen: '/api/images/abc-123',
+    personalizacionUbicacion: 'faldon',
+    comentarios: 'Sin hebillas doradas',
+  });
+  assert.equal(withLogo.logoPersonalizado, true);
+  assert.equal(withLogo.iniciales, false);
+  assert.equal(
+    extraCharges('montura', withLogo).some((c) => c.id === 'logoPersonalizado'),
+    true,
+  );
+  assert.equal(
+    configLabels('montura', withLogo)['Comentarios'],
+    'Sin hebillas doradas',
   );
 });
 

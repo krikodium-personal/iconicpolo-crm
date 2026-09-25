@@ -139,13 +139,27 @@ export function cashoutTotal(cashouts: PartnerCashout[]) {
   return cashouts.reduce((sum, row) => sum + row.amount, 0);
 }
 
+/**
+ * Cobros que alimentan “En cuenta”: facturado − MKT − comisiones.
+ * No resta el costo del pedido; ese egreso solo cuenta si hay un movimiento
+ * (pago proveedor / etc.) en `account_entries`.
+ */
+export function accountInflow(totals: {
+  billed: number;
+  mkt: number;
+  commissions: number;
+}) {
+  return totals.billed - totals.mkt - totals.commissions;
+}
+
+/** Dinero en cuenta = cobros netos − cashouts − movimientos. */
 export function remainingProfit(
-  profit: number,
+  inflow: number,
   cashouts: PartnerCashout[],
   entries: AccountEntry[] = [],
   currency?: string,
 ) {
-  return profit - cashoutTotal(cashouts) - entryTotal(entries, currency);
+  return inflow - cashoutTotal(cashouts) - entryTotal(entries, currency);
 }
 
 export function assertCashoutFits(remaining: number, amount: number) {

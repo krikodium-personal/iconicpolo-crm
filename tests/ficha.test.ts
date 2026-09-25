@@ -278,7 +278,7 @@ test('montura ficha uses leather color and initials', () => {
           inicialesTexto: 'AB',
           inicialesColor: 'dorado',
           inicialesTipografia: 'didot',
-          inicialesUbicacion: 'faldon',
+          personalizacionUbicacion: 'faldon',
         },
       },
     }),
@@ -289,6 +289,30 @@ test('montura ficha uses leather color and initials', () => {
   assert.equal(ficha.initials?.text, 'AB');
   assert.equal(ficha.initials?.place, 'Faldón');
   assert.equal(ficha.initials?.surfacePhoto, '/leather-tabaco.png');
+});
+
+test('montura ficha includes logo artwork', () => {
+  const ficha = buildFicha({
+    order: { number: '8b', date: '2026-01-02' },
+    product: product({ name: 'Montura', category: 'monturas' }),
+    item: item({
+      name: 'Montura',
+      selections: {
+        options: [],
+        attributes: {},
+        config: {
+          ...defaultMontura(),
+          logoPersonalizado: true,
+          logoPersonalizadoImagen: '/api/images/logo-montura',
+          personalizacionUbicacion: 'tapita',
+        },
+      },
+    }),
+  });
+  assert.equal(ficha.artwork[0]?.kind, 'logo');
+  assert.equal(ficha.artwork[0]?.url, '/api/images/logo-montura');
+  assert.match(ficha.artwork[0]?.caption || '', /Tapita/);
+  assert.equal(ficha.initials, undefined);
 });
 
 test('rodillera ficha includes bordado artwork', () => {

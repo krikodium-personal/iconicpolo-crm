@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  accountInflow,
   accountLedger,
   allocateShares,
   assertCashoutFits,
@@ -209,7 +210,10 @@ test('year sheet fills every month and remaining profit subtracts cashouts', () 
   assert.equal(sheet[0]?.profit, 60_000);
   assert.equal(sheet[1]?.label, 'Febrero');
   assert.equal(sheet[1]?.profit, 0);
-  const leftover = remainingProfit(totalsOf(rows).profit, [
+  const totals = totalsOf(rows);
+  // En cuenta no resta el costo del pedido (40_000): solo cobros − cashouts.
+  assert.equal(accountInflow(totals), 100_000);
+  const leftover = remainingProfit(accountInflow(totals), [
     {
       id: 'c1',
       partner_id: 'ivan',
@@ -219,12 +223,43 @@ test('year sheet fills every month and remaining profit subtracts cashouts', () 
       created_at: '',
     },
   ]);
-  assert.equal(leftover, 35_000);
+  assert.equal(leftover, 75_000);
   assert.throws(
-    () => assertCashoutFits(leftover, 40_000),
+    () => assertCashoutFits(leftover, 80_000),
     /queda en cuenta/,
   );
-  assert.doesNotThrow(() => assertCashoutFits(leftover, 35_000));
+  assert.doesNotThrow(() => assertCashoutFits(leftover, 75_000));
+});
+
+test('en cuenta ignores order cost and only counts paid movements', () => {
+  const rows = monthlyResults(
+    [
+      order('o1', '2026-09-15', 45_000, 33_000),
+      order('o2', '2026-09-15', 45_000, 33_000),
+    ],
+    [],
+  );
+  const leftover = remainingProfit(
+    accountInflow(totalsOf(rows)),
+    [],
+    [
+      {
+        id: 'm1',
+        concept: 'pago_proveedor',
+        detail: 'Cascos',
+        partner_id: 'ivan',
+        supplier_id: '',
+        order_id: '',
+        amount: 60_000,
+        currency: 'USD',
+        date: '2026-09-18',
+        created_at: '',
+      },
+    ],
+    'USD',
+  );
+  // +90_000 cobros − 60_000 movimiento (sin −66_000 de costo de pedidos)
+  assert.equal(leftover, 30_000);
 });
 
 test('partner shares must add up to 100 percent', () => {
