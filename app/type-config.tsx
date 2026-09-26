@@ -318,11 +318,13 @@ export function TypeConfigForm({
             ff_price: ffPrice,
             promo_kind: record.promo_kind || 'none',
             promo_value: record.promo_value || 0,
-            attributes: {
-              ...record.attributes,
-              ...(cost ? {} : { Costo: 'Pendiente de definir' }),
-              ...(price ? {} : { 'Precio de lista': 'Pendiente de definir' }),
-            },
+            attributes: (() => {
+              const attrs = { ...record.attributes };
+              if (cost) delete attrs.Costo;
+              else attrs.Costo = 'Pendiente de definir';
+              delete attrs['Precio de lista'];
+              return attrs;
+            })(),
             pricing,
           });
         } catch (err) {

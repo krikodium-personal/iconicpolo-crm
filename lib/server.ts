@@ -1018,10 +1018,8 @@ export async function product(
   const productAttributes = attributes(b.attributes);
   if (cost > 0 && productAttributes.Costo === 'Pendiente de definir')
     delete productAttributes.Costo;
-  if (
-    price > 0 &&
-    productAttributes['Precio de lista'] === 'Pendiente de definir'
-  )
+  // Precio 0 es válido (regalos); al guardar se considera definido.
+  if (productAttributes['Precio de lista'] === 'Pendiente de definir')
     delete productAttributes['Precio de lista'];
   if (
     ffPrice !== null &&
@@ -1379,8 +1377,6 @@ export async function saveOrder(
         input.sale_price !== undefined ? input.sale_price : input.discount,
         'Precio fijo de venta',
       );
-      if (!saleUnit)
-        throw new Error('El precio fijo de venta debe ser mayor a cero.');
       unitPrice = saleUnit;
       discount = 0;
       totals = fixedLineTotals(saleUnit, snapshot.unit_cost, quantity);

@@ -121,16 +121,21 @@ const today = () =>
 function Footer({
   busy,
   label = 'Guardar cambios',
+  error = '',
 }: {
   busy: boolean;
   label?: string;
+  error?: string;
 }) {
   return (
     <div className="form-footer">
-      <span>Los campos con * son obligatorios.</span>
-      <button className="primary" disabled={busy}>
-        {busy ? 'Guardando…' : label}
-      </button>
+      <ErrorBox message={error} />
+      <div className="form-footer-bar">
+        <span>Los campos con * son obligatorios.</span>
+        <button className="primary" disabled={busy}>
+          {busy ? 'Guardando…' : label}
+        </button>
+      </div>
     </div>
   );
 }
@@ -338,7 +343,6 @@ export function ContactForm({
         }
       }}
     >
-      <ErrorBox message={error} />
       <div className="form-grid">
         {(kind === 'supplier'
           ? ([
@@ -526,7 +530,7 @@ export function ContactForm({
           )}
         </section>
       )}
-      <Footer busy={busy} />
+      <Footer busy={busy} error={error} />
     </form>
   );
 }
@@ -632,7 +636,6 @@ export function ProductForm({
         }
       }}
     >
-      <ErrorBox message={error} />
       <div className="form-grid">
         <Field label="Nombre del producto *">
           <input
@@ -721,7 +724,7 @@ export function ProductForm({
             label="Precio de lista *"
             pending={
               f.attributes['Precio de lista'] === 'Pendiente de definir' &&
-              (f.price === '' || f.price === '0' || f.price === '0.00')
+              f.price.trim() === ''
             }
           >
             <input
@@ -970,7 +973,7 @@ export function ProductForm({
           </button>
         </div>
       )}
-      <Footer busy={busy || uploading} />
+      <Footer busy={busy || uploading} error={error} />
     </form>
   );
 }
@@ -2623,10 +2626,6 @@ export function OrderForm({
             items: items.map((i) => {
               if (i.discount_mode === 'fixed') {
                 const sale = parseDecimal(i.discount);
-                if (!sale)
-                  throw new Error(
-                    'El precio fijo de venta debe ser mayor a cero.',
-                  );
                 return {
                   id: i.id,
                   product_id: i.product_id,
@@ -2670,7 +2669,6 @@ export function OrderForm({
         }
       }}
     >
-      <ErrorBox message={error} />
       {closed && (
         <div className="note">
           <b>
@@ -2683,6 +2681,7 @@ export function OrderForm({
               ? 'El stock reservado ya se descontó. Reabrí el pedido para modificarlo y devolver las unidades.'
               : 'El stock sigue reservado hasta que el pedido esté entregado. Reabrí para modificarlo.'}
           </p>
+          <ErrorBox message={error} />
           <button
             type="button"
             disabled={busy}
@@ -3443,6 +3442,7 @@ export function OrderForm({
         <Footer
           busy={busy}
           label={record ? 'Guardar pedido' : 'Crear pedido'}
+          error={error}
         />
       )}
     </form>
@@ -4062,7 +4062,6 @@ export function StockForm({
         }
       }}
     >
-      <ErrorBox message={error} />
       <div className="stock-current">
         <span>
           {configured || cabezadaConfig ? 'Esta combinación' : 'Disponible'}
@@ -4266,6 +4265,7 @@ export function StockForm({
       <Footer
         busy={busy || uploading}
         label={editing ? 'Guardar cambios' : 'Registrar movimiento'}
+        error={error}
       />
     </form>
   );
