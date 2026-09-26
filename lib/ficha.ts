@@ -20,6 +20,7 @@ import {
   inicialesMm,
   logoTamanoLabel,
   type CascoConfig,
+  type ConfigLang,
   type ConfiguredKind,
   type MonturaConfig,
   type ProductConfig,
@@ -27,14 +28,15 @@ import {
   type BotaConfig,
   type ColorElegido,
 } from './configure.ts';
+import { cascoChosenColorName } from './casco-catalog.ts';
 import type { Contact, Item, Product } from './types';
 import { whatsapp, whatsappGroup } from './whatsapp.ts';
 
-const KIND_NAME: Record<ConfiguredKind, string> = {
-  montura: 'Montura',
-  casco: 'Casco',
-  rodillera: 'Rodillera',
-  bota: 'Bota',
+const KIND_NAME: Record<ConfiguredKind, Record<ConfigLang, string>> = {
+  montura: { es: 'Montura', en: 'Saddle' },
+  casco: { es: 'Casco', en: 'Helmet' },
+  rodillera: { es: 'Rodillera', en: 'Knee pad' },
+  bota: { es: 'Bota', en: 'Boot' },
 };
 
 export type FichaSwatch = {
@@ -63,10 +65,14 @@ export type FichaArtwork = {
   caption: string;
 };
 
-export function fichaArtworkTitle(kind: FichaArtwork['kind']) {
-  if (kind === 'logo') return 'Logo personalizado';
-  if (kind === 'bordado') return 'Bordado';
-  return 'Diseño adicional';
+export function fichaArtworkTitle(
+  kind: FichaArtwork['kind'],
+  lang: ConfigLang = 'es',
+) {
+  if (kind === 'logo')
+    return lang === 'en' ? 'Custom logo' : 'Logo personalizado';
+  if (kind === 'bordado') return lang === 'en' ? 'Embroidery' : 'Bordado';
+  return lang === 'en' ? 'Extra design' : 'Diseño adicional';
 }
 
 export type FichaData = {
@@ -95,6 +101,20 @@ function formatDate(value: string) {
   const [year, month, day] = value.split('-');
   if (!year || !month || !day) return value;
   return `${day}/${month}/${year}`;
+}
+
+/** "Rodrigo Mendoza" → "Rodrigo M." (solo en ficha técnica). */
+export function shortCustomerName(name: string) {
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) return '';
+  if (parts.length === 1) return parts[0]!;
+  const first = parts[0]!;
+  const last = parts[parts.length - 1]!;
+  const initial = last.charAt(0).toLocaleUpperCase();
+  return initial ? `${first} ${initial}.` : first;
 }
 
 function initialColor(id: string) {
@@ -152,20 +172,25 @@ function skuDescription(item: Item) {
   return extras.length ? [item.name, ...extras].join('\n') : item.name;
 }
 
-function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
+function configuredVisuals(
+  kind: ConfiguredKind,
+  raw: ProductConfig,
+  lang: ConfigLang = 'es',
+) {
   const swatches: FichaSwatch[] = [];
   const artwork: FichaArtwork[] = [];
   let initials: FichaInitials | undefined;
+  const L = (es: string, en: string) => (lang === 'en' ? en : es);
 
   if (kind === 'montura') {
     const c = raw as MonturaConfig;
-    swatches.push(leatherSwatch('Color', c.color));
+    swatches.push(leatherSwatch(L('Color', 'Color'), c.color));
     const placeLabel = {
-      tapita: 'Tapita',
-      faldon: 'Faldón',
+      tapita: L('Tapita', 'Flap tip'),
+      faldon: L('Faldón', 'Skirt flap'),
     }[c.personalizacionUbicacion];
     if (c.iniciales) {
-      const color = chartSwatch('Color iniciales', c.inicialesColor);
+      const color = chartSwatch(L('Color iniciales', 'Initials color'), c.inicialesColor);
       if (color) swatches.push(color);
       initials = {
         ...initialsBase(
@@ -178,10 +203,15 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
       };
     }
     if (c.logoPersonalizado && c.logoPersonalizadoImagen) {
+      const thread = chartSwatch(
+        L('Color de hilo logo', 'Logo thread color'),
+        c.logoPersonalizadoColor,
+      );
+      if (thread) swatches.push(thread);
       artwork.push({
         kind: 'logo',
         url: c.logoPersonalizadoImagen,
-        caption: `Logo personalizado · ${placeLabel}`,
+        caption: `${L('Logo personalizado', 'Custom logo')} · ${placeLabel} · ${thread?.name || c.logoPersonalizadoColor}`,
       });
     }
     return { swatches, initials, artwork };
@@ -189,12 +219,14 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
 
   if (kind === 'rodillera') {
     const c = raw as RodilleraConfig;
-    swatches.push(leatherSwatch('Color', c.color));
+    swatches.push(leatherSwatch(L('Color', 'Color'), c.color));
     if (c.protectorCentroColor !== c.color) {
-      swatches.push(leatherSwatch('Protector centro', c.protectorCentroColor));
+      swatches.push(
+        leatherSwatch(L('Protector centro', 'Center protector'), c.protectorCentroColor),
+      );
     }
     if (c.iniciales) {
-      const color = chartSwatch('Color iniciales', c.inicialesColor);
+      const color = chartSwatch(L('Color iniciales', 'Initials color'), c.inicialesColor);
       if (color) swatches.push(color);
       initials = {
         ...initialsBase(
@@ -212,7 +244,7 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
       };
     }
     if (c.bordado && c.bordadoImagen) {
-      const color = chartSwatch('Color bordado', c.bordadoColor);
+      const color = chartSwatch(L('Color bordado', 'Embroidery color'), c.bordadoColor);
       if (color) swatches.push(color);
       const size =
         RODILLERA_SIZES.find((item) => item.id === c.bordadoTamano)?.label ||
@@ -223,7 +255,7 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
       artwork.push({
         kind: 'bordado',
         url: c.bordadoImagen,
-        caption: `Bordado · ${size} · ${place} · ${colorSwatch(c.bordadoColor)?.name || c.bordadoColor}`,
+        caption: `${L('Bordado', 'Embroidery')} · ${size} · ${place} · ${colorSwatch(c.bordadoColor)?.name || c.bordadoColor}`,
       });
     }
     return { swatches, initials, artwork };
@@ -231,9 +263,9 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
 
   if (kind === 'bota') {
     const c = raw as BotaConfig;
-    swatches.push(leatherSwatch('Color', c.color));
+    swatches.push(leatherSwatch(L('Color', 'Color'), c.color));
     if (c.iniciales) {
-      const color = chartSwatch('Color iniciales', c.inicialesColor);
+      const color = chartSwatch(L('Color iniciales', 'Initials color'), c.inicialesColor);
       if (color) swatches.push(color);
       initials = {
         ...initialsBase(
@@ -254,36 +286,40 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
   if (isNewCascoConfig(c)) {
     const pushChosen = (label: string, color?: ColorElegido) => {
       if (!color) return;
-      swatches.push({ label, name: color.nombre, hex: color.hex });
+      swatches.push({
+        label,
+        name: cascoChosenColorName(color, lang),
+        hex: color.hex,
+      });
     };
-    pushChosen('Casquete', c.colores.top);
-    pushChosen('Visera', c.colores.peak);
+    pushChosen(L('Casquete', 'Shell'), c.colores.top);
+    pushChosen(L('Visera', 'Peak'), c.colores.peak);
     if (c.visera === 'argentine')
-      pushChosen('Banda de visera', c.colores.peakBand);
-    pushChosen('Bajo visera', c.colores.underPeak);
-    pushChosen('Correaje', c.colores.strap);
-    pushChosen('Tapones', c.colores.airholes);
-    pushChosen('Logo Iconic', c.logoIconic);
+      pushChosen(L('Banda de visera', 'Peak band'), c.colores.peakBand);
+    pushChosen(L('Bajo visera', 'Under peak'), c.colores.underPeak);
+    pushChosen(L('Correaje', 'Harness'), c.colores.strap);
+    pushChosen(L('Tapones', 'Airholes'), c.colores.airholes);
+    pushChosen(L('Logo Iconic', 'Iconic logo'), c.logoIconic);
     if (c.iniciales) {
-      pushChosen('Color de hilo', c.iniciales.colorHilo);
+      pushChosen(L('Color de hilo', 'Thread color'), c.iniciales.colorHilo);
       initials = {
         text: c.iniciales.texto.trim(),
         fontId: c.iniciales.tipografia,
         fontName: fontLabel(c.iniciales.tipografia),
         fontFamily: fontStack(c.iniciales.tipografia),
-        colorName: c.iniciales.colorHilo.nombre,
+        colorName: cascoChosenColorName(c.iniciales.colorHilo, lang),
         hex: c.iniciales.colorHilo.hex,
         surfaceHex: c.colores.top?.hex || c.colores.airholes.hex,
-        place: posicionLabel(c.iniciales.posicion),
+        place: posicionLabel(c.iniciales.posicion, lang),
         size: `${inicialesMm(c.iniciales.posicion, c.iniciales.tamano)} mm`,
       };
     }
     if (c.logoPropio?.imagen) {
-      pushChosen('Color logo propio', c.logoPropio.colorHilo);
+      pushChosen(L('Color logo propio', 'Custom logo color'), c.logoPropio.colorHilo);
       artwork.push({
         kind: 'logo',
         url: c.logoPropio.imagen,
-        caption: `Logo propio · ${logoTamanoLabel(c.logoPropio.tamano)} · ${posicionLabel(c.logoPropio.posicion)} · ${c.logoPropio.colorHilo.nombre}`,
+        caption: `${L('Logo propio', 'Custom logo')} · ${logoTamanoLabel(c.logoPropio.tamano, lang)} · ${posicionLabel(c.logoPropio.posicion, lang)} · ${cascoChosenColorName(c.logoPropio.colorHilo, lang)}`,
       });
     }
     const designPhotos = configDesignPhotos('casco', c);
@@ -291,21 +327,24 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
       artwork.push({
         kind: 'diseno',
         url,
-        caption: `Diseño · ${index + 2} de ${designPhotos.length}`,
+        caption: `${L('Diseño', 'Design')} · ${index + 2} ${L('de', 'of')} ${designPhotos.length}`,
       });
     });
     return { swatches, initials, artwork };
   }
   const parts: [string, string][] = [
-    ['Color casco', c.colorCasco],
-    ['Vicera arriba', c.colorViceraArriba],
-    ['Vicera abajo', c.colorViceraAbajo],
+    [L('Color casco', 'Helmet color'), c.colorCasco],
+    [L('Vicera arriba', 'Peak top'), c.colorViceraArriba],
+    [L('Vicera abajo', 'Peak underside'), c.colorViceraAbajo],
   ];
-  if (c.vicera === 'argentina') parts.push(['Banda vicera', c.colorBandaVicera]);
-  parts.push(['Tapones', c.colorTapones]);
-  if (c.correaje) parts.push(['Correaje', c.correajeColor]);
-  if (c.logoIcColorPersonalizado) parts.push(['Color logo IC', c.logoIcColor]);
-  if (c.iniciales) parts.push(['Color iniciales', c.inicialesColor]);
+  if (c.vicera === 'argentina')
+    parts.push([L('Banda vicera', 'Peak band'), c.colorBandaVicera]);
+  parts.push([L('Tapones', 'Airholes'), c.colorTapones]);
+  if (c.correaje) parts.push([L('Correaje', 'Harness'), c.correajeColor]);
+  if (c.logoIcColorPersonalizado)
+    parts.push([L('Color logo IC', 'IC logo color'), c.logoIcColor]);
+  if (c.iniciales)
+    parts.push([L('Color iniciales', 'Initials color'), c.inicialesColor]);
   for (const [label, id] of parts) {
     const swatch = chartSwatch(label, id);
     if (swatch) swatches.push(swatch);
@@ -318,21 +357,24 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
         c.inicialesColor,
         c.colorCasco,
       ),
-      place: c.inicialesUbicacion === 'derecha' ? 'Derecha' : 'Izquierda',
+      place:
+        c.inicialesUbicacion === 'derecha'
+          ? L('Derecha', 'Right')
+          : L('Izquierda', 'Left'),
       size: `${c.inicialesTamano} mm`,
     };
   }
   if (c.logoPersonalizado && c.logoPersonalizadoImagen) {
     const place = {
-      derecha: 'Derecha',
-      izquierda: 'Izquierda',
-      frente: 'Frente',
-      atras: 'Atrás',
+      derecha: L('Derecha', 'Right'),
+      izquierda: L('Izquierda', 'Left'),
+      frente: L('Frente', 'Front'),
+      atras: L('Atrás', 'Back'),
     }[c.logoPersonalizadoPosicion];
     artwork.push({
       kind: 'logo',
       url: c.logoPersonalizadoImagen,
-      caption: `Logo personalizado · ${c.logoPersonalizadoTamano} · ${place}`,
+      caption: `${L('Logo personalizado', 'Custom logo')} · ${c.logoPersonalizadoTamano} · ${place}`,
     });
   }
   const designPhotos = configDesignPhotos('casco', c);
@@ -340,10 +382,76 @@ function configuredVisuals(kind: ConfiguredKind, raw: ProductConfig) {
     artwork.push({
       kind: 'diseno',
       url,
-      caption: `Diseño · ${index + 2} de ${designPhotos.length}`,
+      caption: `${L('Diseño', 'Design')} · ${index + 2} ${L('de', 'of')} ${designPhotos.length}`,
     });
   });
   return { swatches, initials, artwork };
+}
+
+export type FichaProductDetail = {
+  productTitle: string;
+  description: string;
+  photo?: string;
+  photoLabel: string;
+  labels: { label: string; value: string }[];
+  swatches: FichaSwatch[];
+  initials?: FichaInitials;
+  artwork: FichaArtwork[];
+};
+
+export function buildFichaProductDetail({
+  item,
+  product,
+  photo,
+  lang = 'es',
+}: {
+  item: Item;
+  product?: Product;
+  photo?: string;
+  lang?: ConfigLang;
+}): FichaProductDetail {
+  const kind = product ? configuredKindOf(product) : null;
+  const description = product
+    ? describeConfigured(product, item.selections.config, lang) ||
+      skuDescription(item)
+    : skuDescription(item);
+  let labels: { label: string; value: string }[] = Object.entries(
+    item.selections.attributes,
+  ).map(([label, value]) => ({ label, value }));
+  let swatches: FichaSwatch[] = [];
+  let initials: FichaInitials | undefined;
+  let artwork: FichaArtwork[] = [];
+  let photoLabel = lang === 'en' ? 'Reference' : 'Referencia';
+  let nextPhoto = photo;
+  if (kind && item.selections.config) {
+    try {
+      const config = parseConfig(kind, item.selections.config);
+      labels = Object.entries(configLabels(kind, config, lang)).map(
+        ([label, value]) => ({ label, value }),
+      );
+      ({ swatches, initials, artwork } = configuredVisuals(kind, config, lang));
+      const design = configDesignPhoto(kind, config);
+      if (design) {
+        nextPhoto = design;
+        photoLabel = lang === 'en' ? 'Design' : 'Diseño';
+      }
+    } catch {
+      /* keep stored attributes */
+    }
+  }
+  const title = kind
+    ? KIND_NAME[kind][lang]
+    : product?.name || item.name || KIND_TITLES.montura;
+  return {
+    productTitle: title,
+    description,
+    photo: nextPhoto,
+    photoLabel,
+    labels,
+    swatches,
+    initials,
+    artwork,
+  };
 }
 
 export function buildFicha({
@@ -353,6 +461,7 @@ export function buildFicha({
   supplier,
   customer,
   photo,
+  lang = 'es',
 }: {
   order: { number: string; date: string; notes?: string };
   item: Item;
@@ -360,56 +469,28 @@ export function buildFicha({
   supplier?: Contact;
   customer?: Contact;
   photo?: string;
+  lang?: ConfigLang;
 }): FichaData {
-  const kind = product ? configuredKindOf(product) : null;
-  const description = product
-    ? describeConfigured(product, item.selections.config) || skuDescription(item)
-    : skuDescription(item);
-  let labels: { label: string; value: string }[] = Object.entries(
-    item.selections.attributes,
-  ).map(([label, value]) => ({ label, value }));
-  let swatches: FichaSwatch[] = [];
-  let initials: FichaInitials | undefined;
-  let artwork: FichaArtwork[] = [];
-  let photoLabel = 'Referencia';
-  if (kind && item.selections.config) {
-    try {
-      const config = parseConfig(kind, item.selections.config);
-      labels = Object.entries(configLabels(kind, config)).map(
-        ([label, value]) => ({ label, value }),
-      );
-      ({ swatches, initials, artwork } = configuredVisuals(kind, config));
-      const design = configDesignPhoto(kind, config);
-      if (design) {
-        photo = design;
-        photoLabel = 'Diseño';
-      }
-    } catch {
-      /* keep stored attributes */
-    }
-  }
-  const title = kind
-    ? KIND_NAME[kind]
-    : product?.name || item.name || KIND_TITLES.montura;
+  const detail = buildFichaProductDetail({ item, product, photo, lang });
   return {
     orderNumber: order.number,
     date: formatDate(order.date),
-    productTitle: title,
+    productTitle: detail.productTitle,
     quantity: item.quantity,
     sku: item.sku || product?.sku || '',
     supplierName: supplier?.name || '',
     supplierPhone: supplier?.phone || '',
     supplierWhatsapp: supplier?.phone ? whatsapp(supplier.phone) : null,
     supplierGroup: whatsappGroup(supplier?.whatsapp_group),
-    customerName: customer?.name || '',
+    customerName: shortCustomerName(customer?.name || ''),
     notes: (order.notes || '').trim(),
-    description,
-    photo,
-    photoLabel,
-    labels,
-    swatches,
-    initials,
-    artwork,
+    description: detail.description,
+    photo: detail.photo,
+    photoLabel: detail.photoLabel,
+    labels: detail.labels,
+    swatches: detail.swatches,
+    initials: detail.initials,
+    artwork: detail.artwork,
   };
 }
 

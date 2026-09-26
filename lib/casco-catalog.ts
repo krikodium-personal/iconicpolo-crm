@@ -157,7 +157,7 @@ export function viseraLabel(id: string, lang: 'es' | 'en' = 'es') {
   if (lang === 'en') {
     const en: Record<string, string> = {
       argentine: 'Argentine',
-      english: 'English',
+      english: 'Lock/English',
     };
     return en[id] || id;
   }

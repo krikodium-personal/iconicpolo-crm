@@ -28,6 +28,7 @@ import {
   LEGACY_BODY_COLORS,
   LEATHER_HEX,
   LEATHER_PHOTOS,
+  MONTURA_COLORS,
   MONTURA_MATERIALS,
   MONTURA_PERSONALIZACION_PLACES,
   RODILLERA_COLORS,
@@ -503,7 +504,7 @@ function CascoConfiguratorNew({
             }
             options={CASCO_VISERAS.map((item) => ({
               value: item.id,
-              label: item.id === 'english' ? 'Inglesa (Lock/English)' : item.nombre,
+              label: item.nombre,
             }))}
           />
         </Field>
@@ -951,10 +952,10 @@ export function Configurator({
               label="Color"
               value={c.color}
               onChange={(v) => set({ color: v as MonturaConfig['color'] })}
-              options={[
-                { value: 'negro', label: 'Negro' },
-                { value: 'marron', label: 'Marrón' },
-              ]}
+              options={MONTURA_COLORS.map((color) => ({
+                value: color.id,
+                label: color.label,
+              }))}
             />
           </Field>
           <Field label="Tamaño *">
@@ -1143,6 +1144,11 @@ export function Configurator({
         </div>
         {c.logoPersonalizado ? (
           <>
+            <ColorPicker
+              label="Color de hilo *"
+              value={c.logoPersonalizadoColor}
+              onChange={(id) => set({ logoPersonalizadoColor: id })}
+            />
             <Field label="Imagen del logo *" wide>
               <Photos
                 value={
@@ -1717,7 +1723,7 @@ export function Configurator({
             value={c.vicera}
             onChange={(v) => set({ vicera: v as CascoConfigLegacy['vicera'] })}
             options={[
-              { value: 'lock', label: 'Lock / English' },
+              { value: 'lock', label: 'Lock/English' },
               { value: 'argentina', label: 'Argentina' },
             ]}
           />

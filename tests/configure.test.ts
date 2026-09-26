@@ -29,10 +29,22 @@ import {
   cascoKindAtSlot,
   firstCascoColor,
   isNewCascoConfig,
+  BOTA_COLORS,
   CASCO_DISENO_MAX,
   CASCO_PALETTE_IDS,
   CASCO_SLOT_FULL_MESSAGE,
+  INITIAL_COLORS,
+  LEGACY_BODY_COLORS,
+  LEATHER_HEX,
+  MONTURA_COLORS,
+  RODILLERA_COLORS,
 } from '../lib/configure.ts';
+import {
+  CASCO_PALETA_BARBIJO,
+  CASCO_PALETA_LOGO_HILO,
+  CASCO_PALETA_OJALES,
+  CASCO_PALETAS_TELA,
+} from '../lib/casco-catalog.ts';
 
 const LEGACY_CASCO = {
   modelo: 'h1' as const,
@@ -986,7 +998,7 @@ test('legacy casco configs still parse and keep their labels', () => {
   assert.equal(config.vicera, 'lock');
   assert.equal(config.materialExterno, 'softshell');
   const labels = configLabels('casco', config);
-  assert.equal(labels['Tipo de vicera'], 'Lock / English');
+  assert.equal(labels['Tipo de vicera'], 'Lock/English');
   assert.equal(labels['Material externo'], 'Softshell');
   assert.equal(labels['Color casco'], 'Negro');
 });
@@ -1125,6 +1137,36 @@ test('logo Iconic stays on the right and adds no extra of its own', () => {
   assert.equal(
     extraCharges('casco', config).some((c) => c.id === 'logoIcColor'),
     false,
+  );
+});
+
+test('blanco is available in every selectable color palette', () => {
+  for (const [name, colors] of [
+    ['cloth', CASCO_PALETAS_TELA.cloth],
+    ['leather', CASCO_PALETAS_TELA.leather],
+    ['softshell', CASCO_PALETAS_TELA.softshell],
+    ['barbijo', CASCO_PALETA_BARBIJO],
+    ['ojales', CASCO_PALETA_OJALES],
+    ['logoHilo', CASCO_PALETA_LOGO_HILO],
+  ] as const) {
+    const hit = colors.find((color) => color.nombre === 'Blanco');
+    assert.ok(hit, `${name} missing Blanco`);
+    assert.equal(hit.hex, '#ffffff');
+    assert.equal(hit.nombreEn, 'White');
+  }
+
+  assert.ok(INITIAL_COLORS.some((color) => color.name === 'Blanco'));
+  assert.ok(LEGACY_BODY_COLORS.some((color) => color.id === 'blanco'));
+  assert.ok(MONTURA_COLORS.some((color) => color.id === 'blanco'));
+  assert.ok(RODILLERA_COLORS.some((color) => color.id === 'blanco'));
+  assert.ok(BOTA_COLORS.some((color) => color.id === 'blanco'));
+  assert.equal(LEATHER_HEX.blanco, '#ffffff');
+
+  assert.equal(parseMontura({ ...defaultMontura(), color: 'blanco' }).color, 'blanco');
+  assert.equal(parseRodillera({ ...defaultRodillera(), color: 'blanco' }).color, 'blanco');
+  assert.equal(
+    parseBota({ ...defaultBota(), color: 'blanco', medidas: botaMeasures }).color,
+    'blanco',
   );
 });
 

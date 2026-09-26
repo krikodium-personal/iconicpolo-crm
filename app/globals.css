@@ -1399,6 +1399,28 @@ button.status-pick {
   margin: 0;
   padding: 0;
 }
+.cotizacion-products {
+  display: grid;
+  gap: 28px;
+}
+.cotizacion-product {
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e6ece3;
+}
+.cotizacion-product:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.cotizacion-product-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+.cotizacion-product .ficha-block {
+  margin-top: 18px;
+}
 .cotizacion-lines li {
   display: flex;
   align-items: flex-start;

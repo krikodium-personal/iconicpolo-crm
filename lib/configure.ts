@@ -520,6 +520,22 @@ function monturaMaterialLabel(id: string, lang: ConfigLang = 'es') {
   );
 }
 
+function leatherProductColorEn(id: string) {
+  const en: Record<string, string> = {
+    negro: 'Black',
+    tabaco: 'Tobacco',
+    chocolate: 'Chocolate',
+    blanco: 'White',
+    marron: 'Brown',
+  };
+  return en[id] || id;
+}
+
+function monturaColorLabel(id: string, lang: ConfigLang = 'es') {
+  if (lang === 'en') return leatherProductColorEn(id);
+  return MONTURA_COLORS.find((color) => color.id === id)?.label || id;
+}
+
 export const RODILLERA_TIPOS = [
   { id: 'velcro', label: 'Velcro' },
   { id: 'doble_velcro', label: 'Doble velcro' },
@@ -535,6 +551,13 @@ export const RODILLERA_COLORS = [
   { id: 'negro', label: 'Negro' },
   { id: 'tabaco', label: 'Tabaco' },
   { id: 'chocolate', label: 'Chocolate' },
+  { id: 'blanco', label: 'Blanco' },
+] as const;
+
+export const MONTURA_COLORS = [
+  { id: 'negro', label: 'Negro' },
+  { id: 'marron', label: 'Marrón' },
+  { id: 'blanco', label: 'Blanco' },
 ] as const;
 
 export const LEATHER_HEX: Record<string, string> = {
@@ -542,6 +565,7 @@ export const LEATHER_HEX: Record<string, string> = {
   tabaco: '#8b5a2b',
   chocolate: '#4a2a18',
   marron: '#5c3317',
+  blanco: '#ffffff',
 };
 
 export const LEATHER_PHOTOS: Record<string, string> = {
@@ -963,10 +987,13 @@ export function configuredProductOf<
   );
 }
 
+export type MonturaColor = (typeof MONTURA_COLORS)[number]['id'];
+export type LeatherProductColor = (typeof RODILLERA_COLORS)[number]['id'];
+
 export type MonturaConfig = {
   tipo: 'americana' | 'bauti';
   material: MonturaMaterial;
-  color: 'negro' | 'marron';
+  color: MonturaColor;
   tamano: '18' | '19' | '20';
   acabadoAsiento: 'perforado' | 'liso';
   materialAsiento: MonturaMaterial;
@@ -978,6 +1005,8 @@ export type MonturaConfig = {
   inicialesTipografia: string;
   logoPersonalizado: boolean;
   logoPersonalizadoImagen: string;
+  /** Color de hilo del logo bordado. */
+  logoPersonalizadoColor: string;
   /** Ubicación de la personalización activa (iniciales o logo). */
   personalizacionUbicacion: MonturaPersonalizacionUbicacion;
   comentarios: string;
@@ -1101,8 +1130,8 @@ export function cascoCanEnableKind(
 export type RodilleraConfig = {
   tipo: 'velcro' | 'doble_velcro' | 'hebilla';
   modelo: 'standard' | 'premium';
-  color: 'negro' | 'tabaco' | 'chocolate';
-  protectorCentroColor: 'negro' | 'tabaco' | 'chocolate';
+  color: LeatherProductColor;
+  protectorCentroColor: LeatherProductColor;
   tamano: 'chica' | 'mediano' | 'grande';
   iniciales: boolean;
   inicialesTexto: string;
@@ -1120,7 +1149,7 @@ export type RodilleraConfig = {
 export type BotaConfig = {
   modelo: (typeof BOTA_MODELOS)[number]['id'];
   material: 'cuero_vaca' | 'cuero_bufalo';
-  color: 'negro' | 'tabaco' | 'chocolate';
+  color: LeatherProductColor;
   acabado: 'brillante' | 'matte';
   medidas: Record<BotaMeasureId, string>;
   iniciales: boolean;
@@ -1155,6 +1184,7 @@ export function defaultMontura(): MonturaConfig {
     inicialesTipografia: 'trajan',
     logoPersonalizado: false,
     logoPersonalizadoImagen: '',
+    logoPersonalizadoColor: DEFAULT_INITIAL_COLOR_ID,
     personalizacionUbicacion: 'tapita',
     comentarios: '',
     corte: 'tapita',
@@ -1343,7 +1373,11 @@ export function parseMontura(raw: unknown): MonturaConfig {
       MONTURA_MATERIALS.map((material) => material.id),
       'Material',
     ),
-    color: oneOf(b.color, ['negro', 'marron'], 'Color'),
+    color: oneOf(
+      b.color,
+      MONTURA_COLORS.map((color) => color.id),
+      'Color',
+    ),
     tamano: oneOf(b.tamano, ['18', '19', '20'], 'Tamaño'),
     acabadoAsiento: oneOf(
       b.acabadoAsiento,
@@ -1362,6 +1396,10 @@ export function parseMontura(raw: unknown): MonturaConfig {
     inicialesTipografia: text(b.inicialesTipografia, 'trajan'),
     logoPersonalizado: flag(b.logoPersonalizado),
     logoPersonalizadoImagen: text(b.logoPersonalizadoImagen).trim(),
+    logoPersonalizadoColor: text(
+      b.logoPersonalizadoColor,
+      DEFAULT_INITIAL_COLOR_ID,
+    ),
     personalizacionUbicacion: aliasMonturaPersonalizacionUbicacion(
       b.personalizacionUbicacion ?? b.inicialesUbicacion,
     ),
@@ -1392,6 +1430,7 @@ export function parseMontura(raw: unknown): MonturaConfig {
   }
   if (config.logoPersonalizado) {
     requireImage(config.logoPersonalizadoImagen, 'logo personalizado');
+    colorId(config.logoPersonalizadoColor, 'Color de hilo del logo');
   }
   if (config.comentarios.length > 500)
     throw new Error('Comentarios: máximo 500 caracteres.');
@@ -1991,14 +2030,7 @@ export function configLabels(
     labels[key('Tipo', 'Type')] =
       c.tipo === 'americana' ? 'Americana' : 'Bauti';
     labels[key('Material', 'Material')] = monturaMaterialLabel(c.material, lang);
-    labels[key('Color', 'Color')] =
-      c.color === 'negro'
-        ? lang === 'en'
-          ? 'Black'
-          : 'Negro'
-        : lang === 'en'
-          ? 'Brown'
-          : 'Marrón';
+    labels[key('Color', 'Color')] = monturaColorLabel(c.color, lang);
     labels[key('Tamaño', 'Size')] = c.tamano;
     labels[key('Acabado asiento', 'Seat finish')] =
       c.acabadoAsiento === 'perforado'
@@ -2039,6 +2071,10 @@ export function configLabels(
     if (c.logoPersonalizado) {
       labels[key('Logo personalizado', 'Custom logo')] = yes;
       labels[key('Ubicación logo', 'Logo placement')] = placeLabel;
+      labels[key('Color de hilo logo', 'Logo thread color')] = colorName(
+        c.logoPersonalizadoColor,
+        lang,
+      );
     }
     if (c.comentarios) {
       labels[key('Comentarios', 'Comments')] = c.comentarios;
@@ -2056,6 +2092,7 @@ export function configLabels(
       negro: 'Black',
       tabaco: 'Tobacco',
       chocolate: 'Chocolate',
+      blanco: 'White',
     };
     const sizeEn: Record<string, string> = {
       chica: 'Small',
@@ -2142,6 +2179,7 @@ export function configLabels(
       negro: 'Black',
       tabaco: 'Tobacco',
       chocolate: 'Chocolate',
+      blanco: 'White',
     };
     const acabadoEn: Record<string, string> = {
       brillante: 'Glossy',
@@ -2311,7 +2349,7 @@ export function configLabels(
         : 'Standard sin homologar';
   labels[key('Tipo de vicera', 'Peak type')] =
     c.vicera === 'lock'
-      ? 'Lock / English'
+      ? 'Lock/English'
       : lang === 'en'
         ? 'Argentine'
         : 'Argentina';
@@ -2732,14 +2770,7 @@ function lowerEn(value: string) {
 function summarizeMontura(raw: MonturaConfig, lang: ConfigLang = 'es') {
   const tipo = raw.tipo === 'americana' ? 'Americana' : 'Bauti';
   const material = monturaMaterialLabel(raw.material, lang);
-  const color =
-    raw.color === 'negro'
-      ? lang === 'en'
-        ? 'Black'
-        : 'Negro'
-      : lang === 'en'
-        ? 'Brown'
-        : 'Marrón';
+  const color = monturaColorLabel(raw.color, lang);
   const asiento =
     raw.acabadoAsiento === 'perforado'
       ? lang === 'en'
@@ -2782,7 +2813,12 @@ function summarizeMontura(raw: MonturaConfig, lang: ConfigLang = 'es') {
     );
   }
   if (raw.logoPersonalizado) {
-    lines.push(lang === 'en' ? 'Custom logo' : 'Logo personalizado');
+    const color = colorName(raw.logoPersonalizadoColor, lang);
+    lines.push(
+      lang === 'en'
+        ? `Custom logo · ${color}`
+        : `Logo personalizado · ${color}`,
+    );
   }
   if (raw.comentarios.trim()) {
     lines.push(
@@ -2805,6 +2841,7 @@ function summarizeRodillera(raw: RodilleraConfig, lang: ConfigLang = 'es') {
     negro: 'Black',
     tabaco: 'Tobacco',
     chocolate: 'Chocolate',
+    blanco: 'White',
   };
   const sizeEn: Record<string, string> = {
     chica: 'Small',

@@ -101,7 +101,7 @@ import {
   Pencil,
   FileText,
 } from 'lucide-react';
-import { buildFicha } from '@/lib/ficha';
+import { buildFicha, buildFichaProductDetail } from '@/lib/ficha';
 import { FichaView, CotizacionFichaView, buildCotizacionData } from './ficha';
 import { whatsapp, whatsappGroup } from '@/lib/whatsapp';
 export type Save = (body: Record<string, unknown>) => Promise<void>;
@@ -1564,6 +1564,7 @@ export function OrderDetail({
             const product = data.products.find(
               (p) => p.id === item.product_id,
             );
+            const photo = itemPhoto(item, product, data.movements);
             return {
               id: item.id,
               title: itemDescription(item, product, 'es'),
@@ -1571,7 +1572,13 @@ export function OrderDetail({
               unitPrice: item.unit_price,
               total: item.total,
               discount: item.discount,
-              photo: itemPhoto(item, product, data.movements),
+              photo,
+              detail: buildFichaProductDetail({
+                item,
+                product,
+                photo,
+                lang: 'es',
+              }),
             };
           }),
         })}
@@ -1580,6 +1587,7 @@ export function OrderDetail({
             const product = data.products.find(
               (p) => p.id === item.product_id,
             );
+            const photo = itemPhoto(item, product, data.movements);
             return {
               id: item.id,
               title: itemDescription(item, product, lang),
@@ -1587,7 +1595,13 @@ export function OrderDetail({
               unitPrice: item.unit_price,
               total: item.total,
               discount: item.discount,
-              photo: itemPhoto(item, product, data.movements),
+              photo,
+              detail: buildFichaProductDetail({
+                item,
+                product,
+                photo,
+                lang,
+              }),
             };
           })
         }

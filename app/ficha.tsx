@@ -3,10 +3,12 @@ import { useState, type CSSProperties } from 'react';
 import { FileDown, ImageIcon, MessageCircle } from 'lucide-react';
 import {
   fichaFileName,
-  fichaShareText,
   jpegToPdf,
   fichaArtworkTitle,
+  buildFichaProductDetail,
   type FichaData,
+  type FichaArtwork,
+  type FichaProductDetail,
 } from '@/lib/ficha';
 import { formatMoney, decimal, parseDecimal } from '@/lib/money';
 import type { Order } from '@/lib/types';
@@ -351,8 +353,22 @@ function canShareFiles(file: File) {
   );
 }
 
-export function FichaSheet({ ficha }: { ficha: FichaData }) {
-  const initials = ficha.initials;
+function FichaDetailSections({
+  detail,
+  labels,
+  artworkTitle,
+}: {
+  detail: FichaProductDetail;
+  labels: {
+    description: string;
+    specs: string;
+    colors: string;
+    initials: string;
+    placePrefix: string;
+  };
+  artworkTitle: (kind: FichaArtwork['kind']) => string;
+}) {
+  const initials = detail.initials;
   const surface = initials?.surfaceHex || '#1c1612';
   const darkSurface = hexLuminance(surface) < 0.48;
   const leatherStyle = initials
@@ -363,6 +379,109 @@ export function FichaSheet({ ficha }: { ficha: FichaData }) {
         '--preview-leather-edge': mixHex(surface, [0, 0, 0], 0.28),
       } as CSSProperties)
     : undefined;
+  return (
+    <>
+      {detail.description ? (
+        <section className="ficha-block">
+          <h2>{labels.description}</h2>
+          <p className="ficha-description">{detail.description}</p>
+        </section>
+      ) : null}
+      {detail.photo ? (
+        <section className="ficha-block">
+          <h2>{detail.photoLabel || labels.description}</h2>
+          <img
+            className="ficha-photo"
+            src={detail.photo}
+            alt={detail.productTitle}
+          />
+        </section>
+      ) : null}
+      {detail.labels.length ? (
+        <section className="ficha-block">
+          <h2>{labels.specs}</h2>
+          <ul className="ficha-specs">
+            {detail.labels.map((row) => (
+              <li key={row.label}>
+                <span>{row.label}</span>
+                <b>{row.value}</b>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {detail.swatches.length ? (
+        <section className="ficha-block">
+          <h2>{labels.colors}</h2>
+          <ul className="ficha-swatches">
+            {detail.swatches.map((swatch) => (
+              <li key={`${swatch.label}-${swatch.name}`}>
+                <span
+                  className="ficha-chip"
+                  style={{ background: swatch.hex }}
+                  title={swatch.name}
+                />
+                <div>
+                  <small>{swatch.label}</small>
+                  <b>{swatch.name}</b>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {initials ? (
+        <section className="ficha-block">
+          <h2>{labels.initials}</h2>
+          <div
+            className={`ficha-initials${darkSurface ? ' on-dark' : ''}${
+              initials.surfacePhoto ? ' has-photo' : ''
+            }`}
+            style={
+              initials.surfacePhoto
+                ? {
+                    ...leatherStyle,
+                    '--preview-leather-photo': `url(${initials.surfacePhoto})`,
+                  }
+                : leatherStyle
+            }
+          >
+            {initials.surfacePhoto ? (
+              <img src={initials.surfacePhoto} alt="" />
+            ) : null}
+            <span
+              className="ficha-initials-mark"
+              style={{ fontFamily: initials.fontFamily, color: initials.hex }}
+            >
+              {initials.text}
+            </span>
+          </div>
+          <p className="ficha-initials-meta">
+            {[
+              initials.fontName,
+              initials.colorName,
+              initials.size,
+              initials.place
+                ? `${labels.placePrefix}: ${initials.place}`
+                : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </p>
+        </section>
+      ) : null}
+      {detail.artwork.map((piece) => (
+        <section className="ficha-block" key={piece.url}>
+          <h2>{artworkTitle(piece.kind)}</h2>
+          <img className="ficha-artwork" src={piece.url} alt={piece.caption} />
+          <p className="ficha-initials-meta">{piece.caption}</p>
+        </section>
+      ))}
+    </>
+  );
+}
+
+export function FichaSheet({ ficha }: { ficha: FichaData }) {
   return (
     <article className="ficha-sheet">
       <header className="ficha-head">
@@ -401,94 +520,26 @@ export function FichaSheet({ ficha }: { ficha: FichaData }) {
           </div>
         ) : null}
       </dl>
-      <section className="ficha-block">
-        <h2>Descripción</h2>
-        <p className="ficha-description">{ficha.description}</p>
-      </section>
-      {ficha.photo ? (
-        <section className="ficha-block">
-          <h2>{ficha.photoLabel || 'Referencia'}</h2>
-          <img className="ficha-photo" src={ficha.photo} alt={ficha.productTitle} />
-        </section>
-      ) : null}
-      {ficha.labels.length ? (
-        <section className="ficha-block">
-          <h2>Especificaciones</h2>
-          <ul className="ficha-specs">
-            {ficha.labels.map((row) => (
-              <li key={row.label}>
-                <span>{row.label}</span>
-                <b>{row.value}</b>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-      {ficha.swatches.length ? (
-        <section className="ficha-block">
-          <h2>Colores</h2>
-          <ul className="ficha-swatches">
-            {ficha.swatches.map((swatch) => (
-              <li key={swatch.label}>
-                <span
-                  className="ficha-chip"
-                  style={{ background: swatch.hex }}
-                  title={swatch.name}
-                />
-                <div>
-                  <small>{swatch.label}</small>
-                  <b>{swatch.name}</b>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-      {initials ? (
-        <section className="ficha-block">
-          <h2>Iniciales</h2>
-          <div
-            className={`ficha-initials${darkSurface ? ' on-dark' : ''}${
-              initials.surfacePhoto ? ' has-photo' : ''
-            }`}
-            style={
-              initials.surfacePhoto
-                ? {
-                    ...leatherStyle,
-                    '--preview-leather-photo': `url(${initials.surfacePhoto})`,
-                  }
-                : leatherStyle
-            }
-          >
-            {initials.surfacePhoto ? (
-              <img src={initials.surfacePhoto} alt="" />
-            ) : null}
-            <span
-              className="ficha-initials-mark"
-              style={{ fontFamily: initials.fontFamily, color: initials.hex }}
-            >
-              {initials.text}
-            </span>
-          </div>
-          <p className="ficha-initials-meta">
-            {[
-              initials.fontName,
-              initials.colorName,
-              initials.size,
-              initials.place ? `Ubicación: ${initials.place}` : '',
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </p>
-        </section>
-      ) : null}
-      {ficha.artwork.map((piece) => (
-        <section className="ficha-block" key={piece.url}>
-          <h2>{fichaArtworkTitle(piece.kind)}</h2>
-          <img className="ficha-artwork" src={piece.url} alt={piece.caption} />
-          <p className="ficha-initials-meta">{piece.caption}</p>
-        </section>
-      ))}
+      <FichaDetailSections
+        detail={{
+          productTitle: ficha.productTitle,
+          description: ficha.description,
+          photo: ficha.photo,
+          photoLabel: ficha.photoLabel,
+          labels: ficha.labels,
+          swatches: ficha.swatches,
+          initials: ficha.initials,
+          artwork: ficha.artwork,
+        }}
+        labels={{
+          description: 'Descripción',
+          specs: 'Especificaciones',
+          colors: 'Colores',
+          initials: 'Iniciales',
+          placePrefix: 'Ubicación',
+        }}
+        artworkTitle={(kind) => fichaArtworkTitle(kind)}
+      />
       {ficha.notes ? (
         <section className="ficha-block">
           <h2>Notas del pedido</h2>
@@ -583,13 +634,10 @@ export function FichaView({
             onClick={() =>
               void run('share', async () => {
                 const next = await files();
-                const text = fichaShareText(ficha);
                 if (canShareFiles(next.pdf)) {
                   try {
                     await navigator.share({
                       files: [next.pdf],
-                      title: `Ficha técnica · Pedido ${ficha.orderNumber}`,
-                      text,
                     });
                   } catch (caught) {
                     if (
@@ -602,13 +650,11 @@ export function FichaView({
                   return;
                 }
                 downloadBlob(next.pdf, next.pdf.name);
-                const target =
-                  ficha.supplierWhatsapp ||
-                  'https://wa.me/?text=' + encodeURIComponent(text);
-                const url = ficha.supplierWhatsapp
-                  ? `${ficha.supplierWhatsapp}?text=${encodeURIComponent(text)}`
-                  : target;
-                window.open(url, '_blank', 'noopener,noreferrer');
+                window.open(
+                  ficha.supplierWhatsapp || 'https://wa.me/',
+                  '_blank',
+                  'noopener,noreferrer',
+                );
               })
             }
           >
@@ -620,8 +666,8 @@ export function FichaView({
       {error ? <p className="hint ficha-error">{error}</p> : null}
       <p className="hint">
         El PDF incluye la descripción, las muestras de color, las iniciales y el
-        logo o bordado adjunto. En el celular, Compartir / WhatsApp adjunta el
-        archivo; en la computadora se descarga para enviarlo.
+        logo o bordado adjunto. En el celular, WhatsApp abre un mensaje nuevo
+        solo con el PDF; en la computadora se descarga para adjuntarlo vos.
       </p>
       <div className="ficha-preview">
         <FichaSheet ficha={ficha} />
@@ -638,6 +684,7 @@ export type CotizacionLine = {
   total: number;
   discount: number;
   photo?: string;
+  detail: FichaProductDetail;
 };
 
 export type CotizacionData = {
@@ -661,16 +708,23 @@ export type CotizacionOptions = {
 
 const QUOTE_COPY = {
   es: {
-    kicker: 'Cotización',
+    kicker: 'Cotización para el cliente',
     number: (n: string) => `Nro: ${n}`,
-    forCustomer: (name: string) => `Para ${name}`,
+    noCustomer: 'Sin cliente',
     products: 'Productos',
     units: (n: number) => (n === 1 ? '1 ud.' : `${n} uds.`),
+    unitsLabel: 'Cantidad',
     subtotal: 'Subtotal',
     shipping: 'Envío',
+    totals: 'Totales',
     total: 'Total',
     notes: 'Notas',
     empty: 'Sin productos.',
+    description: 'Descripción',
+    specs: 'Especificaciones',
+    colors: 'Colores',
+    initials: 'Iniciales',
+    placePrefix: 'Ubicación',
     discount: (value: string) => `${value}% dto.`,
     footer:
       'No se consideran impuestos de importación y tasas aduaneras.',
@@ -680,9 +734,7 @@ const QUOTE_COPY = {
     downloadImage: 'Descargar imagen',
     generating: 'Generando…',
     share: 'WhatsApp',
-    hint: 'Descargá el PDF o compartilo por WhatsApp. En el celular, Compartir adjunta el archivo; en la computadora se descarga para enviarlo.',
-    shareLead: (n: string) => `Cotización Iconic — Nro: ${n}`,
-    shareAttach: 'Adjunto la cotización.',
+    hint: 'El PDF incluye productos con diseño, especificaciones, colores, iniciales y logos, más precios y envío. En el celular, WhatsApp abre un mensaje nuevo solo con el PDF; en la computadora se descarga para adjuntarlo vos.',
     langLabel: 'Idioma',
     shippingToggle: 'Incluir cargos de envío',
     carrierLabel: 'Carrier',
@@ -690,16 +742,23 @@ const QUOTE_COPY = {
     error: 'No se pudo generar la cotización.',
   },
   en: {
-    kicker: 'Quotation',
+    kicker: 'Customer quotation',
     number: (n: string) => `No.: ${n}`,
-    forCustomer: (name: string) => `For ${name}`,
+    noCustomer: 'No customer',
     products: 'Products',
     units: (n: number) => (n === 1 ? '1 pc.' : `${n} pcs.`),
+    unitsLabel: 'Quantity',
     subtotal: 'Subtotal',
     shipping: 'Shipping',
+    totals: 'Totals',
     total: 'Total',
     notes: 'Notes',
     empty: 'No products.',
+    description: 'Description',
+    specs: 'Specifications',
+    colors: 'Colors',
+    initials: 'Initials',
+    placePrefix: 'Placement',
     discount: (value: string) => `${value}% off`,
     footer: 'Import taxes and customs fees are not included.',
     back: '← Back to order',
@@ -708,9 +767,7 @@ const QUOTE_COPY = {
     downloadImage: 'Download image',
     generating: 'Generating…',
     share: 'WhatsApp',
-    hint: 'Download the PDF or share it on WhatsApp. On mobile, Share attaches the file; on desktop it downloads so you can send it.',
-    shareLead: (n: string) => `Iconic quotation — No.: ${n}`,
-    shareAttach: 'Please find the quotation attached.',
+    hint: 'The PDF includes products with design, specifications, colors, initials and logos, plus prices and shipping. On mobile, WhatsApp opens a new message with only the PDF; on desktop it downloads so you can attach it.',
     langLabel: 'Language',
     shippingToggle: 'Include shipping charges',
     carrierLabel: 'Carrier',
@@ -773,21 +830,6 @@ function cotizacionFileName(
   return `${raw || prefix}.${ext}`;
 }
 
-function cotizacionShareText(
-  quote: CotizacionData,
-  options: CotizacionOptions,
-) {
-  const copy = QUOTE_COPY[options.lang];
-  return [
-    copy.shareLead(quote.number),
-    quote.customerName ? copy.forCustomer(quote.customerName) : '',
-    `${copy.total} ${formatMoney(quoteGrandTotal(quote, options), quote.currency)}`,
-    copy.shareAttach,
-  ]
-    .filter(Boolean)
-    .join('\n');
-}
-
 function CotizacionSheet({
   quote,
   options,
@@ -801,27 +843,20 @@ function CotizacionSheet({
   const grand = quoteGrandTotal(quote, options);
   const shipping = options.shipping;
   return (
-    <article className="ficha-sheet cotizacion-sheet">
+    <article className="ficha-sheet">
       <header className="ficha-head">
         <img src="/logo-iconic.png" alt="Iconic" width={64} height={72} />
         <div>
           <p>{copy.kicker}</p>
-          <h1>{copy.number(quote.number)}</h1>
+          <h1>{quote.customerName || copy.noCustomer}</h1>
           <small>
-            {[
-              dateLabel,
-              quote.customerName
-                ? copy.forCustomer(quote.customerName)
-                : '',
-            ]
-              .filter(Boolean)
-              .join(' · ')}
+            {copy.number(quote.number)} · {dateLabel}
           </small>
         </div>
       </header>
       <dl className="ficha-meta">
         <div>
-          <dt>{copy.products}</dt>
+          <dt>{copy.unitsLabel}</dt>
           <dd>{copy.units(quote.units)}</dd>
         </div>
         <div>
@@ -832,64 +867,81 @@ function CotizacionSheet({
       <section className="ficha-block">
         <h2>{copy.products}</h2>
         {quote.lines.length ? (
-          <ul className="cotizacion-lines">
+          <div className="cotizacion-products">
             {quote.lines.map((line) => (
-              <li key={line.id}>
-                <div className="cotizacion-line-main">
-                  <div className="stock-item-photo cotizacion-line-photo-wrap">
-                    <ProductPhoto name={line.title} url={line.photo} />
-                    <span className="stock-item-qty">{line.quantity}</span>
+              <article className="cotizacion-product" key={line.id}>
+                <div className="cotizacion-product-head">
+                  <div className="cotizacion-line-main">
+                    <div className="stock-item-photo cotizacion-line-photo-wrap">
+                      <ProductPhoto
+                        name={line.detail.productTitle || line.title}
+                        url={line.photo || line.detail.photo}
+                      />
+                      <span className="stock-item-qty">{line.quantity}</span>
+                    </div>
+                    <div>
+                      <p className="cotizacion-line-title">
+                        {line.detail.productTitle ||
+                          line.title.split('\n')[0]}
+                        {line.discount > 0 ? (
+                          <span className="discount-badge">
+                            {discountLabel(line.discount, options.lang)}
+                          </span>
+                        ) : null}
+                      </p>
+                      <p className="cotizacion-line-meta">
+                        {money(line.unitPrice)}
+                        {line.quantity > 1 ? ` × ${line.quantity}` : ''}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="cotizacion-line-title">
-                      {line.title.split('\n').map((part, index) => (
-                        <span key={`${line.id}-${index}`}>
-                          {index ? <br /> : null}
-                          {part}
-                        </span>
-                      ))}
-                      {line.discount > 0 ? (
-                        <span className="discount-badge">
-                          {discountLabel(line.discount, options.lang)}
-                        </span>
-                      ) : null}
-                    </p>
-                    <p className="cotizacion-line-meta">
-                      {money(line.unitPrice)}
-                      {line.quantity > 1 ? ` × ${line.quantity}` : ''}
-                    </p>
-                  </div>
+                  <strong className="cotizacion-line-total">
+                    {money(line.total)}
+                  </strong>
                 </div>
-                <strong className="cotizacion-line-total">
-                  {money(line.total)}
-                </strong>
-              </li>
+                <FichaDetailSections
+                  detail={line.detail}
+                  labels={{
+                    description: copy.description,
+                    specs: copy.specs,
+                    colors: copy.colors,
+                    initials: copy.initials,
+                    placePrefix: copy.placePrefix,
+                  }}
+                  artworkTitle={(kind) =>
+                    fichaArtworkTitle(kind, options.lang)
+                  }
+                />
+              </article>
             ))}
-          </ul>
+          </div>
         ) : (
           <p className="ficha-description">{copy.empty}</p>
         )}
       </section>
-      <dl className="ficha-meta cotizacion-totals">
-        {shipping ? (
-          <>
-            <div>
-              <dt>{copy.subtotal}</dt>
-              <dd>{money(quote.total)}</dd>
-            </div>
-            <div>
-              <dt>
-                {copy.shipping} · {shipping.carrier}
-              </dt>
-              <dd>{money(shipping.amount)}</dd>
-            </div>
-          </>
-        ) : null}
-        <div>
-          <dt>{copy.total}</dt>
-          <dd>{money(grand)}</dd>
-        </div>
-      </dl>
+      <section className="ficha-block">
+        <h2>{copy.totals}</h2>
+        <ul className="ficha-specs">
+          {shipping ? (
+            <>
+              <li>
+                <span>{copy.subtotal}</span>
+                <b>{money(quote.total)}</b>
+              </li>
+              <li>
+                <span>
+                  {copy.shipping} · {shipping.carrier}
+                </span>
+                <b>{money(shipping.amount)}</b>
+              </li>
+            </>
+          ) : null}
+          <li>
+            <span>{copy.total}</span>
+            <b>{money(grand)}</b>
+          </li>
+        </ul>
+      </section>
       {quote.notes ? (
         <section className="ficha-block">
           <h2>{copy.notes}</h2>
@@ -914,20 +966,46 @@ async function renderCotizacionCanvas(
   const dateLabel = quoteDateLabel(quote.date, options.lang);
   const grand = quoteGrandTotal(quote, options);
   const shipping = options.shipping;
-  const [brand, ...photos] = await Promise.all([
+  const maxH = 20000;
+  const imageJobs: Promise<HTMLImageElement | null>[] = [
     loadImage('/logo-iconic.png'),
-    ...quote.lines.map((line) =>
-      line.photo ? loadImage(line.photo) : Promise.resolve(null),
-    ),
-  ]);
+  ];
+  for (const line of quote.lines) {
+    const thumb = line.photo || line.detail.photo;
+    imageJobs.push(thumb ? loadImage(thumb) : Promise.resolve(null));
+    imageJobs.push(
+      line.detail.photo && line.detail.photo !== thumb
+        ? loadImage(line.detail.photo)
+        : Promise.resolve(null),
+    );
+    imageJobs.push(
+      line.detail.initials?.surfacePhoto
+        ? loadImage(line.detail.initials.surfacePhoto)
+        : Promise.resolve(null),
+    );
+    for (const piece of line.detail.artwork) {
+      imageJobs.push(loadImage(piece.url));
+    }
+  }
+  const loaded = await Promise.all(imageJobs);
+  const brand = loaded[0] || null;
+  let cursor = 1;
+  const lineAssets = quote.lines.map((line) => {
+    const thumb = loaded[cursor++] || null;
+    const design = loaded[cursor++] || null;
+    const leather = loaded[cursor++] || null;
+    const artwork = line.detail.artwork.map(() => loaded[cursor++] || null);
+    return { thumb, design, leather, artwork };
+  });
+
   const canvas = document.createElement('canvas');
   canvas.width = pageW * scale;
-  canvas.height = 6400 * scale;
+  canvas.height = maxH * scale;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error(copy.error);
   ctx.scale(scale, scale);
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, pageW, 6400);
+  ctx.fillRect(0, 0, pageW, maxH);
   let y = pad;
 
   if (brand) {
@@ -942,16 +1020,12 @@ async function renderCotizacionCanvas(
   ctx.fillText(copy.kicker.toUpperCase(), pad + 62, y + 14);
   ctx.fillStyle = '#17292b';
   ctx.font = '700 26px system-ui, sans-serif';
-  ctx.fillText(copy.number(quote.number), pad + 62, y + 40);
+  const title = quote.customerName || copy.noCustomer;
+  ctx.fillText(title, pad + 62, y + 40);
   ctx.fillStyle = '#5e7268';
   ctx.font = '400 13px system-ui, sans-serif';
   ctx.fillText(
-    [
-      dateLabel,
-      quote.customerName ? copy.forCustomer(quote.customerName) : '',
-    ]
-      .filter(Boolean)
-      .join('  ·  '),
+    `${copy.number(quote.number)}  ·  ${dateLabel}`,
     pad + 62,
     y + 58,
   );
@@ -962,48 +1036,54 @@ async function renderCotizacionCanvas(
   ctx.moveTo(pad, y);
   ctx.lineTo(pageW - pad, y);
   ctx.stroke();
-  y += 22;
+  y += 18;
 
-  const meta = [
-    [copy.products, copy.units(quote.units)],
+  const meta: [string, string][] = [
+    [copy.unitsLabel, copy.units(quote.units)],
     [copy.total, money(grand)],
   ];
   meta.forEach((row, index) => {
-    const x = pad + index * (contentW / 2);
+    const col = index % 2;
+    const rowY = y + Math.floor(index / 2) * 42;
+    const x = pad + col * (contentW / 2);
     ctx.fillStyle = '#6d7f72';
     ctx.font = '650 10px system-ui, sans-serif';
-    ctx.fillText(row[0].toUpperCase(), x, y);
+    ctx.fillText(row[0].toUpperCase(), x, rowY);
     ctx.fillStyle = '#17292b';
     ctx.font = '600 14px system-ui, sans-serif';
-    ctx.fillText(row[1], x, y + 18);
+    ctx.fillText(row[1], x, rowY + 18);
   });
-  y += 48;
+  y += Math.ceil(meta.length / 2) * 42 + 10;
 
-  ctx.fillStyle = '#134c45';
-  ctx.font = '700 11px system-ui, sans-serif';
-  ctx.fillText(copy.products.toUpperCase(), pad, y);
-  y += 18;
+  const heading = (label: string) => {
+    ctx.fillStyle = '#134c45';
+    ctx.font = '700 11px system-ui, sans-serif';
+    ctx.fillText(label.toUpperCase(), pad, y);
+    y += 18;
+  };
 
+  heading(copy.products);
+  if (!quote.lines.length) {
+    ctx.fillStyle = '#17292b';
+    ctx.font = '400 14px system-ui, sans-serif';
+    ctx.fillText(copy.empty, pad, y);
+    y += 28;
+  }
   for (let i = 0; i < quote.lines.length; i++) {
     const line = quote.lines[i]!;
-    const photo = photos[i] || null;
+    const assets = lineAssets[i]!;
+    const detail = line.detail;
     const startY = y;
     const thumb = 64;
     ctx.fillStyle = '#eef1eb';
     ctx.beginPath();
     ctx.roundRect(pad, y, thumb, thumb, 7);
     ctx.fill();
-    if (photo) {
-      const size = fitImage(photo, thumb, thumb);
+    if (assets.thumb) {
+      const size = fitImage(assets.thumb, thumb, thumb);
       const ox = pad + Math.round((thumb - size.width) / 2);
       const oy = y + Math.round((thumb - size.height) / 2);
-      ctx.drawImage(photo, ox, oy, size.width, size.height);
-    } else {
-      ctx.fillStyle = '#738873';
-      ctx.font = '600 11px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('·', pad + thumb / 2, y + thumb / 2 + 4);
-      ctx.textAlign = 'left';
+      ctx.drawImage(assets.thumb, ox, oy, size.width, size.height);
     }
     const badge = String(line.quantity);
     ctx.font = '650 11px system-ui, sans-serif';
@@ -1025,10 +1105,11 @@ async function renderCotizacionCanvas(
 
     const textX = pad + thumb + 16;
     const textW = contentW - thumb - 16 - 110;
+    const productTitle = detail.productTitle || line.title.split('\n')[0] || '';
     ctx.fillStyle = '#17292b';
     ctx.font = '600 14px system-ui, sans-serif';
     let textY = y + 14;
-    for (const part of wrapText(ctx, line.title, textW)) {
+    for (const part of wrapText(ctx, productTitle, textW)) {
       ctx.fillText(part, textX, textY);
       textY += 18;
     }
@@ -1050,50 +1131,167 @@ async function renderCotizacionCanvas(
     ctx.textAlign = 'right';
     ctx.fillText(money(line.total), pageW - pad, y + 16);
     ctx.textAlign = 'left';
-    const rowBottom = Math.max(startY + thumb, textY + 8);
-    y = rowBottom + 16;
+    y = Math.max(startY + thumb, textY + 8) + 12;
+
+    if (detail.description) {
+      heading(copy.description);
+      ctx.fillStyle = '#17292b';
+      ctx.font = '400 14px system-ui, sans-serif';
+      for (const part of wrapText(ctx, detail.description, contentW)) {
+        ctx.fillText(part, pad, y);
+        y += 20;
+      }
+      y += 8;
+    }
+
+    const designImage = assets.design || (detail.photo ? assets.thumb : null);
+    if (designImage && detail.photo) {
+      heading(detail.photoLabel || copy.description);
+      const size = fitImage(designImage, contentW, 220);
+      ctx.fillStyle = '#f4f6f4';
+      ctx.fillRect(pad, y, size.width, size.height);
+      ctx.drawImage(designImage, pad, y, size.width, size.height);
+      y += size.height + 16;
+    }
+
+    if (detail.labels.length) {
+      heading(copy.specs);
+      for (const row of detail.labels) {
+        ctx.fillStyle = '#f7faf6';
+        ctx.fillRect(pad, y - 12, contentW, 26);
+        ctx.fillStyle = '#6d7f72';
+        ctx.font = '400 12px system-ui, sans-serif';
+        ctx.fillText(row.label, pad + 10, y);
+        ctx.fillStyle = '#17292b';
+        ctx.font = '600 12px system-ui, sans-serif';
+        ctx.fillText(row.value, pad + 210, y);
+        y += 26;
+      }
+      y += 10;
+    }
+
+    if (detail.swatches.length) {
+      heading(copy.colors);
+      detail.swatches.forEach((swatch, index) => {
+        const col = index % 2;
+        const rowY = y + Math.floor(index / 2) * 48;
+        const x = pad + col * (contentW / 2);
+        ctx.beginPath();
+        ctx.roundRect(x, rowY - 18, 34, 34, 8);
+        ctx.fillStyle = swatch.hex;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = '#6d7f72';
+        ctx.font = '400 11px system-ui, sans-serif';
+        ctx.fillText(swatch.label, x + 44, rowY - 4);
+        ctx.fillStyle = '#17292b';
+        ctx.font = '600 14px system-ui, sans-serif';
+        ctx.fillText(swatch.name, x + 44, rowY + 14);
+      });
+      y += Math.ceil(detail.swatches.length / 2) * 48 + 8;
+    }
+
+    if (detail.initials) {
+      heading(copy.initials);
+      const boxH = 150;
+      ctx.fillStyle = detail.initials.surfaceHex || '#1c1612';
+      ctx.beginPath();
+      ctx.roundRect(pad, y, contentW, boxH, 10);
+      ctx.fill();
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(pad, y, contentW, boxH, 10);
+      ctx.clip();
+      if (assets.leather)
+        ctx.drawImage(assets.leather, pad, y, contentW, boxH);
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillRect(pad, y, contentW, boxH);
+      ctx.fillStyle = detail.initials.hex;
+      ctx.font = `500 52px ${detail.initials.fontFamily}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(detail.initials.text, pad + contentW / 2, y + boxH / 2);
+      ctx.restore();
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      y += boxH + 18;
+      ctx.fillStyle = '#5e7268';
+      ctx.font = '400 13px system-ui, sans-serif';
+      ctx.fillText(
+        [
+          detail.initials.fontName,
+          detail.initials.colorName,
+          detail.initials.size,
+          detail.initials.place
+            ? `${copy.placePrefix}: ${detail.initials.place}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        pad,
+        y,
+      );
+      y += 18;
+    }
+
+    detail.artwork.forEach((piece, index) => {
+      heading(fichaArtworkTitle(piece.kind, options.lang));
+      const image = assets.artwork[index];
+      if (image) {
+        const size = fitImage(image, contentW, 200);
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#d7e0db';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(pad, y, size.width + 24, size.height + 24, 10);
+        ctx.fill();
+        ctx.stroke();
+        ctx.drawImage(image, pad + 12, y + 12, size.width, size.height);
+        y += size.height + 36;
+      }
+      ctx.fillStyle = '#5e7268';
+      ctx.font = '400 13px system-ui, sans-serif';
+      ctx.fillText(piece.caption, pad, y);
+      y += 20;
+    });
+
+    y += 12;
     ctx.strokeStyle = '#e6ece3';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(pad, y - 8);
-    ctx.lineTo(pageW - pad, y - 8);
+    ctx.moveTo(pad, y);
+    ctx.lineTo(pageW - pad, y);
     ctx.stroke();
+    y += 20;
   }
 
-  y += 8;
+  heading(copy.totals);
+  const totalRows: [string, string][] = [];
   if (shipping) {
-    ctx.fillStyle = '#6d7f72';
-    ctx.font = '650 10px system-ui, sans-serif';
-    ctx.fillText(copy.subtotal.toUpperCase(), pad, y);
-    ctx.fillStyle = '#17292b';
-    ctx.font = '600 14px system-ui, sans-serif';
-    ctx.fillText(money(quote.total), pad, y + 20);
-    y += 40;
-    ctx.fillStyle = '#6d7f72';
-    ctx.font = '650 10px system-ui, sans-serif';
-    ctx.fillText(
-      `${copy.shipping.toUpperCase()} · ${shipping.carrier}`,
-      pad,
-      y,
-    );
-    ctx.fillStyle = '#17292b';
-    ctx.font = '600 14px system-ui, sans-serif';
-    ctx.fillText(money(shipping.amount), pad, y + 20);
-    y += 40;
+    totalRows.push([copy.subtotal, money(quote.total)]);
+    totalRows.push([
+      `${copy.shipping} · ${shipping.carrier}`,
+      money(shipping.amount),
+    ]);
   }
-  ctx.fillStyle = '#6d7f72';
-  ctx.font = '650 10px system-ui, sans-serif';
-  ctx.fillText(copy.total.toUpperCase(), pad, y);
-  ctx.fillStyle = '#17292b';
-  ctx.font = '700 20px system-ui, sans-serif';
-  ctx.fillText(money(grand), pad, y + 24);
-  y += 48;
+  totalRows.push([copy.total, money(grand)]);
+  for (const [label, value] of totalRows) {
+    ctx.fillStyle = '#6d7f72';
+    ctx.font = '400 13px system-ui, sans-serif';
+    ctx.fillText(label, pad, y);
+    ctx.fillStyle = '#17292b';
+    ctx.font = '600 14px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(value, pageW - pad, y);
+    ctx.textAlign = 'left';
+    y += 24;
+  }
+  y += 8;
 
   if (quote.notes) {
-    ctx.fillStyle = '#134c45';
-    ctx.font = '700 11px system-ui, sans-serif';
-    ctx.fillText(copy.notes.toUpperCase(), pad, y);
-    y += 18;
+    heading(copy.notes);
     ctx.fillStyle = '#17292b';
     ctx.font = '400 14px system-ui, sans-serif';
     for (const part of wrapText(ctx, quote.notes, contentW)) {
@@ -1104,6 +1302,13 @@ async function renderCotizacionCanvas(
   }
 
   y += 8;
+  ctx.strokeStyle = '#e6ece3';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad, y);
+  ctx.lineTo(pageW - pad, y);
+  ctx.stroke();
+  y += 18;
   ctx.fillStyle = '#5e7268';
   ctx.font = '400 12px system-ui, sans-serif';
   for (const part of wrapText(ctx, copy.footer, contentW)) {
@@ -1112,7 +1317,7 @@ async function renderCotizacionCanvas(
   }
   y += 8;
 
-  const used = Math.min(6380, Math.ceil(y + pad));
+  const used = Math.min(maxH - 20, Math.ceil(y + pad));
   const output = document.createElement('canvas');
   output.width = pageW * scale;
   output.height = used * scale;
@@ -1283,13 +1488,10 @@ export function CotizacionFichaView({
             onClick={() =>
               void run('share', async () => {
                 const next = await files();
-                const text = cotizacionShareText(displayQuote, options);
                 if (canShareFiles(next.pdf)) {
                   try {
                     await navigator.share({
                       files: [next.pdf],
-                      title: `${copy.kicker} · ${displayQuote.number}`,
-                      text,
                     });
                   } catch (caught) {
                     if (
@@ -1302,11 +1504,7 @@ export function CotizacionFichaView({
                   return;
                 }
                 downloadBlob(next.pdf, next.pdf.name);
-                window.open(
-                  'https://wa.me/?text=' + encodeURIComponent(text),
-                  '_blank',
-                  'noopener,noreferrer',
-                );
+                window.open('https://wa.me/', '_blank', 'noopener,noreferrer');
               })
             }
           >

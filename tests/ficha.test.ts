@@ -14,6 +14,7 @@ import {
   fichaFileName,
   fichaShareText,
   jpegToPdf,
+  shortCustomerName,
 } from '../lib/ficha.ts';
 import type { Item, Product } from '../lib/types.ts';
 
@@ -95,6 +96,13 @@ function item(partial: Partial<Item> & Pick<Item, 'name' | 'selections'>): Item 
   };
 }
 
+test('ficha customer name uses first name and surname initial', () => {
+  assert.equal(shortCustomerName('Rodrigo Mendoza'), 'Rodrigo M.');
+  assert.equal(shortCustomerName('Juan Perez'), 'Juan P.');
+  assert.equal(shortCustomerName('Ana'), 'Ana');
+  assert.equal(shortCustomerName('  María  López  '), 'María L.');
+});
+
 test('casco ficha includes color swatches, initials preview and custom logo', () => {
   const ficha = buildFicha({
     order: { number: '142', date: '2026-09-15', notes: 'Urgente' },
@@ -163,7 +171,7 @@ test('casco ficha includes color swatches, initials preview and custom logo', ()
   assert.equal(ficha.orderNumber, '142');
   assert.equal(ficha.date, '15/09/2026');
   assert.equal(ficha.supplierName, 'Talabarteria');
-  assert.equal(ficha.customerName, 'Juan Perez');
+  assert.equal(ficha.customerName, 'Juan P.');
   assert.ok(ficha.supplierWhatsapp?.includes('5491155550000'));
   assert.equal(ficha.swatches[0]?.label, 'Color casco');
   assert.equal(ficha.swatches[0]?.name, 'Azul marino');
@@ -304,6 +312,7 @@ test('montura ficha includes logo artwork', () => {
           ...defaultMontura(),
           logoPersonalizado: true,
           logoPersonalizadoImagen: '/api/images/logo-montura',
+          logoPersonalizadoColor: 'dorado',
           personalizacionUbicacion: 'tapita',
         },
       },
@@ -312,6 +321,11 @@ test('montura ficha includes logo artwork', () => {
   assert.equal(ficha.artwork[0]?.kind, 'logo');
   assert.equal(ficha.artwork[0]?.url, '/api/images/logo-montura');
   assert.match(ficha.artwork[0]?.caption || '', /Tapita/);
+  assert.match(ficha.artwork[0]?.caption || '', /Dorado|dorado/i);
+  assert.equal(
+    ficha.swatches.some((s) => /hilo/i.test(s.label)),
+    true,
+  );
   assert.equal(ficha.initials, undefined);
 });
 

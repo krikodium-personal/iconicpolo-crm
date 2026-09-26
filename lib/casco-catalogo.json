@@ -12,7 +12,7 @@
   },
   {
    "id": "english",
-   "nombre": "Inglesa",
+   "nombre": "Lock/English",
    "default": false
   }
  ],
@@ -190,6 +190,12 @@
     "hex": "#5e462f",
     "nombre": "Marrón Nogal",
     "nombreEn": "Walnut Brown"
+   },
+   {
+    "position": 26,
+    "hex": "#ffffff",
+    "nombre": "Blanco",
+    "nombreEn": "White"
    }
   ],
   "leather": [
@@ -306,6 +312,12 @@
     "hex": "#2d1911",
     "nombre": "Marrón Oscuro",
     "nombreEn": "Dark Brown"
+   },
+   {
+    "position": 20,
+    "hex": "#ffffff",
+    "nombre": "Blanco",
+    "nombreEn": "White"
    }
   ],
   "softshell": [
@@ -524,6 +536,12 @@
     "hex": null,
     "nombre": "Amarillo Girasol",
     "nombreEn": "S Sunflower Yellow"
+   },
+   {
+    "position": 37,
+    "hex": "#ffffff",
+    "nombre": "Blanco",
+    "nombreEn": "White"
    }
   ]
  },
@@ -749,6 +767,12 @@
    "hex": "#2c160e",
    "nombre": "Marrón Nogal",
    "nombreEn": "Walnut Brown"
+  },
+  {
+   "position": 38,
+   "hex": "#ffffff",
+   "nombre": "Blanco",
+   "nombreEn": "White"
   }
  ],
  "paletaOjales": [
@@ -937,6 +961,12 @@
    "hex": "#4f2c1d",
    "nombre": "Marrón Nogal",
    "nombreEn": "Walnut Brown"
+  },
+  {
+   "position": 32,
+   "hex": "#ffffff",
+   "nombre": "Blanco",
+   "nombreEn": "White"
   }
  ],
  "paletaLogoHilo": [
@@ -1239,6 +1269,12 @@
    "hex": "#daaa00",
    "nombre": "Oro Mate",
    "nombreEn": "Matt Gold"
+  },
+  {
+   "position": 53,
+   "hex": "#ffffff",
+   "nombre": "Blanco",
+   "nombreEn": "White"
   }
  ],
  "estampados": [
