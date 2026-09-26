@@ -8,7 +8,9 @@ import {
   BOTA_MEASURES,
   BOTA_MODELOS,
   BOTA_PLACES,
+  BOTA_TALLES,
   botaModeloPriceId,
+  emptyBotaMeasures,
   CASCO_DISENO_MAX,
   CASCO_ESTAMPADOS,
   CASCO_FABRIC_PARTS,
@@ -1493,30 +1495,79 @@ export function Configurator({
             />
           </Field>
         </div>
-        <section className="bota-measures">
-          <figure className="bota-measures-chart">
-            <img
-              src="/botas-medidas.png"
-              alt="Referencia de las 7 medidas de la bota"
+        <div className="form-grid">
+          <Field label="Medidas *">
+            <Pick
+              label="Tipo de talle"
+              value={c.medidasMode || 'personalizadas'}
+              onChange={(v) => {
+                if (v === 'talle') {
+                  set({
+                    medidasMode: 'talle',
+                    medidas: emptyBotaMeasures(),
+                    talle: c.talle || '40',
+                  });
+                } else {
+                  set({
+                    medidasMode: 'personalizadas',
+                    talle: '',
+                  });
+                }
+              }}
+              options={[
+                {
+                  value: 'personalizadas',
+                  label: '7 medidas personalizadas',
+                },
+                { value: 'talle', label: 'Talle genérico' },
+              ]}
             />
-            <figcaption>Referencia de medidas</figcaption>
-          </figure>
-          <div className="bota-measures-fields">
-            {BOTA_MEASURES.map((measure) => (
-              <Field key={measure.id} label={`${measure.n}. ${measure.label} *`}>
-                <input
-                  required
-                  inputMode="decimal"
-                  placeholder="0"
-                  value={c.medidas[measure.id]}
-                  onChange={(e) =>
-                    setMeasure(measure.id, e.target.value)
-                  }
-                />
-              </Field>
-            ))}
-          </div>
-        </section>
+          </Field>
+          {(c.medidasMode || 'personalizadas') === 'talle' ? (
+            <Field label="Talle *">
+              <Pick
+                label="Talle"
+                value={c.talle || '40'}
+                onChange={(v) =>
+                  set({ talle: v as BotaConfig['talle'] })
+                }
+                options={BOTA_TALLES.map((talle) => ({
+                  value: talle,
+                  label: talle,
+                }))}
+              />
+            </Field>
+          ) : null}
+        </div>
+        {(c.medidasMode || 'personalizadas') === 'personalizadas' ? (
+          <section className="bota-measures">
+            <figure className="bota-measures-chart">
+              <img
+                src="/botas-medidas.png"
+                alt="Referencia de las 7 medidas de la bota"
+              />
+              <figcaption>Referencia de medidas</figcaption>
+            </figure>
+            <div className="bota-measures-fields">
+              {BOTA_MEASURES.map((measure) => (
+                <Field
+                  key={measure.id}
+                  label={`${measure.n}. ${measure.label} *`}
+                >
+                  <input
+                    required
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={c.medidas[measure.id]}
+                    onChange={(e) =>
+                      setMeasure(measure.id, e.target.value)
+                    }
+                  />
+                </Field>
+              ))}
+            </div>
+          </section>
+        ) : null}
         <div className="form-grid">
           <Field label="Iniciales">
             <Pick

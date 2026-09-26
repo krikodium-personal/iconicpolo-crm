@@ -638,6 +638,10 @@ export const BOTA_MEASURES = [
 
 export type BotaMeasureId = (typeof BOTA_MEASURES)[number]['id'];
 
+export const BOTA_TALLES = ['40', '41', '42', '43', '44', '45', '46'] as const;
+export type BotaTalle = (typeof BOTA_TALLES)[number];
+export type BotaMedidasMode = 'personalizadas' | 'talle';
+
 export type PricePoint = { price: number; cost: number };
 export type ExtraCharge = PricePoint & { pending: boolean };
 export type ConfiguredPricing = {
@@ -1151,7 +1155,9 @@ export type BotaConfig = {
   material: 'cuero_vaca' | 'cuero_bufalo';
   color: LeatherProductColor;
   acabado: 'brillante' | 'matte';
+  medidasMode: BotaMedidasMode;
   medidas: Record<BotaMeasureId, string>;
+  talle: BotaTalle | '';
   iniciales: boolean;
   inicialesTexto: string;
   inicialesColor: string;
@@ -1302,7 +1308,9 @@ export function defaultBota(): BotaConfig {
     material: 'cuero_vaca',
     color: 'negro',
     acabado: 'brillante',
+    medidasMode: 'personalizadas',
     medidas: emptyBotaMeasures(),
+    talle: '',
     iniciales: false,
     inicialesTexto: '',
     inicialesColor: DEFAULT_INITIAL_COLOR_ID,
@@ -1878,6 +1886,11 @@ export function parseRodillera(raw: unknown): RodilleraConfig {
 export function parseBota(raw: unknown): BotaConfig {
   const b =
     raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const medidasMode = oneOf(
+    b.medidasMode || 'personalizadas',
+    ['personalizadas', 'talle'] as const,
+    'Tipo de talle',
+  );
   const config: BotaConfig = {
     modelo: oneOf(
       b.modelo,
@@ -1899,7 +1912,15 @@ export function parseBota(raw: unknown): BotaConfig {
       BOTA_ACABADOS.map((acabado) => acabado.id),
       'Acabado',
     ),
-    medidas: requireBotaMeasures(b.medidas),
+    medidasMode,
+    medidas:
+      medidasMode === 'personalizadas'
+        ? requireBotaMeasures(b.medidas)
+        : emptyBotaMeasures(),
+    talle:
+      medidasMode === 'talle'
+        ? oneOf(b.talle, BOTA_TALLES, 'Talle')
+        : '',
     iniciales: flag(b.iniciales),
     inicialesTexto: text(b.inicialesTexto).trim(),
     inicialesColor: text(b.inicialesColor, DEFAULT_INITIAL_COLOR_ID),
@@ -1954,12 +1975,15 @@ export function stockKey(kind: ConfiguredKind, raw: ProductConfig) {
   }
   if (kind === 'bota') {
     const c = raw as BotaConfig;
+    const medidasMode = c.medidasMode || 'personalizadas';
     return JSON.stringify({
       modelo: c.modelo,
       material: c.material,
       color: c.color,
       acabado: c.acabado,
-      medidas: c.medidas,
+      ...(medidasMode === 'talle'
+        ? { talle: c.talle }
+        : { medidas: c.medidas }),
       parche: c.parche,
       pasadorRodillera: c.pasadorRodillera,
       topeEspuelas: c.topeEspuelas,
@@ -2217,12 +2241,16 @@ export function configLabels(
         ? acabadoEn[c.acabado] || c.acabado
         : BOTA_ACABADOS.find((acabado) => acabado.id === c.acabado)?.label ||
           c.acabado;
-    for (const measure of BOTA_MEASURES) {
-      const measureKey =
-        lang === 'en'
-          ? `${measure.n}. ${measureEn[measure.id] || measure.label}`
-          : `${measure.n}. ${measure.label}`;
-      labels[measureKey] = c.medidas[measure.id] || '—';
+    if ((c.medidasMode || 'personalizadas') === 'talle') {
+      labels[key('Talle', 'Size')] = c.talle || '—';
+    } else {
+      for (const measure of BOTA_MEASURES) {
+        const measureKey =
+          lang === 'en'
+            ? `${measure.n}. ${measureEn[measure.id] || measure.label}`
+            : `${measure.n}. ${measure.label}`;
+        labels[measureKey] = c.medidas[measure.id] || '—';
+      }
     }
     labels[key('Parche', 'Patch')] = c.parche ? withWord : without;
     labels[key('Pasador rodillera', 'Knee pad strap')] = c.pasadorRodillera

@@ -900,8 +900,36 @@ test('bota defaults reject empty measures and extras start off', () => {
   assert.equal(config.material, 'cuero_vaca');
   assert.equal(config.color, 'negro');
   assert.equal(config.acabado, 'brillante');
+  assert.equal(config.medidasMode, 'personalizadas');
+  assert.equal(config.talle, '');
   assert.equal(config.parche, false);
   assert.equal(config.iniciales, false);
+});
+
+test('bota can use generic size instead of custom measures', () => {
+  assert.throws(
+    () =>
+      parseBota({
+        ...defaultBota(),
+        medidasMode: 'talle',
+        talle: '',
+      }),
+    /talle/i,
+  );
+  const config = parseBota({
+    ...defaultBota(),
+    medidasMode: 'talle',
+    talle: '42',
+    medidas: botaMeasures,
+  });
+  assert.equal(config.medidasMode, 'talle');
+  assert.equal(config.talle, '42');
+  assert.equal(config.medidas.altoCana, '');
+  assert.match(stockKey('bota', config), /"talle":"42"/);
+  assert.doesNotMatch(stockKey('bota', config), /26\.5/);
+  const labels = configLabels('bota', config);
+  assert.equal(labels.Talle, '42');
+  assert.equal(labels['1. Alto de caña'], undefined);
 });
 
 test('bota measures must be numbers and initials require text', () => {
