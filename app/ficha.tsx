@@ -683,6 +683,8 @@ export type CotizacionLine = {
   unitPrice: number;
   total: number;
   discount: number;
+  /** fixed = precio especial de venta (sin % dto.). */
+  saleMode?: 'percent' | 'fixed';
   photo?: string;
   detail: FichaProductDetail;
 };
@@ -726,6 +728,7 @@ const QUOTE_COPY = {
     initials: 'Iniciales',
     placePrefix: 'Ubicación',
     discount: (value: string) => `${value}% dto.`,
+    specialPrice: 'precio especial',
     footer:
       'No se consideran impuestos de importación y tasas aduaneras.',
     back: '← Volver al pedido',
@@ -760,6 +763,7 @@ const QUOTE_COPY = {
     initials: 'Initials',
     placePrefix: 'Placement',
     discount: (value: string) => `${value}% off`,
+    specialPrice: 'special price',
     footer: 'Import taxes and customs fees are not included.',
     back: '← Back to order',
     heading: 'Quotation sheet',
@@ -883,7 +887,11 @@ function CotizacionSheet({
                       <p className="cotizacion-line-title">
                         {line.detail.productTitle ||
                           line.title.split('\n')[0]}
-                        {line.discount > 0 ? (
+                        {line.saleMode === 'fixed' ? (
+                          <span className="discount-badge">
+                            {copy.specialPrice}
+                          </span>
+                        ) : line.discount > 0 ? (
                           <span className="discount-badge">
                             {discountLabel(line.discount, options.lang)}
                           </span>
@@ -921,7 +929,7 @@ function CotizacionSheet({
       </section>
       <section className="ficha-block">
         <h2>{copy.totals}</h2>
-        <ul className="ficha-specs">
+        <ul className="ficha-specs cotizacion-totals">
           {shipping ? (
             <>
               <li>
@@ -1113,9 +1121,14 @@ async function renderCotizacionCanvas(
       ctx.fillText(part, textX, textY);
       textY += 18;
     }
-    if (line.discount > 0) {
-      ctx.fillStyle = '#7a6a52';
-      ctx.font = '600 12px system-ui, sans-serif';
+    if (line.saleMode === 'fixed') {
+      ctx.fillStyle = '#b34700';
+      ctx.font = '700 12px system-ui, sans-serif';
+      ctx.fillText(copy.specialPrice, textX, textY);
+      textY += 16;
+    } else if (line.discount > 0) {
+      ctx.fillStyle = '#b34700';
+      ctx.font = '700 12px system-ui, sans-serif';
       ctx.fillText(discountLabel(line.discount, options.lang), textX, textY);
       textY += 16;
     }

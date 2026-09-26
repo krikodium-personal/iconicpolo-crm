@@ -63,6 +63,8 @@ export type Item = {
     from_stock?: boolean;
     stock_qty?: number;
     location?: string;
+    /** percent = descuento en bp; fixed = unit_price es el precio de venta. */
+    sale_mode?: 'percent' | 'fixed';
   };
   unit_price: number;
   unit_cost: number;

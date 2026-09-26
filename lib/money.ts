@@ -80,6 +80,24 @@ export function lineTotals(
     profit: total - cost * quantity,
   };
 }
+/** Totales de línea cuando el precio de venta unitario es fijo (sin % dto.). */
+export function fixedLineTotals(
+  salePrice: number,
+  cost: number,
+  quantity: number,
+) {
+  integer(salePrice, 'Precio fijo de venta');
+  integer(cost);
+  integer(quantity, 'Cantidad', 10000);
+  if (!quantity) throw new Error('La cantidad debe ser mayor a cero.');
+  const total = integer(salePrice * quantity);
+  const lineCost = integer(cost * quantity);
+  return {
+    total,
+    cost: lineCost,
+    profit: total - lineCost,
+  };
+}
 export function orderDiscountPercent(order: {
   total: number;
   items: { unit_price: number; quantity: number }[];

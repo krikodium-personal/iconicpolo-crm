@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   discounted,
+  fixedLineTotals,
   increaseByPercent,
   lineTotals,
   margin,
@@ -47,6 +48,14 @@ test('calculates line sale, cost and profit after discount', () => {
     total: 27_000,
     cost: 18_000,
     profit: 9_000,
+  });
+});
+
+test('calculates line sale from a fixed unit price', () => {
+  assert.deepEqual(fixedLineTotals(8_500, 6_000, 3), {
+    total: 25_500,
+    cost: 18_000,
+    profit: 7_500,
   });
 });
 

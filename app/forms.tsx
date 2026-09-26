@@ -26,6 +26,7 @@ import {
   margin,
   markup,
   lineTotals,
+  fixedLineTotals,
   promoPrice,
   friendsPrice,
   arsFromUsd,
@@ -1330,6 +1331,7 @@ type DraftItem = {
   id?: string;
   product_id: string;
   quantity: string;
+  discount_mode: 'percent' | 'fixed';
   discount: string;
   price_mode: string;
   manual_price: string;
@@ -1572,6 +1574,7 @@ export function OrderDetail({
               unitPrice: item.unit_price,
               total: item.total,
               discount: item.discount,
+              saleMode: item.selections.sale_mode,
               photo,
               detail: buildFichaProductDetail({
                 item,
@@ -1595,6 +1598,7 @@ export function OrderDetail({
               unitPrice: item.unit_price,
               total: item.total,
               discount: item.discount,
+              saleMode: item.selections.sale_mode,
               photo,
               detail: buildFichaProductDetail({
                 item,
@@ -1770,9 +1774,13 @@ export function OrderDetail({
                   <div>
                     <div className="stock-item-heading">
                       <b>{itemDescription(item, product)}</b>
-                      <span className="discount-badge">
-                        {`${(item.discount / 100).toLocaleString('es-AR')}% dto.`}
-                      </span>
+                      {item.selections.sale_mode === 'fixed' ? (
+                        <span className="discount-badge">precio especial</span>
+                      ) : item.discount > 0 ? (
+                        <span className="discount-badge">
+                          {`${(item.discount / 100).toLocaleString('es-AR')}% dto.`}
+                        </span>
+                      ) : null}
                     </div>
                     <small>
                       {[
@@ -1794,6 +1802,15 @@ export function OrderDetail({
                 </div>
                 <div className="stock-item-side order-detail-money">
                   <strong>
+                    {item.discount > 0 &&
+                    item.unit_price * item.quantity > item.total ? (
+                      <s className="price-was">
+                        {formatMoney(
+                          item.unit_price * item.quantity,
+                          data.currency,
+                        )}
+                      </s>
+                    ) : null}
                     {formatMoney(item.total, data.currency)}
                   </strong>
                   <small>
@@ -2193,7 +2210,12 @@ export function OrderForm({
         id: i.id,
         product_id: i.product_id,
         quantity: String(i.quantity),
-        discount: decimal(i.discount),
+        discount_mode:
+          i.selections.sale_mode === 'fixed' ? 'fixed' : 'percent',
+        discount:
+          i.selections.sale_mode === 'fixed'
+            ? decimal(i.unit_price)
+            : decimal(i.discount),
         price_mode: 'list',
         manual_price: '0.00',
         option_ids: i.selections.options.map((o) => o.id),
@@ -2304,6 +2326,7 @@ export function OrderForm({
         {
           key: crypto.randomUUID(),
           quantity: '1',
+          discount_mode: 'percent',
           discount: '0.00',
           price_mode: 'list',
           manual_price: '0.00',
@@ -2316,6 +2339,24 @@ export function OrderForm({
   function itemTotals(i: DraftItem) {
     const p = data.products.find((p) => p.id === i.product_id);
     if (!p) throw new Error('Elegí un producto.');
+    const qty = Number(i.quantity);
+    function withSale(price: number, cost: number, extra: Record<string, unknown>) {
+      if (i.discount_mode === 'fixed') {
+        const sale = parseDecimal(i.discount);
+        return {
+          ...fixedLineTotals(sale, cost, qty),
+          price: sale,
+          unitCost: cost,
+          ...extra,
+        };
+      }
+      return {
+        ...lineTotals(price, cost, qty, parseDecimal(i.discount)),
+        price,
+        unitCost: cost,
+        ...extra,
+      };
+    }
     const configured = configuredKindOf(p);
     if (configured) {
       const config = parseConfig(
@@ -2334,22 +2375,14 @@ export function OrderForm({
         );
         const price = adjusted.unit_price;
         const cost = adjusted.unit_cost;
-        return {
-          ...lineTotals(
-            price,
-            cost,
-            Number(i.quantity),
-            parseDecimal(i.discount),
-          ),
-          price,
-          unitCost: cost,
+        return withSale(price, cost, {
           sku: p.sku,
           available: stockForConfig(
             data.movements,
             p.id,
             stockKey(configured, config),
           ),
-        };
+        });
       }
       const base =
         i.price_mode === 'manual'
@@ -2361,22 +2394,14 @@ export function OrderForm({
               : p.price;
       const price = base + extras.price;
       const cost = p.cost + extras.cost;
-      return {
-        ...lineTotals(
-          price,
-          cost,
-          Number(i.quantity),
-          parseDecimal(i.discount),
-        ),
-        price,
-        unitCost: cost,
+      return withSale(price, cost, {
         sku: p.sku,
         available: stockForConfig(
           data.movements,
           p.id,
           stockKey(configured, config),
         ),
-      };
+      });
     }
     if (isCabezadaProduct(p) && !tryParseCabezadaConfig(i.config))
       throw new Error('Elegí si la cabezada tiene 1 o 2 riendas.');
@@ -2414,12 +2439,7 @@ export function OrderForm({
     const cost =
       i.snapshot?.unit_cost ??
       product.cost + selected.reduce((s, o) => s + o.cost, 0);
-    return {
-      ...lineTotals(price, cost, Number(i.quantity), parseDecimal(i.discount)),
-      price,
-      unitCost: cost,
-      sku: product.sku,
-    };
+    return withSale(price, cost, { sku: product.sku });
   }
   let total = 0,
     cost = 0;
@@ -2527,21 +2547,48 @@ export function OrderForm({
               : 0,
             id: record?.id,
             version: record?.version,
-            items: items.map((i) => ({
-              id: i.id,
-              product_id: i.product_id,
-              quantity: Number(i.quantity),
-              discount: parseDecimal(i.discount),
-              price_mode: i.price_mode,
-              manual_price: parseDecimal(i.manual_price),
-              option_ids: i.option_ids,
-              attributes: i.attributes,
-              config: i.config,
-              supplier_id: i.supplier_id,
-              from_stock: i.from_stock,
-              stock_qty: i.stock_qty,
-              location: i.location,
-            })),
+            items: items.map((i) => {
+              if (i.discount_mode === 'fixed') {
+                const sale = parseDecimal(i.discount);
+                if (!sale)
+                  throw new Error(
+                    'El precio fijo de venta debe ser mayor a cero.',
+                  );
+                return {
+                  id: i.id,
+                  product_id: i.product_id,
+                  quantity: Number(i.quantity),
+                  discount_mode: 'fixed' as const,
+                  discount: 0,
+                  sale_price: sale,
+                  price_mode: i.price_mode,
+                  manual_price: parseDecimal(i.manual_price),
+                  option_ids: i.option_ids,
+                  attributes: i.attributes,
+                  config: i.config,
+                  supplier_id: i.supplier_id,
+                  from_stock: i.from_stock,
+                  stock_qty: i.stock_qty,
+                  location: i.location,
+                };
+              }
+              return {
+                id: i.id,
+                product_id: i.product_id,
+                quantity: Number(i.quantity),
+                discount_mode: 'percent' as const,
+                discount: parseDecimal(i.discount),
+                price_mode: i.price_mode,
+                manual_price: parseDecimal(i.manual_price),
+                option_ids: i.option_ids,
+                attributes: i.attributes,
+                config: i.config,
+                supplier_id: i.supplier_id,
+                from_stock: i.from_stock,
+                stock_qty: i.stock_qty,
+                location: i.location,
+              };
+            }),
           });
         } catch (e) {
           E((e as Error).message);
@@ -2870,7 +2917,32 @@ export function OrderForm({
                       />
                     )}
                   </Field>
-                  <Field label="Descuento del ítem (%)">
+                  <Field label="Ajuste del ítem">
+                    <Pick
+                      label="Ajuste del ítem"
+                      value={i.discount_mode}
+                      onChange={(v) =>
+                        update(i.key, {
+                          discount_mode: v === 'fixed' ? 'fixed' : 'percent',
+                          discount: '0.00',
+                        })
+                      }
+                      options={[
+                        { value: 'percent', label: 'Descuento (%)' },
+                        {
+                          value: 'fixed',
+                          label: 'Precio fijo de venta',
+                        },
+                      ]}
+                    />
+                  </Field>
+                  <Field
+                    label={
+                      i.discount_mode === 'fixed'
+                        ? 'Precio fijo de venta'
+                        : 'Descuento (%)'
+                    }
+                  >
                     <input
                       inputMode="decimal"
                       value={i.discount}
@@ -3282,9 +3354,10 @@ export function OrderForm({
         ) : null}
       </div>
       <p className="hint">
-        El descuento del ítem se aplica después del precio elegido y sus
-        adicionales. Una unidad de stock queda reservada al asignarla a un
-        pedido. Se descuenta cuando el pedido está entregado.
+        El ajuste del ítem puede ser un descuento % sobre el precio elegido y
+        sus adicionales, o un precio fijo de venta unitario. Una unidad de
+        stock queda reservada al asignarla a un pedido. Se descuenta cuando el
+        pedido está entregado.
       </p>
       {onCancel ? (
         <div className="form-footer" style={{ borderTop: 0, marginTop: 0 }}>

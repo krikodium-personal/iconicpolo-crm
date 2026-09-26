@@ -2,6 +2,7 @@ import { db } from '@/db';
 import {
   integer,
   lineTotals,
+  fixedLineTotals,
   discounted,
   promoPrice,
   increaseByPercent,
@@ -1353,15 +1354,40 @@ export async function saveOrder(
       quantity > stockCap
     )
       throw new Error('La cantidad no puede superar el stock de esa unidad.');
-    const discount = integer(input.discount, 'Descuento', 10000);
-    const totals = lineTotals(
-      snapshot.unit_price,
-      snapshot.unit_cost,
-      quantity,
-      discount,
-    );
+    const saleMode = choice(
+      input.discount_mode || snapshot.selections.sale_mode || 'percent',
+      ['percent', 'fixed'],
+      'Ajuste del ítem',
+    ) as 'percent' | 'fixed';
+    let discount = 0;
+    let unitPrice = snapshot.unit_price;
+    let totals: ReturnType<typeof lineTotals>;
+    if (saleMode === 'fixed') {
+      const saleUnit = integer(
+        input.sale_price !== undefined ? input.sale_price : input.discount,
+        'Precio fijo de venta',
+      );
+      if (!saleUnit)
+        throw new Error('El precio fijo de venta debe ser mayor a cero.');
+      unitPrice = saleUnit;
+      discount = 0;
+      totals = fixedLineTotals(saleUnit, snapshot.unit_cost, quantity);
+    } else {
+      discount = integer(input.discount, 'Descuento', 10000);
+      totals = lineTotals(
+        snapshot.unit_price,
+        snapshot.unit_cost,
+        quantity,
+        discount,
+      );
+    }
     items.push({
       ...snapshot,
+      unit_price: unitPrice,
+      selections: {
+        ...snapshot.selections,
+        sale_mode: saleMode,
+      },
       id: itemId,
       order_id: id,
       quantity,

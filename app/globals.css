@@ -1261,10 +1261,10 @@ small.pending-text {
   height: 22px;
   padding: 0 8px;
   border-radius: 999px;
-  background: #f3efe8;
-  color: #7a6a52;
+  background: #ffe3c8;
+  color: #b34700;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.01em;
   white-space: nowrap;
   position: relative;
@@ -2230,6 +2230,19 @@ button.dialog-kicker:hover {
   align-items: flex-end;
   gap: 2px;
   text-align: right;
+}
+.order-detail-money strong {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.order-detail-money .price-was {
+  font-size: 13px;
+  font-weight: 500;
+  color: #8a9a8e;
+  text-decoration-thickness: 1.5px;
 }
 .order-detail-money small {
   display: block;
@@ -3674,6 +3687,9 @@ button.order-stock-pick strong,
 }
 .ficha-specs b {
   font-weight: 600;
+}
+.cotizacion-totals b {
+  text-align: right;
 }
 .ficha-swatches {
   display: grid;
