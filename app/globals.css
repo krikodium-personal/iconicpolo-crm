@@ -1933,8 +1933,24 @@ button.dialog-kicker:hover {
   font-size: 14px;
   position: relative;
 }
+.history-line.is-reservation {
+  background: #fff8f0;
+  margin: 0 -12px;
+  padding-left: 12px;
+  padding-right: 12px;
+  border-radius: 8px;
+  border-bottom-color: #f0e0d0;
+}
+.history-line strong.reserved {
+  color: #b34700;
+  font-weight: 700;
+  white-space: nowrap;
+}
 .history-line.clickable-row:hover {
   background: #f4f7f2;
+}
+.history-line.is-reservation.clickable-row:hover {
+  background: #ffefd9;
 }
 .history-line > :not(.row-hit) {
   position: relative;
@@ -2193,6 +2209,44 @@ button.dialog-kicker:hover {
   border-radius: 8px;
   color: #4d5c50;
   background: #fff;
+}
+.stock-product-orders {
+  margin-top: 4px;
+}
+.stock-reservation-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.stock-reservation-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #d7e0d4;
+  border-radius: 10px;
+  background: #fbfcf9;
+}
+.stock-reservation-copy {
+  min-width: 0;
+  flex: 1;
+}
+.stock-reservation-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.stock-reservation-heading b {
+  font-size: 14px;
+}
+.stock-reservation-copy small {
+  display: block;
+  margin-top: 4px;
+  color: #6e8064;
 }
 .stock-item-hero {
   display: flex;

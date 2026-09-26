@@ -81,6 +81,17 @@ test('reports the effective discount of an order from its lines', () => {
     }),
     0,
   );
+  assert.equal(
+    orderDiscountPercent({
+      total: 178_400,
+      items: [
+        { unit_price: 32_000, quantity: 4, list_unit_price: 40_000 },
+        { unit_price: 10_000, quantity: 4, list_unit_price: 10_000 },
+        { unit_price: 4_000, quantity: 4, list_unit_price: 4_000 },
+      ],
+    }),
+    17.41,
+  );
 });
 
 test('supports percentage and manual promotional prices', () => {

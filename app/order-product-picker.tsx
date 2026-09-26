@@ -90,8 +90,8 @@ function OrderStockPicker({
         </div>
       </div>
       <p className="hint">
-        Elegí una unidad disponible. Las que ya están en otro pedido quedan
-        reservadas y no se pueden volver a asignar.
+        Elegí unidades disponibles. Las asignadas a un pedido abierto o cerrado
+        quedan reservadas; solo se puede tomar el remanente sin asignar.
       </p>
       {rows.length ? (
         <div className="order-stock-list">
@@ -113,6 +113,12 @@ function OrderStockPicker({
                   {[
                     stockPlaceLabel(row.location),
                     data.contacts.find((c) => c.id === row.supplier_id)?.name,
+                    row.available > 0
+                      ? `${row.available} disponible${row.available === 1 ? '' : 's'}`
+                      : 'Sin disponible',
+                    row.reserved
+                      ? `${row.reserved} reservada${row.reserved === 1 ? '' : 's'}`
+                      : '',
                   ]
                     .filter(Boolean)
                     .join(' · ')}
@@ -127,7 +133,8 @@ function OrderStockPicker({
                         key={reservation.orderId}
                         className="stock-order-link is-static"
                       >
-                        {reservation.orderNumber}
+                        {reservation.orderNumber} · {reservation.quantity} ud
+                        {reservation.quantity === 1 ? '' : 's'}
                       </span>
                     ))}
                   </div>
@@ -142,7 +149,8 @@ function OrderStockPicker({
                 >
                   {copy}
                   <strong>
-                    {row.quantity} <small>uds.</small>
+                    Agotado
+                    <small>{row.quantity} uds. en pedidos</small>
                   </strong>
                 </div>
               );
@@ -167,7 +175,7 @@ function OrderStockPicker({
                 <strong>
                   Elegir
                   <small>
-                    {row.quantity} uds.
+                    {row.available} disponible{row.available === 1 ? '' : 's'}
                   </small>
                 </strong>
               </button>
@@ -264,13 +272,25 @@ export function OrderProductPicker({
             );
             const ffPending = isPending(product.attributes['Precio F&F']);
             const ff = friendsPrice(product);
+            const available = stockAvailability(
+              data.movements,
+              [...reservedHolds(data.orders, data.products, exceptOrderId), ...(held || [])],
+              product.id,
+            ).reduce((sum, row) => sum + row.available, 0);
+            const takeFromStock = available > 0;
             return (
               <button
                 key={product.id}
                 type="button"
                 className="record-card clickable-row order-pick-card"
                 onClick={() =>
-                  onPick(product, undefined, product.supplier_id || undefined)
+                  onPick(
+                    product,
+                    undefined,
+                    product.supplier_id || undefined,
+                    takeFromStock,
+                    takeFromStock ? available : undefined,
+                  )
                 }
               >
                 <div className="record-card-top">
@@ -283,9 +303,12 @@ export function OrderProductPicker({
                 </div>
                 <div className="record-card-meta">
                   <span
-                    className={`stock-pill ${product.stock <= 2 ? 'low' : ''}`}
+                    className={`stock-pill ${available <= 2 ? 'low' : ''}`}
                   >
-                    {product.stock} uds.
+                    {available} disp.
+                    {product.stock > available
+                      ? ` · ${product.stock - available} res.`
+                      : ''}
                   </span>
                 </div>
                 <dl className="record-card-facts">

@@ -2630,7 +2630,22 @@ export function itemStockHold(
   kind: ConfiguredKind | null,
   order: { id: string; number: string },
 ): StockHold | null {
-  if (!item.selections.from_stock || item.quantity <= 0) return null;
+  if (item.quantity <= 0) return null;
+  const cabezadaRiendas =
+    !kind && item.selections.config
+      ? (() => {
+          const raw = item.selections.config as { riendas?: unknown };
+          return (
+            raw.riendas === 1 ||
+            raw.riendas === 2 ||
+            raw.riendas === '1' ||
+            raw.riendas === '2'
+          );
+        })()
+      : false;
+  // Configured / cabezada: only reserve units taken from stock.
+  // Plain SKUs always reserve against warehouse (same as delivery deduction).
+  if (!item.selections.from_stock && (kind || cabezadaRiendas)) return null;
   let configKey = '';
   if (kind && item.selections.config) {
     try {
@@ -2638,21 +2653,13 @@ export function itemStockHold(
     } catch {
       return null;
     }
-  } else if (item.selections.config) {
-    const raw = item.selections.config as { riendas?: unknown };
-    if (
-      raw.riendas === 1 ||
-      raw.riendas === 2 ||
-      raw.riendas === '1' ||
-      raw.riendas === '2'
-    ) {
-      try {
-        configKey = cabezadaStockKey(
-          parseCabezadaConfig(item.selections.config),
-        );
-      } catch {
-        return null;
-      }
+  } else if (cabezadaRiendas && item.selections.config) {
+    try {
+      configKey = cabezadaStockKey(
+        parseCabezadaConfig(item.selections.config),
+      );
+    } catch {
+      return null;
     }
   }
   return {

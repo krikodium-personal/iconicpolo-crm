@@ -630,9 +630,8 @@ async function reservedHoldsForProducts(
 }
 
 async function assertFromStockAvailable(orderId: string, items: Item[]) {
-  const fromStock = items.filter((item) => item.selections.from_stock);
-  if (!fromStock.length) return;
-  const productIds = [...new Set(fromStock.map((item) => item.product_id))];
+  const productIds = [...new Set(items.map((item) => item.product_id))];
+  if (!productIds.length) return;
   const [products, holds, movementRows] = await Promise.all([
     productsByIds(productIds),
     reservedHoldsForProducts(productIds, orderId),
@@ -659,15 +658,15 @@ async function assertFromStockAvailable(orderId: string, items: Item[]) {
     config: movementConfig(row.config),
   }));
   const used = new Map<string, number>();
-  for (const item of fromStock) {
+  for (const item of items) {
     const product = products.get(item.product_id);
-    const hold = itemStockHold(
-      item,
-      product ? configuredKindOf(product) : null,
-      { id: orderId, number: '' },
-    );
+    const kind = product ? configuredKindOf(product) : null;
+    const hold = itemStockHold(item, kind, { id: orderId, number: '' });
     if (!hold) continue;
     const rows = stockAvailability(movements, holds, item.product_id);
+    const onHand = rows.reduce((sum, row) => sum + row.quantity, 0);
+    // SKUs without warehouse stock can still be sold as backorder.
+    if (!item.selections.from_stock && onHand <= 0) continue;
     const row = rows.find(
       (candidate) =>
         candidate.config_key === hold.configKey &&
@@ -677,7 +676,9 @@ async function assertFromStockAvailable(orderId: string, items: Item[]) {
     const taken = used.get(key) || 0;
     if (item.quantity > (row?.available || 0) - taken)
       throw new Error(
-        `Esa unidad de ${item.name} ya está reservada para otro pedido.`,
+        onHand
+          ? `Esa unidad de ${item.name} ya está reservada para otro pedido.`
+          : `No hay stock disponible de ${item.name}.`,
       );
     used.set(key, taken + item.quantity);
   }
@@ -1188,6 +1189,7 @@ export async function saveOrder(
           const configured = configuredKindOf(p);
           if (configured) {
             const config = parseConfig(configured, input.config);
+            const extras = extraTotals(configured, config, p.pricing);
             const prices = adjustedConfiguredPrices(
               configured,
               old.selections.config,
@@ -1205,6 +1207,11 @@ export async function saveOrder(
                 attributes: configLabels(configured, config),
                 config,
                 supplier_id,
+                list_unit_price: integer(p.price + extras.price),
+                from_stock: old.selections.from_stock,
+                stock_qty: old.selections.stock_qty,
+                location: old.selections.location,
+                sale_mode: old.selections.sale_mode,
               },
               unit_price: integer(prices.unit_price),
               unit_cost: integer(prices.unit_cost),
@@ -1273,6 +1280,7 @@ export async function saveOrder(
             location: input.from_stock
               ? str(input.location || '', 'Ubicación', false, 40) || undefined
               : undefined,
+            list_unit_price: integer(p.price + extras.price),
           },
           unit_price: integer(base + extras.price),
           unit_cost: integer(p.cost + extras.cost),
@@ -1316,6 +1324,7 @@ export async function saveOrder(
         const cabezada = isCabezadaProduct(p)
           ? parseCabezadaConfig(input.config)
           : null;
+        const optionPrice = options.reduce((s, o) => s + o.price, 0);
         snapshot = {
           product_id: p.id,
           name: p.name,
@@ -1337,8 +1346,9 @@ export async function saveOrder(
             location: input.from_stock
               ? str(input.location || '', 'Ubicación', false, 40) || undefined
               : undefined,
+            list_unit_price: integer(p.price + optionPrice),
           },
-          unit_price: integer(base + options.reduce((s, o) => s + o.price, 0)),
+          unit_price: integer(base + optionPrice),
           unit_cost: integer(p.cost + options.reduce((s, o) => s + o.cost, 0)),
         };
       }
@@ -1359,6 +1369,8 @@ export async function saveOrder(
       ['percent', 'fixed'],
       'Ajuste del ítem',
     ) as 'percent' | 'fixed';
+    const listUnitPrice =
+      snapshot.selections.list_unit_price ?? snapshot.unit_price;
     let discount = 0;
     let unitPrice = snapshot.unit_price;
     let totals: ReturnType<typeof lineTotals>;
@@ -1387,6 +1399,7 @@ export async function saveOrder(
       selections: {
         ...snapshot.selections,
         sale_mode: saleMode,
+        list_unit_price: listUnitPrice,
       },
       id: itemId,
       order_id: id,
@@ -2214,7 +2227,7 @@ export async function mutate(
       const detail = str(
         b.detail || '',
         'Concepto',
-        concept === 'otros' || concept === 'pago_proveedor',
+        concept === 'otros',
         160,
       );
       const partnerId = str(b.partner_id, 'Pagado por', true);

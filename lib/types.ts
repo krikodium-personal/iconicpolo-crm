@@ -65,6 +65,8 @@ export type Item = {
     location?: string;
     /** percent = descuento en bp; fixed = unit_price es el precio de venta. */
     sale_mode?: 'percent' | 'fixed';
+    /** Precio de lista unitario (sin dto. ni precio especial) al momento de la venta. */
+    list_unit_price?: number;
   };
   unit_price: number;
   unit_cost: number;

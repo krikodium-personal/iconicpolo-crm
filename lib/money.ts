@@ -100,12 +100,17 @@ export function fixedLineTotals(
 }
 export function orderDiscountPercent(order: {
   total: number;
-  items: { unit_price: number; quantity: number }[];
+  items: {
+    unit_price: number;
+    quantity: number;
+    /** Precio de lista unitario; si falta se usa unit_price (líneas con % dto.). */
+    list_unit_price?: number;
+  }[];
 }) {
-  const gross = order.items.reduce(
-    (sum, item) => sum + item.unit_price * item.quantity,
-    0,
-  );
+  const gross = order.items.reduce((sum, item) => {
+    const listUnit = item.list_unit_price ?? item.unit_price;
+    return sum + listUnit * item.quantity;
+  }, 0);
   if (!gross) return 0;
   return Math.round((1 - order.total / gross) * 10000) / 100;
 }

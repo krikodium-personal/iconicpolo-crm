@@ -108,8 +108,11 @@ import {
 } from '@/lib/money';
 import {
   describeConfigured,
+  extraTotals,
   isConfiguredCategory,
   isConfiguredProduct,
+  configuredKindOf,
+  parseConfig,
   reservedHolds,
   stockAvailability,
 } from '@/lib/configure';
@@ -234,6 +237,13 @@ function catalogSupplierId(
   );
   return inbound?.supplier_id || '';
 }
+function availableProductStock(data: Data, productId: string) {
+  return stockAvailability(
+    data.movements,
+    reservedHolds(data.orders, data.products),
+    productId,
+  ).reduce((sum, row) => sum + row.available, 0);
+}
 type Archived = {
   entity: 'products' | 'orders' | 'contacts';
   record: Product | Order | Contact;
@@ -249,6 +259,7 @@ function ProductCard({
   selected,
   archived,
   money,
+  stockAvailable,
   onOpen,
   onToggle,
   onStock,
@@ -260,6 +271,7 @@ function ProductCard({
   selected: boolean;
   archived: boolean;
   money: (n: number) => string;
+  stockAvailable: number;
   onOpen: () => void;
   onToggle: (checked: boolean) => void;
   onStock: () => void;
@@ -307,8 +319,8 @@ function ProductCard({
         </div>
       </div>
       <div className="record-card-meta">
-        <span className={`stock-pill ${product.stock <= 2 ? 'low' : ''}`}>
-          {product.stock} uds.
+        <span className={`stock-pill ${stockAvailable <= 2 ? 'low' : ''}`}>
+          {stockAvailable} uds.
         </span>
         <div className="row-actions">
           {!archived && (
@@ -467,8 +479,50 @@ function ContactCard({
     </article>
   );
 }
-function discountLabel(order: Order) {
-  const pct = orderDiscountPercent(order);
+function itemListUnitPrice(
+  item: Order['items'][number],
+  product: Product | undefined,
+) {
+  if (
+    item.selections.list_unit_price != null &&
+    item.selections.list_unit_price >= 0
+  )
+    return item.selections.list_unit_price;
+  if (product) {
+    const kind = configuredKindOf(product);
+    if (kind && item.selections.config) {
+      try {
+        const extras = extraTotals(
+          kind,
+          parseConfig(kind, item.selections.config),
+          product.pricing,
+        );
+        return product.price + extras.price;
+      } catch {
+        return product.price;
+      }
+    }
+    const optionExtra = (item.selections.options || []).reduce(
+      (sum, option) => sum + option.price,
+      0,
+    );
+    return product.price + optionExtra;
+  }
+  return item.unit_price;
+}
+function discountLabel(order: Order, products: Product[] = []) {
+  const pct = orderDiscountPercent({
+    total: order.total,
+    items: order.items.map((item) => ({
+      unit_price: item.unit_price,
+      quantity: item.quantity,
+      list_unit_price: itemListUnitPrice(
+        item,
+        products.find((product) => product.id === item.product_id),
+      ),
+    })),
+  });
+  if (pct <= 0) return '';
   return `${pct.toLocaleString('es-AR')}% dto.`;
 }
 function orderUnits(order: Order) {
@@ -487,6 +541,7 @@ function OrderCard({
   order,
   customerName,
   money,
+  products = [],
   compact = false,
   archiveButton,
   deleteButton,
@@ -499,6 +554,7 @@ function OrderCard({
   order: Order;
   customerName: string;
   money: (n: number) => string;
+  products?: Product[];
   compact?: boolean;
   archiveButton: ReactNode;
   deleteButton?: ReactNode;
@@ -514,6 +570,7 @@ function OrderCard({
   partners: Partner[];
 }) {
   const units = orderUnits(order);
+  const discount = discountLabel(order, products);
   return (
     <article className="record-card clickable-row">
       <button
@@ -529,7 +586,9 @@ function OrderCard({
             {order.number} · {cardDate(order.date) || order.date}
           </small>
         </div>
-        <span className="discount-badge">{discountLabel(order)}</span>
+        {discount ? (
+          <span className="discount-badge">{discount}</span>
+        ) : null}
         <div className="record-card-meta record-card-meta-inline">
           <div className="row-actions">
             {compact ? (
@@ -1184,7 +1243,12 @@ export default function CRM({
                     <small>
                       {o.number} · {cardDate(o.date) || o.date}
                     </small>
-                    <span className="discount-badge">{discountLabel(o)}</span>
+                    {(() => {
+                      const discount = discountLabel(o, data?.products || []);
+                      return discount ? (
+                        <span className="discount-badge">{discount}</span>
+                      ) : null;
+                    })()}
                   </TableCell>
                   <TableCell>
                     <div className="record-card-status">
@@ -1254,6 +1318,7 @@ export default function CRM({
               order={o}
               customerName={customer(o.customer_id)}
               money={money}
+              products={data?.products || []}
               compact={compact}
               archiveButton={
                 o.deleted
@@ -1536,6 +1601,7 @@ export default function CRM({
                         order={o}
                         customerName={customer(o.customer_id)}
                         money={money}
+                        products={data.products}
                         compact
                         archiveButton={null}
                         onOpen={() => P({ type: 'order', record: o })}
@@ -1761,6 +1827,10 @@ export default function CRM({
                               )?.name;
                               const openProduct = () =>
                                 P({ type: 'product', record: p });
+                              const stockAvailable = availableProductStock(
+                                data,
+                                p.id,
+                              );
                               return (
                                 <TableRow
                                   key={p.id}
@@ -1777,9 +1847,9 @@ export default function CRM({
                                   </TableCell>
                                   <TableCell>
                                     <span
-                                      className={`stock-pill ${p.stock <= 2 ? 'low' : ''}`}
+                                      className={`stock-pill ${stockAvailable <= 2 ? 'low' : ''}`}
                                     >
-                                      {p.stock} uds.
+                                      {stockAvailable} uds.
                                     </span>
                                   </TableCell>
                                   <TableCell>
@@ -1934,6 +2004,7 @@ export default function CRM({
                             selected={liveSelected.includes(p.id)}
                             archived={archived}
                             money={money}
+                            stockAvailable={availableProductStock(data, p.id)}
                             onOpen={() => P({ type: 'product', record: p })}
                             onToggle={(checked) => toggleProduct(p.id, checked)}
                             onStock={() => P({ type: 'stock', record: p })}
@@ -2420,6 +2491,7 @@ export default function CRM({
                           movementId: movement?.id,
                         });
                     }}
+                    onOpenOrder={(order) => P({ type: 'order', record: order })}
                   />
                 ) : (
                   <ProductForm

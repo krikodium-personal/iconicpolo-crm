@@ -62,6 +62,7 @@ import {
   configDesignPhoto,
   type ProductConfig,
   type StockHold,
+  type StockReservation,
 } from '@/lib/configure';
 import {
   CABEZADA_RIENDAS_OPTIONS,
@@ -1023,6 +1024,22 @@ function movementWhen(partners: Partner[], movement: Movement) {
   const when = new Date(movement.created_at).toLocaleString('es-AR');
   return who ? `${when} · ${who}` : when;
 }
+function unitsLabel(quantity: number) {
+  return quantity === 1 ? '1 ud.' : `${quantity} uds.`;
+}
+function aggregateStockReservations(
+  reservations: StockReservation[],
+): StockReservation[] {
+  const byOrder = new Map<string, StockReservation>();
+  for (const reservation of reservations) {
+    const existing = byOrder.get(reservation.orderId);
+    if (existing) existing.quantity += reservation.quantity;
+    else byOrder.set(reservation.orderId, { ...reservation });
+  }
+  return [...byOrder.values()].sort((a, b) =>
+    a.orderNumber.localeCompare(b.orderNumber, 'es'),
+  );
+}
 export function ProductDetail({
   record,
   data,
@@ -1030,6 +1047,7 @@ export function ProductDetail({
   onStock,
   onViewStock,
   onOpenStock,
+  onOpenOrder,
 }: {
   record: Product;
   data: Data;
@@ -1037,6 +1055,7 @@ export function ProductDetail({
   onStock: () => void;
   onViewStock?: () => void;
   onOpenStock?: (itemKey: string, movement?: Movement) => void;
+  onOpenOrder?: (order: Order) => void;
 }) {
   const category = data.categories.find((c) => c.id === record.category);
   const supplierId =
@@ -1059,6 +1078,16 @@ export function ProductDetail({
         : 'Sin promoción';
   const listProfit = record.price - record.cost;
   const movements = data.movements.filter((m) => m.product_id === record.id);
+  const stockRows = stockAvailability(
+    data.movements,
+    reservedHolds(data.orders, data.products),
+    record.id,
+  );
+  const available = stockRows.reduce((sum, row) => sum + row.available, 0);
+  const reserved = stockRows.reduce((sum, row) => sum + row.reserved, 0);
+  const reservations = aggregateStockReservations(
+    stockRows.flatMap((row) => row.reservations),
+  );
   const extraAttributes = Object.entries(record.attributes).filter(
     ([key]) =>
       key !== 'Costo' &&
@@ -1129,7 +1158,7 @@ export function ProductDetail({
             value={supplier?.name || 'Sin proveedor'}
             pending={!supplier}
           />
-          <Fact label="Stock" value={`${record.stock} uds.`} />
+          <Fact label="Stock" value={`${available} uds.`} />
         </div>
       </section>
       <section className="form-section">
@@ -1242,7 +1271,13 @@ export function ProductDetail({
         )}
       </section>
       <section className="form-section">
-        <h3>Movimientos de stock · {record.stock} disponibles</h3>
+        <h3>
+          Movimientos de stock · {available} disponible
+          {available === 1 ? '' : 's'}
+          {reserved
+            ? ` · ${reserved} reservada${reserved === 1 ? '' : 's'}`
+            : ''}
+        </h3>
         {isConfiguredProduct(record) ? (
           <p className="hint">
             El stock se guarda por combinación. Ingresá unidades eligiendo las
@@ -1254,6 +1289,42 @@ export function ProductDetail({
             stock.
           </p>
         ) : null}
+        {reservations.map((reservation) => {
+          const order = data.orders.find(
+            (entry) => entry.id === reservation.orderId,
+          );
+          const customer = order
+            ? data.contacts.find((c) => c.id === order.customer_id)
+            : undefined;
+          const canOpen = !!order && !!onOpenOrder;
+          return (
+            <div
+              key={`res-${reservation.orderId}`}
+              className={`history-line is-reservation${canOpen ? ' clickable-row' : ''}`}
+            >
+              {canOpen ? (
+                <button
+                  type="button"
+                  className="row-hit"
+                  aria-label={`Ver pedido ${reservation.orderNumber}`}
+                  onClick={() => order && onOpenOrder?.(order)}
+                />
+              ) : null}
+              <div>
+                Pedido {reservation.orderNumber}
+                <small>
+                  {[order?.status, customer?.name]
+                    .filter(Boolean)
+                    .join(' · ') || 'Reservado'}
+                </small>
+                <small>Stock reservado · no disponible para otro pedido</small>
+              </div>
+              <strong className="reserved">
+                res. {reservation.quantity}
+              </strong>
+            </div>
+          );
+        })}
         {movements.map((m) => {
           const kind = configuredKindOf(record);
           const cabezada = isCabezadaProduct(record)
@@ -1319,9 +1390,9 @@ export function ProductDetail({
             </div>
           );
         })}
-        {!movements.length && (
+        {!movements.length && !reservations.length ? (
           <p className="hint">Sin movimientos registrados.</p>
-        )}
+        ) : null}
       </section>
     </div>
   );
@@ -2006,8 +2077,6 @@ function OrderSupplierPayments({
             onSubmit={(e) => {
               e.preventDefault();
               try {
-                if (!form.detail.trim())
-                  throw new Error('Describí el concepto del gasto.');
                 if (!form.supplier_id)
                   throw new Error('Elegí el proveedor.');
                 if (!form.partner_id)
@@ -2065,9 +2134,8 @@ function OrderSupplierPayments({
                   }))}
                 />
               </Field>
-              <Field label="Concepto del gasto *" wide>
+              <Field label="Concepto del gasto" wide>
                 <input
-                  required
                   value={form.detail}
                   onChange={(e) =>
                     setForm({ ...form, detail: e.target.value })
@@ -2495,27 +2563,30 @@ export function OrderForm({
           );
           const used = new Map<string, number>();
           for (const item of items) {
-            if (!item.from_stock) continue;
             const product = data.products.find((p) => p.id === item.product_id);
+            const kind = product ? configuredKindOf(product) : null;
             const hold = itemStockHold(
               {
                 product_id: item.product_id,
                 quantity: Number(item.quantity) || 0,
                 selections: {
-                  from_stock: true,
+                  from_stock: item.from_stock,
                   config: item.config,
                   location: item.location,
                 },
               },
-              product ? configuredKindOf(product) : null,
+              kind,
               { id: record?.id || 'draft', number: record?.number || '' },
             );
             if (!hold) continue;
-            const row = stockAvailability(
+            const rows = stockAvailability(
               data.movements,
               otherHolds,
               item.product_id,
-            ).find(
+            );
+            const onHand = rows.reduce((sum, row) => sum + row.quantity, 0);
+            if (!item.from_stock && !kind && onHand <= 0) continue;
+            const row = rows.find(
               (candidate) =>
                 candidate.config_key === hold.configKey &&
                 (!hold.location || candidate.location === hold.location),
@@ -2524,7 +2595,9 @@ export function OrderForm({
             const taken = used.get(key) || 0;
             if (hold.quantity > (row?.available || 0) - taken)
               throw new Error(
-                `Esa unidad de ${product?.name || 'stock'} ya está reservada para otro pedido.`,
+                onHand
+                  ? `Esa unidad de ${product?.name || 'stock'} ya está reservada para otro pedido.`
+                  : `No hay stock disponible de ${product?.name || 'stock'}.`,
               );
             used.set(key, taken + hold.quantity);
           }
@@ -3444,6 +3517,61 @@ function StockItemPhotos({ urls, name }: { urls: string[]; name: string }) {
     </div>
   );
 }
+
+function StockReservationsList({
+  reservations,
+  data,
+  onOpenOrder,
+  emptyHint,
+}: {
+  reservations: StockReservation[];
+  data: Data;
+  onOpenOrder?: (order: Order) => void;
+  emptyHint?: string;
+}) {
+  if (!reservations.length) {
+    return emptyHint ? <p className="hint">{emptyHint}</p> : null;
+  }
+  return (
+    <ul className="stock-reservation-list">
+      {reservations.map((reservation) => {
+        const order = data.orders.find(
+          (entry) => entry.id === reservation.orderId,
+        );
+        const customer = order
+          ? data.contacts.find((contact) => contact.id === order.customer_id)
+          : undefined;
+        return (
+          <li key={reservation.orderId} className="stock-reservation-row">
+            <div className="stock-reservation-copy">
+              <div className="stock-reservation-heading">
+                <b>{reservation.orderNumber}</b>
+                <span className="reserved-badge">
+                  {unitsLabel(reservation.quantity)}
+                </span>
+              </div>
+              <small>
+                {[order?.status, customer?.name].filter(Boolean).join(' · ') ||
+                  'Pedido'}
+              </small>
+            </div>
+            <button
+              type="button"
+              className="secondary stock-order-link"
+              disabled={!order || !onOpenOrder}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (order) onOpenOrder?.(order);
+              }}
+            >
+              Ver pedido
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 export function StockItemDetail({
   record,
   data,
@@ -3548,13 +3676,21 @@ export function StockItemDetail({
         <div className="pdp-facts stock-item-facts">
           <Fact
             label="Cantidad"
-            value={`${row?.quantity ?? inbound?.quantity ?? 0} uds.`}
+            value={unitsLabel(row?.quantity ?? inbound?.quantity ?? 0)}
           />
-          {row?.reserved ? (
-            <Fact
-              label="Disponible"
-              value={`${row.available} uds. · ${row.reserved} reservada${row.reserved === 1 ? '' : 's'}`}
-            />
+          {row ? (
+            <>
+              <Fact
+                label="Disponible"
+                value={unitsLabel(row.available)}
+              />
+              {row.reserved ? (
+                <Fact
+                  label="Reservadas"
+                  value={unitsLabel(row.reserved)}
+                />
+              ) : null}
+            </>
           ) : null}
           <Fact
             label="Dónde está"
@@ -3590,30 +3726,22 @@ export function StockItemDetail({
           ) : null}
         </div>
       </section>
-      {row?.reservations.length ? (
-        <section className="form-section">
-          <h3>Reservas</h3>
-          <div className="stock-reserve-actions">
-            <span className="reserved-badge">Reservado ({row.reserved})</span>
-            {row.reservations.map((reservation) => {
-              const order = data.orders.find(
-                (entry) => entry.id === reservation.orderId,
-              );
-              return (
-                <button
-                  key={reservation.orderId}
-                  type="button"
-                  className="secondary stock-order-link"
-                  disabled={!order || !onOpenOrder}
-                  onClick={() => order && onOpenOrder?.(order)}
-                >
-                  Ver {reservation.orderNumber}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
+      <section className="form-section">
+        <div className="section-heading">
+          <h3>Pedidos con este stock</h3>
+          {row?.reserved ? (
+            <span className="reserved-badge">
+              {unitsLabel(row.reserved)} reservadas
+            </span>
+          ) : null}
+        </div>
+        <StockReservationsList
+          reservations={row?.reservations || []}
+          data={data}
+          onOpenOrder={onOpenOrder}
+          emptyHint="Ningún pedido reserva estas unidades. Quedan todas disponibles para el próximo pedido."
+        />
+      </section>
     </div>
   );
 }
@@ -3639,6 +3767,9 @@ export function StockOverview({
   );
   const available = rows.reduce((sum, row) => sum + row.available, 0);
   const reserved = rows.reduce((sum, row) => sum + row.reserved, 0);
+  const productReservations = aggregateStockReservations(
+    rows.flatMap((row) => row.reservations),
+  );
   return (
     <div className="stock-overview">
       <div className="stock-current stock-summary">
@@ -3649,7 +3780,8 @@ export function StockOverview({
           </strong>
           {reserved ? (
             <small className="stock-reserved-total">
-              {reserved} reservada{reserved === 1 ? '' : 's'}
+              {reserved} reservada{reserved === 1 ? '' : 's'} · solo el resto
+              se puede asignar a un pedido nuevo
             </small>
           ) : null}
         </div>
@@ -3662,6 +3794,20 @@ export function StockOverview({
           ))}
         </div>
       </div>
+      <section className="form-section stock-product-orders">
+        <div className="section-heading">
+          <h3>Pedidos con este stock</h3>
+          {reserved ? (
+            <span className="reserved-badge">{unitsLabel(reserved)}</span>
+          ) : null}
+        </div>
+        <StockReservationsList
+          reservations={productReservations}
+          data={data}
+          onOpenOrder={onOpenOrder}
+          emptyHint="Ningún pedido abierto o cerrado reserva unidades de este producto."
+        />
+      </section>
       {rows.length ? (
         rows.map((row) => {
           const inbound = inboundForStockRow(
@@ -3710,7 +3856,8 @@ export function StockOverview({
                   {row.reservations.length ? (
                     <div className="stock-reserve-actions">
                       <span className="reserved-badge">
-                        Reservado ({row.reserved})
+                        {unitsLabel(row.reserved)} reservadas ·{' '}
+                        {unitsLabel(row.available)} libres
                       </span>
                       {row.reservations.map((reservation) => {
                         const order = data.orders.find(
@@ -3727,7 +3874,8 @@ export function StockOverview({
                               if (order) onOpenOrder?.(order);
                             }}
                           >
-                            Ver {reservation.orderNumber}
+                            {reservation.orderNumber} ·{' '}
+                            {unitsLabel(reservation.quantity)}
                           </button>
                         );
                       })}

@@ -492,6 +492,49 @@ test('a reservation without location still locks that combination', () => {
   assert.equal(rows[0].reservations[0]?.orderId, 'o1');
 });
 
+test('plain SKU orders reserve warehouse stock without from_stock', () => {
+  const holds = reservedHolds(
+    [
+      {
+        id: 'o1',
+        number: 'IC-TOMY',
+        archived: 0,
+        status: 'nuevo',
+        items: [
+          {
+            product_id: 'estribera',
+            quantity: 4,
+            selections: {
+              options: [],
+              attributes: {},
+            },
+          },
+        ],
+      },
+    ],
+    [{ id: 'estribera', category: 'accesorios', kind: 'sku' }],
+  );
+  assert.equal(holds.length, 1);
+  assert.equal(holds[0]?.quantity, 4);
+  assert.equal(holds[0]?.configKey, '');
+  const rows = stockAvailability(
+    [
+      {
+        product_id: 'estribera',
+        config_key: '',
+        location: 'kriko',
+        quantity: 4,
+        config: {},
+      },
+    ],
+    holds,
+    'estribera',
+  );
+  assert.equal(rows[0]?.reserved, 4);
+  assert.equal(rows[0]?.available, 0);
+  assert.equal(rows[0]?.reservations[0]?.orderNumber, 'IC-TOMY');
+});
+
 test('delivered orders release the reservation and closed ones keep it', () => {
   const config = defaultMontura();
   const key = stockKey('montura', config);

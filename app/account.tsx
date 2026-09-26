@@ -951,16 +951,8 @@ export function AccountBoard({
             onSubmit={(e) => {
               e.preventDefault();
               try {
-                if (
-                  (entry.concept === 'otros' ||
-                    entry.concept === 'pago_proveedor') &&
-                  !entry.detail.trim()
-                ) {
-                  throw new Error(
-                    entry.concept === 'pago_proveedor'
-                      ? 'Describí el concepto del gasto.'
-                      : 'Especificá el concepto.',
-                  );
+                if (entry.concept === 'otros' && !entry.detail.trim()) {
+                  throw new Error('Especificá el concepto.');
                 }
                 if (
                   entry.concept === 'pago_proveedor' &&
@@ -1095,9 +1087,8 @@ export function AccountBoard({
                       ]}
                     />
                   </Field>
-                  <Field label="Concepto del gasto *" wide>
+                  <Field label="Concepto del gasto" wide>
                     <input
-                      required
                       value={entry.detail}
                       onChange={(e) =>
                         setEntry({ ...entry, detail: e.target.value })
