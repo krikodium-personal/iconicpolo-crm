@@ -127,6 +127,7 @@ import {
   orderIsLive,
   orderIsLocked,
   orderIsQuote,
+  orderIsSponsor,
   orderPipelineStatus,
   type Data,
   type Contact,
@@ -571,6 +572,7 @@ function OrderCard({
 }) {
   const units = orderUnits(order);
   const discount = discountLabel(order, products);
+  const sponsor = orderIsSponsor(order);
   return (
     <article className="record-card clickable-row">
       <button
@@ -586,7 +588,9 @@ function OrderCard({
             {order.number} · {cardDate(order.date) || order.date}
           </small>
         </div>
-        {discount ? (
+        {sponsor ? (
+          <span className="sponsor-badge">Sponsoreo</span>
+        ) : discount ? (
           <span className="discount-badge">{discount}</span>
         ) : null}
         <div className="record-card-meta record-card-meta-inline">
@@ -619,11 +623,13 @@ function OrderCard({
         />
         {!orderIsQuote(order.status) ? (
           <>
-            <OrderPayMenu
-              order={order}
-              partners={partners}
-              onChange={onPay}
-            />
+            {!sponsor ? (
+              <OrderPayMenu
+                order={order}
+                partners={partners}
+                onChange={onPay}
+              />
+            ) : null}
             <OrderDeliveryMenu
               delivery={order.delivery}
               onChange={onDelivery}
@@ -636,20 +642,29 @@ function OrderCard({
           <dt>Productos</dt>
           <dd>{unitsLabel(units)}</dd>
         </div>
-        <div>
-          <dt>Total</dt>
-          <dd className="amount">{money(order.total)}</dd>
-        </div>
-        {!orderIsQuote(order.status) ? (
+        {sponsor ? (
           <div>
-            <dt>Cobrado</dt>
-            <dd className="amount">{money(order.paid)}</dd>
+            <dt>Inversión</dt>
+            <dd className="amount">{money(order.cost)}</dd>
           </div>
-        ) : null}
-        <div>
-          <dt>Ganancia</dt>
-          <dd className="amount">{money(order.total - order.cost)}</dd>
-        </div>
+        ) : (
+          <>
+            <div>
+              <dt>Total</dt>
+              <dd className="amount">{money(order.total)}</dd>
+            </div>
+            {!orderIsQuote(order.status) ? (
+              <div>
+                <dt>Cobrado</dt>
+                <dd className="amount">{money(order.paid)}</dd>
+              </div>
+            ) : null}
+            <div>
+              <dt>Ganancia</dt>
+              <dd className="amount">{money(order.total - order.cost)}</dd>
+            </div>
+          </>
+        )}
       </dl>
     </article>
   );
@@ -1244,6 +1259,8 @@ export default function CRM({
                       {o.number} · {cardDate(o.date) || o.date}
                     </small>
                     {(() => {
+                      if (orderIsSponsor(o))
+                        return <span className="sponsor-badge">Sponsoreo</span>;
                       const discount = discountLabel(o, data?.products || []);
                       return discount ? (
                         <span className="discount-badge">{discount}</span>
@@ -1261,18 +1278,25 @@ export default function CRM({
                       />
                       {!orderIsQuote(o.status) ? (
                         <>
-                          <OrderPayMenu
-                            order={o}
-                            partners={data?.partners || []}
-                            onChange={(pay, paid, paid_partner_id, cost_partner_id) =>
-                              patchOrder(o, {
+                          {!orderIsSponsor(o) ? (
+                            <OrderPayMenu
+                              order={o}
+                              partners={data?.partners || []}
+                              onChange={(
                                 pay,
                                 paid,
                                 paid_partner_id,
                                 cost_partner_id,
-                              })
-                            }
-                          />
+                              ) =>
+                                patchOrder(o, {
+                                  pay,
+                                  paid,
+                                  paid_partner_id,
+                                  cost_partner_id,
+                                })
+                              }
+                            />
+                          ) : null}
                           <OrderDeliveryMenu
                             delivery={o.delivery}
                             onChange={(delivery) =>
@@ -1285,10 +1309,10 @@ export default function CRM({
                   </TableCell>
                   <TableCell>{unitsLabel(orderUnits(o))}</TableCell>
                   <TableCell className="text-right amount">
-                    {money(o.total)}
+                    {orderIsSponsor(o) ? '—' : money(o.total)}
                   </TableCell>
                   <TableCell className="text-right amount">
-                    {money(o.paid)}
+                    {orderIsSponsor(o) ? '—' : money(o.paid)}
                   </TableCell>
                   <TableCell className="text-right amount">
                     {money(o.total - o.cost)}

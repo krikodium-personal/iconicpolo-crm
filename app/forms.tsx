@@ -5,8 +5,11 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ORDER_STATUSES,
   actorName,
+  ORDER_KINDS,
   orderIsLocked,
   orderIsQuote,
+  orderIsSponsor,
+  type OrderKind,
   type Contact,
   type Product,
   type Order,
@@ -114,6 +117,19 @@ function snapshotConfig(config?: ProductConfig | CabezadaConfig) {
   return JSON.stringify(config ?? null);
 }
 const NEW_CUSTOMER = '__new__';
+const NEW_SUPPLIER = '__new_supplier__';
+type NewSupplierDraft = {
+  name: string;
+  contact: string;
+  phone: string;
+  email: string;
+};
+const emptyNewSupplier = (): NewSupplierDraft => ({
+  name: '',
+  contact: '',
+  phone: '',
+  email: '',
+});
 const today = () =>
   new Date().toLocaleDateString('en-CA', {
     timeZone: 'America/Argentina/Buenos_Aires',
@@ -1413,6 +1429,7 @@ type DraftItem = {
   attributes: Record<string, string>;
   config?: ProductConfig | CabezadaConfig;
   supplier_id?: string;
+  new_supplier?: NewSupplierDraft;
   from_stock?: boolean;
   stock_qty?: number;
   location?: string;
@@ -1731,7 +1748,16 @@ export function OrderDetail({
               options={[...ORDER_STATUSES]}
               onPick={(status) => onPatch({ status })}
             />
-            {!orderIsQuote(record.status) ? (
+            {orderIsSponsor(record) ? (
+              <span className="sponsor-badge">Sponsoreo</span>
+            ) : null}
+            {orderIsSponsor(record) && !orderIsQuote(record.status) ? (
+              <OrderDeliveryMenu
+                delivery={record.delivery}
+                onChange={(delivery) => onPatch({ delivery })}
+              />
+            ) : null}
+            {!orderIsSponsor(record) && !orderIsQuote(record.status) ? (
               <>
                 <OrderPayMenu
                   order={record}
@@ -1775,9 +1801,12 @@ export function OrderDetail({
               <dd>{units === 1 ? '1 ud.' : `${units} uds.`}</dd>
             </div>
             <div>
-              <dt>Total</dt>
+              <dt>{orderIsSponsor(record) ? 'Inversión' : 'Total'}</dt>
               <dd className="amount">
-                {formatMoney(record.total, data.currency)}
+                {formatMoney(
+                  orderIsSponsor(record) ? record.cost : record.total,
+                  data.currency,
+                )}
               </dd>
             </div>
             {record.shipping_carrier ? (
@@ -1788,7 +1817,7 @@ export function OrderDetail({
                 </dd>
               </div>
             ) : null}
-            {!orderIsQuote(record.status) ? (
+            {!orderIsSponsor(record) && !orderIsQuote(record.status) ? (
               <>
                 <div>
                   <dt>Cobrado</dt>
@@ -1874,6 +1903,15 @@ export function OrderDetail({
                     </button>
                   </div>
                 </div>
+                {orderIsSponsor(record) ? (
+                  <div className="stock-item-side order-detail-money">
+                    <strong>{formatMoney(item.cost, data.currency)}</strong>
+                    <small>
+                      Costo {formatMoney(item.unit_cost, data.currency)}
+                      {item.quantity > 1 ? ` × ${item.quantity}` : ''}
+                    </small>
+                  </div>
+                ) : (
                 <div className="stock-item-side order-detail-money">
                   <strong>
                     {item.discount > 0 &&
@@ -1892,6 +1930,7 @@ export function OrderDetail({
                     {item.quantity > 1 ? ` × ${item.quantity}` : ''}
                   </small>
                 </div>
+                )}
               </div>
             );
           })
@@ -1902,20 +1941,29 @@ export function OrderDetail({
       <section className="form-section">
         <h3>Totales · {data.currency}</h3>
         <div className="order-detail-totals">
-          <div className="order-detail-totals-row three">
-            <Fact
-              label="Total"
-              value={formatMoney(record.total, data.currency)}
-            />
-            <Fact
-              label="Costo"
-              value={formatMoney(record.cost, data.currency)}
-            />
-            <Fact
-              label="Ganancia"
-              value={formatMoney(record.total - record.cost, data.currency)}
-            />
-          </div>
+          {orderIsSponsor(record) ? (
+            <div className="order-detail-totals-row">
+              <Fact
+                label="Inversión en sponsoreo"
+                value={formatMoney(record.cost, data.currency)}
+              />
+            </div>
+          ) : (
+            <div className="order-detail-totals-row three">
+              <Fact
+                label="Total"
+                value={formatMoney(record.total, data.currency)}
+              />
+              <Fact
+                label="Costo"
+                value={formatMoney(record.cost, data.currency)}
+              />
+              <Fact
+                label="Ganancia"
+                value={formatMoney(record.total - record.cost, data.currency)}
+              />
+            </div>
+          )}
         </div>
       </section>
       {!orderIsQuote(record.status) ? (
@@ -2236,6 +2284,7 @@ export function OrderForm({
   onConfigDirtyChange?: (dirty: boolean) => void;
 }) {
   const [f, set] = useState({
+    kind: (record?.kind || 'venta') as OrderKind,
     customer_id: record?.customer_id || '',
     date: record?.date || today(),
     delivery: record?.delivery || '',
@@ -2307,6 +2356,7 @@ export function OrderForm({
   const [error, E] = useState('');
   const [picking, setPicking] = useState<null | 'new' | string>(null);
   const closed = orderIsLocked(record?.status || '');
+  const sponsor = f.kind === 'sponsoreo';
   const configBaselines = useRef<Record<string, string>>({});
   useEffect(() => {
     let dirty = false;
@@ -2346,6 +2396,8 @@ export function OrderForm({
     return holds;
   }
   function supplierName(item: DraftItem, product?: Product) {
+    if (item.supplier_id === NEW_SUPPLIER)
+      return item.new_supplier?.name.trim() || 'Proveedor nuevo';
     const id =
       item.supplier_id ||
       item.snapshot?.selections.supplier_id ||
@@ -2412,6 +2464,18 @@ export function OrderForm({
     if (!p) throw new Error('Elegí un producto.');
     const qty = Number(i.quantity);
     function withSale(price: number, cost: number, extra: Record<string, unknown>) {
+      if (sponsor) {
+        if (!qty) throw new Error('La cantidad debe ser mayor a cero.');
+        const lineCost = cost * qty;
+        return {
+          total: 0,
+          cost: lineCost,
+          profit: -lineCost,
+          price: 0,
+          unitCost: cost,
+          ...extra,
+        };
+      }
       if (i.discount_mode === 'fixed') {
         const sale = parseDecimal(i.discount);
         return {
@@ -2533,7 +2597,14 @@ export function OrderForm({
           const creatingCustomer = f.customer_id === NEW_CUSTOMER;
           if (creatingCustomer && !newCustomer.name.trim())
             throw new Error('Escribí el nombre del cliente.');
-          if (items.some((item) => !item.supplier_id))
+          if (
+            items.some(
+              (item) =>
+                !item.supplier_id ||
+                (item.supplier_id === NEW_SUPPLIER &&
+                  !item.new_supplier?.name.trim()),
+            )
+          )
             throw new Error('Elegí el proveedor de cada producto.');
           if (
             items.some((item) => {
@@ -2609,14 +2680,17 @@ export function OrderForm({
             ...f,
             customer_id: creatingCustomer ? undefined : f.customer_id,
             customer: creatingCustomer ? newCustomer : undefined,
-            invoice: Number(f.invoice),
-            paid: orderIsQuote(f.status) ? 0 : parseDecimal(f.paid),
-            paid_partner_id: orderIsQuote(f.status)
-              ? ''
-              : parseDecimal(f.paid) > 0
-                ? f.paid_partner_id
-                : '',
-            cost_partner_id: orderIsQuote(f.status) ? '' : f.cost_partner_id,
+            invoice: sponsor ? 0 : Number(f.invoice),
+            paid:
+              sponsor || orderIsQuote(f.status) ? 0 : parseDecimal(f.paid),
+            paid_partner_id:
+              sponsor || orderIsQuote(f.status)
+                ? ''
+                : parseDecimal(f.paid) > 0
+                  ? f.paid_partner_id
+                  : '',
+            cost_partner_id:
+              sponsor || orderIsQuote(f.status) ? '' : f.cost_partner_id,
             shipping_carrier: f.shipping_carrier,
             shipping_amount: f.shipping_carrier
               ? parseDecimal(f.shipping_amount)
@@ -2624,6 +2698,13 @@ export function OrderForm({
             id: record?.id,
             version: record?.version,
             items: items.map((i) => {
+              const supplierPayload =
+                i.supplier_id === NEW_SUPPLIER
+                  ? {
+                      supplier_id: undefined,
+                      supplier: i.new_supplier,
+                    }
+                  : { supplier_id: i.supplier_id };
               if (i.discount_mode === 'fixed') {
                 const sale = parseDecimal(i.discount);
                 return {
@@ -2638,7 +2719,7 @@ export function OrderForm({
                   option_ids: i.option_ids,
                   attributes: i.attributes,
                   config: i.config,
-                  supplier_id: i.supplier_id,
+                  ...supplierPayload,
                   from_stock: i.from_stock,
                   stock_qty: i.stock_qty,
                   location: i.location,
@@ -2655,7 +2736,7 @@ export function OrderForm({
                 option_ids: i.option_ids,
                 attributes: i.attributes,
                 config: i.config,
-                supplier_id: i.supplier_id,
+                ...supplierPayload,
                 from_stock: i.from_stock,
                 stock_qty: i.stock_qty,
                 location: i.location,
@@ -2706,8 +2787,29 @@ export function OrderForm({
         </div>
       )}
       <fieldset disabled={closed || busy}>
+        <div className="order-kind">
+          <fieldset className="seg">
+            <legend className="sr-only">Tipo de pedido</legend>
+            {ORDER_KINDS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className={f.kind === option.id ? 'selected' : ''}
+                aria-pressed={f.kind === option.id}
+                onClick={() => set({ ...f, kind: option.id })}
+              >
+                {option.label}
+              </button>
+            ))}
+          </fieldset>
+          <small>
+            {sponsor
+              ? 'Se entrega sin cobro como inversión de sponsoreo: solo se contabiliza el costo de los productos.'
+              : 'Se cobra al cliente y se contabiliza venta, costo y ganancia.'}
+          </small>
+        </div>
         <div className="form-grid">
-          <Field label="Cliente *">
+          <Field label={sponsor ? 'Sponsoreado *' : 'Cliente *'}>
             <Pick
               disabled={closed}
               label="Cliente"
@@ -2989,58 +3091,161 @@ export function OrderForm({
                       />
                     )}
                   </Field>
-                  <Field label="Ajuste del ítem">
-                    <Pick
-                      label="Ajuste del ítem"
-                      value={i.discount_mode}
-                      onChange={(v) =>
-                        update(i.key, {
-                          discount_mode: v === 'fixed' ? 'fixed' : 'percent',
-                          discount: '0.00',
-                        })
-                      }
-                      options={[
-                        { value: 'percent', label: 'Descuento (%)' },
-                        {
-                          value: 'fixed',
-                          label: 'Precio fijo de venta',
-                        },
-                      ]}
-                    />
-                  </Field>
-                  <Field
-                    label={
-                      i.discount_mode === 'fixed'
-                        ? 'Precio fijo de venta'
-                        : 'Descuento (%)'
-                    }
-                  >
-                    <input
-                      inputMode="decimal"
-                      value={i.discount}
-                      onChange={(e) =>
-                        update(i.key, { discount: e.target.value })
-                      }
-                    />
-                  </Field>
-                  <Field label="Proveedor *" pending={!i.supplier_id}>
-                    <Pick
-                      label="Proveedor"
-                      value={i.supplier_id || ''}
-                      disabled={!!i.from_stock}
-                      onChange={(v) => update(i.key, { supplier_id: v })}
-                      options={[
-                        { value: '', label: 'Elegí un proveedor' },
-                        ...data.contacts
-                          .filter(
-                            (c) =>
-                              c.kind === 'supplier' &&
-                              (!c.archived || c.id === i.supplier_id),
-                          )
-                          .map((c) => ({ value: c.id, label: c.name })),
-                      ]}
-                    />
-                  </Field>
+                  {!sponsor ? (
+                    <>
+                      <Field label="Ajuste del ítem">
+                        <Pick
+                          label="Ajuste del ítem"
+                          value={i.discount_mode}
+                          onChange={(v) =>
+                            update(i.key, {
+                              discount_mode:
+                                v === 'fixed' ? 'fixed' : 'percent',
+                              discount: '0.00',
+                            })
+                          }
+                          options={[
+                            { value: 'percent', label: 'Descuento (%)' },
+                            {
+                              value: 'fixed',
+                              label: 'Precio fijo de venta',
+                            },
+                          ]}
+                        />
+                      </Field>
+                      <Field
+                        label={
+                          i.discount_mode === 'fixed'
+                            ? 'Precio fijo de venta'
+                            : 'Descuento (%)'
+                        }
+                      >
+                        <input
+                          inputMode="decimal"
+                          value={i.discount}
+                          onChange={(e) =>
+                            update(i.key, { discount: e.target.value })
+                          }
+                        />
+                      </Field>
+                    </>
+                  ) : null}
+                  {i.supplier_id === NEW_SUPPLIER ? (
+                    <Field
+                      label="Proveedor nuevo *"
+                      wide
+                      pending={!i.new_supplier?.name.trim()}
+                    >
+                      <div className="field-with-action">
+                        <p className="hint">
+                          Se crea el proveedor al guardar el pedido.
+                        </p>
+                        <input
+                          required
+                          value={i.new_supplier?.name || ''}
+                          onChange={(e) =>
+                            update(i.key, {
+                              new_supplier: {
+                                ...(i.new_supplier || emptyNewSupplier()),
+                                name: e.target.value,
+                              },
+                            })
+                          }
+                          placeholder="Nombre / empresa *"
+                        />
+                        <input
+                          value={i.new_supplier?.contact || ''}
+                          onChange={(e) =>
+                            update(i.key, {
+                              new_supplier: {
+                                ...(i.new_supplier || emptyNewSupplier()),
+                                contact: e.target.value,
+                              },
+                            })
+                          }
+                          placeholder="Persona de contacto"
+                        />
+                        <input
+                          value={i.new_supplier?.phone || ''}
+                          onChange={(e) =>
+                            update(i.key, {
+                              new_supplier: {
+                                ...(i.new_supplier || emptyNewSupplier()),
+                                phone: e.target.value,
+                              },
+                            })
+                          }
+                          placeholder="Teléfono (54911…)"
+                        />
+                        <input
+                          type="email"
+                          value={i.new_supplier?.email || ''}
+                          onChange={(e) =>
+                            update(i.key, {
+                              new_supplier: {
+                                ...(i.new_supplier || emptyNewSupplier()),
+                                email: e.target.value,
+                              },
+                            })
+                          }
+                          placeholder="Email"
+                        />
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={!!i.from_stock}
+                          onClick={() =>
+                            update(i.key, {
+                              supplier_id: '',
+                              new_supplier: undefined,
+                            })
+                          }
+                        >
+                          Elegir proveedor existente
+                        </button>
+                      </div>
+                    </Field>
+                  ) : (
+                    <Field label="Proveedor *" pending={!i.supplier_id}>
+                      <div className="field-with-action">
+                        <Pick
+                          label="Proveedor"
+                          value={i.supplier_id || ''}
+                          disabled={!!i.from_stock}
+                          onChange={(v) =>
+                            update(i.key, {
+                              supplier_id: v,
+                              new_supplier: undefined,
+                            })
+                          }
+                          options={[
+                            { value: '', label: 'Elegí un proveedor' },
+                            ...data.contacts
+                              .filter(
+                                (c) =>
+                                  c.kind === 'supplier' &&
+                                  (!c.archived || c.id === i.supplier_id),
+                              )
+                              .map((c) => ({ value: c.id, label: c.name })),
+                          ]}
+                        />
+                        {!i.from_stock ? (
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() =>
+                              update(i.key, {
+                                supplier_id: NEW_SUPPLIER,
+                                new_supplier: emptyNewSupplier(),
+                              })
+                            }
+                          >
+                            Nuevo proveedor
+                          </button>
+                        ) : null}
+                      </div>
+                    </Field>
+                  )}
                   {!i.snapshot &&
                   p &&
                   isCabezadaProduct(p) &&
@@ -3067,7 +3272,7 @@ export function OrderForm({
                       />
                     </Field>
                   ) : null}
-                  {!i.snapshot && (
+                  {!i.snapshot && !sponsor && (
                     <>
                       <Field label="Precio base">
                         <Pick
@@ -3236,14 +3441,24 @@ export function OrderForm({
                         ) : null}
                       </>
                 ) : null}
-                {t && (
-                  <div className="line-summary">
-                    <span>Unitario {formatMoney(t.price, data.currency)}</span>
-                    <span>Costo {formatMoney(t.cost, data.currency)}</span>
-                    <span>Ganancia {formatMoney(t.profit, data.currency)}</span>
-                    <b>{formatMoney(t.total, data.currency)}</b>
-                  </div>
-                )}
+                {t &&
+                  (sponsor ? (
+                    <div className="line-summary">
+                      <span>Sponsoreo · sin cobro</span>
+                      <b>Costo {formatMoney(t.cost, data.currency)}</b>
+                    </div>
+                  ) : (
+                    <div className="line-summary">
+                      <span>
+                        Unitario {formatMoney(t.price, data.currency)}
+                      </span>
+                      <span>Costo {formatMoney(t.cost, data.currency)}</span>
+                      <span>
+                        Ganancia {formatMoney(t.profit, data.currency)}
+                      </span>
+                      <b>{formatMoney(t.total, data.currency)}</b>
+                    </div>
+                  ))}
                 </>
                 )}
               </div>
@@ -3286,7 +3501,7 @@ export function OrderForm({
           )}
         </section>
         <div className="form-grid">
-          {!orderIsQuote(f.status) ? (
+          {!sponsor && !orderIsQuote(f.status) ? (
             <>
               <Field label="Importe cobrado">
                 <input
@@ -3398,15 +3613,26 @@ export function OrderForm({
         </div>
       </fieldset>
       <div className="order-totals">
-        <span>
-          Costo total <b>{formatMoney(cost, data.currency)}</b>
-        </span>
-        <span>
-          Ganancia de Iconic <b>{formatMoney(total - cost, data.currency)}</b>
-        </span>
-        <span>
-          Total del pedido <strong>{formatMoney(total, data.currency)}</strong>
-        </span>
+        {sponsor ? (
+          <span>
+            Inversión en sponsoreo{' '}
+            <strong>{formatMoney(cost, data.currency)}</strong>
+          </span>
+        ) : (
+          <>
+            <span>
+              Costo total <b>{formatMoney(cost, data.currency)}</b>
+            </span>
+            <span>
+              Ganancia de Iconic{' '}
+              <b>{formatMoney(total - cost, data.currency)}</b>
+            </span>
+            <span>
+              Total del pedido{' '}
+              <strong>{formatMoney(total, data.currency)}</strong>
+            </span>
+          </>
+        )}
         {f.shipping_carrier ? (
           <span>
             Envío {f.shipping_carrier}{' '}

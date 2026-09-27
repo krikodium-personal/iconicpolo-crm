@@ -73,7 +73,19 @@ export function collectedOrders(orders: Order[]) {
     (order) =>
       !order.archived &&
       !order.deleted &&
+      order.kind !== 'sponsoreo' &&
       order.paid > 0 &&
+      order.status !== 'cotización',
+  );
+}
+
+/** Pedidos entregados sin cobro: solo suman su costo como pérdida. */
+export function sponsoredOrders(orders: Order[]) {
+  return orders.filter(
+    (order) =>
+      !order.archived &&
+      !order.deleted &&
+      order.kind === 'sponsoreo' &&
       order.status !== 'cotización',
   );
 }
@@ -319,6 +331,11 @@ export function monthlyResults(
   for (const order of collectedOrders(orders)) {
     const row = bucket(monthKey(order.date));
     row.billed += order.paid;
+    row.cost += order.cost;
+    row.orders += 1;
+  }
+  for (const order of sponsoredOrders(orders)) {
+    const row = bucket(monthKey(order.date));
     row.cost += order.cost;
     row.orders += 1;
   }

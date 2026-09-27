@@ -121,6 +121,36 @@ async function requireSupplier(id: unknown, keep?: string) {
   if (!row) throw new Error('Proveedor inválido.');
   return supplier;
 }
+async function supplierIdForOrderItem(
+  input: Record<string, unknown>,
+  keep?: string,
+) {
+  const draft =
+    input.supplier &&
+    typeof input.supplier === 'object' &&
+    !Array.isArray(input.supplier)
+      ? (input.supplier as Record<string, unknown>)
+      : null;
+  if (draft) {
+    const created = await contact({
+      kind: 'supplier',
+      name: draft.name,
+      contact: draft.contact || '',
+      title: '',
+      phone: draft.phone || '',
+      email: draft.email || '',
+      address: draft.address || '',
+      website: '',
+      whatsapp_group: '',
+      notes: '',
+      fiscal: {},
+    });
+    return created.id;
+  }
+  if (input.supplier_id === '__new_supplier__' || input.supplier_id === '__new__')
+    throw new Error('Completá los datos del proveedor nuevo.');
+  return requireSupplier(input.supplier_id, keep);
+}
 /** Socio que recupera el capital (costo) de una venta. Obligatorio si hay costo. */
 async function requireCostPartner(id: unknown, cost: number) {
   if (cost <= 0) return '';
@@ -255,6 +285,12 @@ export async function ensureAccountTables() {
       orderNames,
       'shipping_amount',
       'shipping_amount integer NOT NULL DEFAULT 0',
+    ),
+    await addColumn(
+      'orders',
+      orderNames,
+      'kind',
+      "kind text NOT NULL DEFAULT 'venta'",
     ),
   ].filter(Boolean);
   if (orderAlters.length)
@@ -834,6 +870,7 @@ export async function allData() {
           typeof row.paid_partner_id === 'string' ? row.paid_partner_id : '',
         cost_partner_id:
           typeof row.cost_partner_id === 'string' ? row.cost_partner_id : '',
+        kind: row.kind === 'sponsoreo' ? 'sponsoreo' : 'venta',
         items: items.filter((item) => item.order_id === row.id),
       };
     }),
@@ -1136,6 +1173,12 @@ export async function saveOrder(
   if (b.id && !existing) throw new Error('Pedido no disponible.');
   if (existing && orderIsLocked(existing.status))
     throw new Error('Reabrí el pedido antes de editarlo.');
+  const kind = choice(
+    b.kind || existing?.kind || 'venta',
+    ['venta', 'sponsoreo'],
+    'Tipo de pedido',
+  );
+  const sponsor = kind === 'sponsoreo';
   const customer = await customerIdForOrder(b);
   const previous = existing
     ? (
@@ -1156,12 +1199,12 @@ export async function saveOrder(
     if (old) {
       const supplier_id = old.selections.from_stock
         ? old.selections.supplier_id ||
-          (await requireSupplier(
-            input.supplier_id || old.selections.supplier_id,
+          (await supplierIdForOrderItem(
+            input,
             old.selections.supplier_id,
           ))
-        : await requireSupplier(
-            input.supplier_id || old.selections.supplier_id,
+        : await supplierIdForOrderItem(
+            input,
             old.selections.supplier_id,
           );
       snapshot = {
@@ -1270,7 +1313,7 @@ export async function saveOrder(
             options: [],
             attributes: configLabels(configured, config),
             config,
-            supplier_id: await requireSupplier(input.supplier_id),
+            supplier_id: await supplierIdForOrderItem(input),
             from_stock: !!input.from_stock || undefined,
             stock_qty: input.from_stock
               ? integer(input.stock_qty, 'Stock', 10000)
@@ -1336,7 +1379,7 @@ export async function saveOrder(
                 }
               : selected,
             ...(cabezada ? { config: cabezada } : {}),
-            supplier_id: await requireSupplier(input.supplier_id),
+            supplier_id: await supplierIdForOrderItem(input),
             from_stock: !!input.from_stock || undefined,
             stock_qty: input.from_stock
               ? integer(input.stock_qty, 'Stock', 10000)
@@ -1401,14 +1444,14 @@ export async function saveOrder(
       order_id: id,
       quantity,
       discount,
-      total: totals.total,
+      total: sponsor ? 0 : totals.total,
       cost: totals.cost,
     });
   }
   await assertFromStockAvailable(id, items);
   const total = integer(items.reduce((s, i) => s + i.total, 0));
   const cost = integer(items.reduce((s, i) => s + i.cost, 0));
-  const paid = integer(b.paid, 'Cobrado');
+  const paid = sponsor ? 0 : integer(b.paid, 'Cobrado');
   if (paid > total) throw new Error('El cobro no puede superar el total.');
   const paidPartnerId =
     paid > 0
@@ -1426,7 +1469,8 @@ export async function saveOrder(
   if (delivery && delivery < orderDate)
     throw new Error('La entrega no puede ser anterior al pedido.');
   const status = choice(b.status, [...ORDER_STATUSES], 'Estado');
-  const costPartnerId = orderIsQuote(status)
+  const costPartnerId =
+    sponsor || orderIsQuote(status)
     ? ''
     : await requireCostPartner(
         b.cost_partner_id ?? existing?.cost_partner_id,
@@ -1465,7 +1509,7 @@ export async function saveOrder(
   if (existing) {
     statements.push(
       stmt(
-        'UPDATE orders SET customer_id=?,date=?,delivery=?,paid=?,paid_partner_id=?,cost_partner_id=?,invoice=?,notes=?,shipping_carrier=?,shipping_amount=?,total=?,cost=?,version=? WHERE id=?',
+        'UPDATE orders SET customer_id=?,date=?,delivery=?,paid=?,paid_partner_id=?,cost_partner_id=?,invoice=?,notes=?,shipping_carrier=?,shipping_amount=?,total=?,cost=?,kind=?,version=? WHERE id=?',
         customer,
         orderDate,
         delivery,
@@ -1478,6 +1522,7 @@ export async function saveOrder(
         shippingAmount,
         total,
         cost,
+        kind,
         integer(b.version, 'Versión') + 1,
         id,
       ),
@@ -1486,7 +1531,7 @@ export async function saveOrder(
   } else {
     statements.push(
       stmt(
-        "INSERT INTO orders(id,number,customer_id,date,delivery,status,paid,paid_partner_id,cost_partner_id,invoice,notes,currency,shipping_carrier,shipping_amount,total,cost,created_by) VALUES (?,?,?,?,?,'nuevo',?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO orders(id,number,customer_id,date,delivery,status,paid,paid_partner_id,cost_partner_id,invoice,notes,currency,shipping_carrier,shipping_amount,total,cost,kind,created_by) VALUES (?,?,?,?,?,'nuevo',?,?,?,?,?,?,?,?,?,?,?,?)",
         id,
         number,
         customer,
@@ -1502,6 +1547,7 @@ export async function saveOrder(
         shippingAmount,
         total,
         cost,
+        kind,
         actor.id,
       ),
     );
@@ -1639,6 +1685,8 @@ export async function patchOrder(
     if (!result.meta.changes) throw new Error('Pedido no disponible.');
     return { ok: true };
   }
+  if (existing.kind === 'sponsoreo')
+    throw new Error('Los pedidos de sponsoreo no se cobran.');
   const pay = choice(
     b.pay,
     ['no pagado', 'pago parcial', 'pagado'],

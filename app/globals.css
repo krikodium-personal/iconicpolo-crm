@@ -1270,6 +1270,33 @@ small.pending-text {
   position: relative;
   z-index: 2;
 }
+.sponsor-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #e6e0fa;
+  color: #5b3fb3;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  position: relative;
+  z-index: 2;
+}
+.order-kind {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-bottom: 18px;
+}
+.order-kind small {
+  color: #688077;
+  font-size: 13px;
+}
 button.status-pick {
   border: 0;
   cursor: pointer;
@@ -1529,6 +1556,18 @@ button.dialog-kicker:hover {
 }
 .field.wide {
   grid-column: 1/-1;
+}
+.field-with-action {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.field-with-action > .hint {
+  margin: 0;
+}
+.field-with-action > button {
+  align-self: flex-start;
 }
 .field > small {
   display: block;

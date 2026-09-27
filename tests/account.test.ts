@@ -102,6 +102,31 @@ test('monthly result subtracts product cost, marketing and commissions', () => {
   assert.equal(rows[0]?.margin, 34.15);
 });
 
+test('sponsorship orders only add their cost and never count as cobros', () => {
+  const sponsor: Order = {
+    ...order('s1', '2026-02-03', 0, 30_000, 'entregado'),
+    kind: 'sponsoreo',
+  };
+  const quote: Order = {
+    ...order('s2', '2026-02-04', 0, 50_000, 'cotización'),
+    kind: 'sponsoreo',
+  };
+  const sale = order('o1', '2026-02-05', 100_000, 40_000);
+  const rows = monthlyResults([sponsor, quote, sale], []);
+  assert.equal(rows[0]?.billed, 100_000);
+  assert.equal(rows[0]?.cost, 70_000);
+  assert.equal(rows[0]?.profit, 30_000);
+  assert.equal(rows[0]?.orders, 2);
+  const ledger = accountLedger(rows, [], partners, [], 'USD', new Map(), [
+    sponsor,
+    sale,
+  ]);
+  assert.deepEqual(
+    ledger.filter((entry) => entry.kind === 'cobro').map((e) => e.order_id),
+    ['o1'],
+  );
+});
+
 test('ledger credits order cobros and debits partner cashouts', () => {
   const paidOrder = order('o1', '2026-01-05', 100_000, 40_000);
   const results = monthlyResults([paidOrder], []);

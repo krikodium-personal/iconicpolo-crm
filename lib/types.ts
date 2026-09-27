@@ -96,6 +96,8 @@ export type Order = {
   shipping_amount: number;
   total: number;
   cost: number;
+  /** venta = se cobra; sponsoreo = se entrega sin cobro y solo cuenta el costo. */
+  kind?: OrderKind;
   archived: number;
   deleted: number;
   version: number;
@@ -104,6 +106,14 @@ export type Order = {
   deleted_by?: string;
   items: Item[];
 };
+export type OrderKind = 'venta' | 'sponsoreo';
+export const ORDER_KINDS: { id: OrderKind; label: string }[] = [
+  { id: 'venta', label: 'Venta' },
+  { id: 'sponsoreo', label: 'Sponsoreo' },
+];
+export function orderIsSponsor(order: { kind?: string }) {
+  return order.kind === 'sponsoreo';
+}
 export function orderIsLive(order: {
   archived?: number | boolean;
   deleted?: number | boolean;
