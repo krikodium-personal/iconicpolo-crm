@@ -102,7 +102,7 @@ test('monthly result subtracts product cost, marketing and commissions', () => {
   assert.equal(rows[0]?.margin, 34.15);
 });
 
-test('sponsorship orders only add their cost and never count as cobros', () => {
+test('sponsorship orders count as marketing and debit the account', () => {
   const sponsor: Order = {
     ...order('s1', '2026-02-03', 0, 30_000, 'entregado'),
     kind: 'sponsoreo',
@@ -112,19 +112,32 @@ test('sponsorship orders only add their cost and never count as cobros', () => {
     kind: 'sponsoreo',
   };
   const sale = order('o1', '2026-02-05', 100_000, 40_000);
-  const rows = monthlyResults([sponsor, quote, sale], []);
+  const rows = monthlyResults(
+    [sponsor, quote, sale],
+    [{ id: 'm1', kind: 'mkt', amount: 5_000, date: '2026-02-10', notes: '', created_at: '' }],
+  );
   assert.equal(rows[0]?.billed, 100_000);
-  assert.equal(rows[0]?.cost, 70_000);
-  assert.equal(rows[0]?.profit, 30_000);
+  assert.equal(rows[0]?.cost, 40_000);
+  assert.equal(rows[0]?.mkt, 35_000);
+  assert.equal(rows[0]?.sponsorship, 30_000);
+  assert.equal(rows[0]?.profit, 25_000);
   assert.equal(rows[0]?.orders, 2);
+  assert.equal(totalsOf(rows).sponsorship, 30_000);
   const ledger = accountLedger(rows, [], partners, [], 'USD', new Map(), [
     sponsor,
+    quote,
     sale,
   ]);
   assert.deepEqual(
     ledger.filter((entry) => entry.kind === 'cobro').map((e) => e.order_id),
     ['o1'],
   );
+  const outflow = ledger.find((entry) => entry.order_id === 's1');
+  assert.equal(outflow?.kind, 'movimiento');
+  assert.equal(outflow?.amount, -30_000);
+  assert.equal(outflow?.label, 'Sponsoreo · s1');
+  assert.equal(ledger.some((entry) => entry.order_id === 's2'), false);
+  assert.equal(ledger.at(-1)?.balance, 70_000);
 });
 
 test('ledger credits order cobros and debits partner cashouts', () => {

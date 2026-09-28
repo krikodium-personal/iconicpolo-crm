@@ -32,7 +32,10 @@ export type MonthlyResult = {
   label: string;
   billed: number;
   cost: number;
+  /** MKT total: gasto cargado a mano + costo de pedidos de sponsoreo. */
   mkt: number;
+  /** Parte de `mkt` que viene de pedidos de sponsoreo (no editable). */
+  sponsorship: number;
   commissions: number;
   profit: number;
   margin: number | null;
@@ -79,7 +82,7 @@ export function collectedOrders(orders: Order[]) {
   );
 }
 
-/** Pedidos entregados sin cobro: solo suman su costo como pérdida. */
+/** Pedidos entregados sin cobro: su costo es gasto de MKT y salida de caja. */
 export function sponsoredOrders(orders: Order[]) {
   return orders.filter(
     (order) =>
@@ -102,6 +105,7 @@ export function yearSheet(year: number, results: MonthlyResult[]) {
         billed: 0,
         cost: 0,
         mkt: 0,
+        sponsorship: 0,
         commissions: 0,
         profit: 0,
         margin: null,
@@ -313,6 +317,7 @@ export function monthlyResults(
       billed: number;
       cost: number;
       mkt: number;
+      sponsorship: number;
       commissions: number;
       orders: number;
     }
@@ -322,6 +327,7 @@ export function monthlyResults(
       billed: 0,
       cost: 0,
       mkt: 0,
+      sponsorship: 0,
       commissions: 0,
       orders: 0,
     };
@@ -336,7 +342,8 @@ export function monthlyResults(
   }
   for (const order of sponsoredOrders(orders)) {
     const row = bucket(monthKey(order.date));
-    row.cost += order.cost;
+    row.mkt += order.cost;
+    row.sponsorship += order.cost;
     row.orders += 1;
   }
   for (const expense of expenses) {
@@ -356,6 +363,7 @@ export function monthlyResults(
         billed: row.billed,
         cost: row.cost,
         mkt: row.mkt,
+        sponsorship: row.sponsorship,
         commissions: row.commissions,
         profit,
         margin: row.billed
@@ -372,12 +380,14 @@ export function totalsOf(
   const billed = rows.reduce((sum, row) => sum + row.billed, 0);
   const cost = rows.reduce((sum, row) => sum + row.cost, 0);
   const mkt = rows.reduce((sum, row) => sum + row.mkt, 0);
+  const sponsorship = rows.reduce((sum, row) => sum + row.sponsorship, 0);
   const commissions = rows.reduce((sum, row) => sum + row.commissions, 0);
   const profit = billed - cost - mkt - commissions;
   return {
     billed,
     cost,
     mkt,
+    sponsorship,
     commissions,
     profit,
     margin: billed ? Math.round((profit / billed) * 10000) / 100 : null,
@@ -410,8 +420,21 @@ export function accountLedger(
       order_id: order.id,
     };
   });
+  const sponsors = sponsoredOrders(orders)
+    .filter((order) => order.cost > 0)
+    .map((order) => ({
+      date: order.date,
+      label: `Sponsoreo · ${order.number}`,
+      kind: 'movimiento' as const,
+      amount: -order.cost,
+      currency: order.currency || boardCurrency,
+      actor: names.get(order.created_by || '') || undefined,
+      notes: customerNames.get(order.customer_id) || 'Sin cliente',
+      order_id: order.id,
+    }));
   const raw: Omit<LedgerEntry, 'balance'>[] = [
     ...cobros,
+    ...sponsors,
     ...cashouts.map((cashout) => ({
       date: cashout.date,
       label: 'Cashout',

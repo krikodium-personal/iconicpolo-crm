@@ -58,6 +58,7 @@ import {
   stockKey,
   stockForConfig,
   stockAtPlace,
+  stockUnitCost,
   stockPlaceLabel,
   summarizeConfig,
   describeConfigured,
@@ -3996,6 +3997,28 @@ export function StockOverview({
   const productReservations = aggregateStockReservations(
     rows.flatMap((row) => row.reservations),
   );
+  const rowCosts = new Map(
+    rows.map((row) => {
+      const unit = stockUnitCost(record, row.config);
+      return [
+        row.key,
+        { total: unit.cost * row.quantity, pending: unit.pending },
+      ];
+    }),
+  );
+  const placeCost = (placeId: string) =>
+    rows
+      .filter((row) => row.location === placeId)
+      .reduce(
+        (sum, row) => {
+          const cost = rowCosts.get(row.key);
+          return {
+            total: sum.total + (cost?.total || 0),
+            pending: sum.pending || !!cost?.pending,
+          };
+        },
+        { total: 0, pending: false },
+      );
   return (
     <div className="stock-overview">
       <div className="stock-current stock-summary">
@@ -4012,12 +4035,21 @@ export function StockOverview({
           ) : null}
         </div>
         <div className="stock-places">
-          {STOCK_PLACES.map((place) => (
-            <span key={place.id}>
-              {place.label}
-              <b>{stockAtPlace(data.movements, record.id, place.id)}</b>
-            </span>
-          ))}
+          {STOCK_PLACES.map((place) => {
+            const cost = placeCost(place.id);
+            return (
+              <span key={place.id}>
+                {place.label}
+                <span className="stock-place-value">
+                  <b>{stockAtPlace(data.movements, record.id, place.id)}</b>
+                  <em className={cost.pending ? 'pending-text' : undefined}>
+                    {formatMoney(cost.total, data.currency)}
+                    {cost.pending ? ' *' : ''}
+                  </em>
+                </span>
+              </span>
+            );
+          })}
         </div>
       </div>
       <section className="form-section stock-product-orders">
@@ -4110,9 +4142,29 @@ export function StockOverview({
                 </div>
               </div>
               <div className="stock-item-side row-actions">
-                <strong>
-                  {row.quantity} <small>uds.</small>
-                </strong>
+                <div className="stock-item-amounts">
+                  <strong>
+                    {row.quantity} <small>uds.</small>
+                  </strong>
+                  <small
+                    className={
+                      rowCosts.get(row.key)?.pending
+                        ? 'pending-text'
+                        : undefined
+                    }
+                    title={
+                      rowCosts.get(row.key)?.pending
+                        ? 'Hay costos sin definir en este producto.'
+                        : 'Costo total de estas unidades'
+                    }
+                  >
+                    {formatMoney(
+                      rowCosts.get(row.key)?.total || 0,
+                      data.currency,
+                    )}
+                    {rowCosts.get(row.key)?.pending ? ' *' : ''}
+                  </small>
+                </div>
                 {inbound ? (
                   <button
                     type="button"

@@ -2498,6 +2498,35 @@ export function extraTotals(
   );
 }
 
+/** Costo unitario de una unidad en stock: base del producto + extras de su combinación. */
+export function stockUnitCost(
+  product: {
+    kind?: string;
+    category: string;
+    cost: number;
+    pricing?: ConfiguredPricing;
+    attributes?: Record<string, string>;
+  },
+  config: Record<string, unknown> = {},
+) {
+  const basePending = product.attributes?.Costo === 'Pendiente de definir';
+  const kind = configuredKindOf(product);
+  if (!kind) return { cost: product.cost, pending: basePending };
+  try {
+    const extras = extraTotals(
+      kind,
+      parseConfig(kind, config),
+      product.pricing || emptyPricing(),
+    );
+    return {
+      cost: product.cost + extras.cost,
+      pending: basePending || extras.pending,
+    };
+  } catch {
+    return { cost: product.cost, pending: true };
+  }
+}
+
 export function adjustedConfiguredPrices(
   kind: ConfiguredKind,
   previousRaw: unknown,

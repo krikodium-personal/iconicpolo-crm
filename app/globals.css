@@ -2120,6 +2120,32 @@ button.dialog-kicker:hover {
   font-size: 28px;
   line-height: 1;
 }
+.stock-summary .stock-places .stock-place-value {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.stock-place-value em {
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4e6657;
+  white-space: nowrap;
+}
+.stock-place-value em.pending-text,
+.stock-item-amounts > small.pending-text {
+  color: #ad3333;
+}
+.stock-item-amounts {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+}
+.stock-item-amounts > small {
+  color: #688077;
+  white-space: nowrap;
+}
 .stock-item {
   display: flex;
   align-items: flex-start;

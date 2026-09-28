@@ -131,14 +131,7 @@ function ResultMonth({
         </div>
         <div>
           <dt>MKT</dt>
-          <dd>
-            <MonthAmount
-              cents={row.mkt}
-              disabled={busy}
-              label={`MKT ${row.label}`}
-              onSave={(amount) => onSave('mkt', amount)}
-            />
-          </dd>
+          <dd className="amount">{sheetValue(row.mkt, money)}</dd>
         </div>
         <div>
           <dt>Comisiones</dt>
