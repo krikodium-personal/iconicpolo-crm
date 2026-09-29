@@ -725,11 +725,12 @@ async function orderWarehouseMoves(
   items: Item[],
   direction: 'close' | 'reopen',
   actor: { id: string },
+  reason = direction === 'close' ? 'Entrega' : 'Reapertura',
 ) {
   const now = new Date().toISOString();
   if (direction === 'reopen') {
     const closes = await stmt(
-      'SELECT product_id, quantity, config, config_key, location, supplier_id FROM stock_movements WHERE order_id=? AND quantity < 0',
+      "SELECT product_id, SUM(quantity) quantity, MAX(config) config, COALESCE(config_key,'') config_key, COALESCE(location,'') location, MAX(supplier_id) supplier_id FROM stock_movements WHERE order_id=? GROUP BY product_id, COALESCE(config_key,''), COALESCE(location,'') HAVING SUM(quantity) < 0",
       order.id,
     ).all<{
       product_id: string;
@@ -746,7 +747,7 @@ async function orderWarehouseMoves(
         row.product_id,
         order.id,
         Math.abs(row.quantity),
-        `Reapertura ${order.number}`,
+        `${reason} ${order.number}`,
         now,
         typeof row.config === 'string'
           ? row.config
@@ -760,10 +761,10 @@ async function orderWarehouseMoves(
     );
   }
   const already = await stmt(
-    'SELECT id FROM stock_movements WHERE order_id=? AND quantity < 0 LIMIT 1',
+    'SELECT COALESCE(SUM(quantity),0) qty FROM stock_movements WHERE order_id=?',
     order.id,
-  ).first();
-  if (already) return [];
+  ).first<{ qty: number }>();
+  if ((already?.qty || 0) < 0) return [];
   const products = await productsByIds(items.map((item) => item.product_id));
   const statements = [];
   for (const item of items) {
@@ -800,7 +801,7 @@ async function orderWarehouseMoves(
         item.product_id,
         order.id,
         -item.quantity,
-        `Entrega ${order.number}`,
+        `${reason} ${order.number}`,
         now,
         configJson,
         key,
@@ -2416,15 +2417,35 @@ export async function mutate(
         id,
       ).first<Order>();
       if (!existing) throw new Error('Pedido no disponible.');
-      const r = await stmt(
-        deleted
-          ? 'UPDATE orders SET deleted=1,deleted_by=?,archived=0,archived_by=?,version=? WHERE id=?'
-          : "UPDATE orders SET deleted=0,deleted_by='',version=? WHERE id=?",
-        ...(deleted
-          ? [actor.id, '', integer(b.version, 'Versión') + 1, id]
-          : [integer(b.version, 'Versión') + 1, id]),
-      ).run();
-      if (!r.meta.changes) throw new Error('Pedido no disponible.');
+      const moves =
+        orderIsDelivered(existing.status) && !!existing.deleted !== !!deleted
+          ? deleted
+            ? await orderWarehouseMoves(existing, [], 'reopen', actor, 'Borrado')
+            : await orderWarehouseMoves(
+                existing,
+                (
+                  await stmt(
+                    'SELECT * FROM order_items WHERE order_id=?',
+                    id,
+                  ).all()
+                ).results.map((row) => decode<Item>(row, ['selections'])),
+                'close',
+                actor,
+                'Restauración',
+              )
+          : [];
+      const r = await db().batch([
+        stmt(
+          deleted
+            ? 'UPDATE orders SET deleted=1,deleted_by=?,archived=0,archived_by=?,version=? WHERE id=?'
+            : "UPDATE orders SET deleted=0,deleted_by='',version=? WHERE id=?",
+          ...(deleted
+            ? [actor.id, '', integer(b.version, 'Versión') + 1, id]
+            : [integer(b.version, 'Versión') + 1, id]),
+        ),
+        ...moves,
+      ]);
+      if (!r[0]?.meta.changes) throw new Error('Pedido no disponible.');
       return { ok: true };
     }
     case 'stock_delete': {
