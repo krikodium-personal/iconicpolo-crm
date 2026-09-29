@@ -1373,7 +1373,7 @@ export function ProductDetail({
           const canOpen =
             !!onOpenStock && m.quantity > 0 && !m.order_id;
           const paidLabel =
-            m.quantity > 0
+            m.quantity > 0 && !m.order_id
               ? m.cost_paid
                 ? `Pagado · ${
                     actorName(data.partners, m.paid_partner_id) || 'Sin socio'
@@ -3700,6 +3700,7 @@ function inboundForStockRow(
     (movement) =>
       movement.product_id === productId &&
       movement.quantity > 0 &&
+      !movement.order_id &&
       (movement.config_key || '') === row.config_key &&
       (movement.location || '') === row.location,
   );
@@ -4509,7 +4510,7 @@ export function StockForm({
                     {metaLine([
                       stockPlaceLabel(m.location),
                       data.contacts.find((c) => c.id === m.supplier_id)?.name,
-                      m.quantity > 0
+                      m.quantity > 0 && !m.order_id
                         ? m.cost_paid
                           ? `Pagado · ${
                               actorName(data.partners, m.paid_partner_id) ||

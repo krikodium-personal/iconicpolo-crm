@@ -208,6 +208,7 @@ function inventoryItemContext(
     (movement) =>
       movement.product_id === record.id &&
       movement.quantity > 0 &&
+      !movement.order_id &&
       (movement.config_key || '') === row.config_key &&
       (movement.location || '') === row.location,
   );

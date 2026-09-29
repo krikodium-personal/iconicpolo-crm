@@ -2481,12 +2481,12 @@ export async function mutate(
           'No se puede borrar: hay pedidos que reservan esta unidad.',
         );
       const outbound = await stmt(
-        "SELECT id FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? AND COALESCE(location,'')=? AND quantity<0 LIMIT 1",
+        "SELECT COALESCE(SUM(quantity),0) qty FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? AND COALESCE(location,'')=? AND (quantity<0 OR COALESCE(order_id,'')!='')",
         movement.product_id,
         key,
         location,
-      ).first();
-      if (outbound)
+      ).first<{ qty: number }>();
+      if ((outbound?.qty || 0) < 0)
         throw new Error(
           'No se puede borrar: esta unidad ya se usó en un pedido.',
         );
