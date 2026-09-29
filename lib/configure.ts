@@ -609,6 +609,13 @@ export function botaModeloPriceId(
   return `modelo_${modelo}`;
 }
 
+/** Talle genérico price key: difference from that model's custom-fit price. */
+export function botaTallePriceId(
+  modelo: (typeof BOTA_MODELOS)[number]['id'],
+) {
+  return `talle_${modelo}`;
+}
+
 export const BOTA_MATERIALS = [
   { id: 'cuero_vaca', label: 'Cuero vaca' },
   { id: 'cuero_bufalo', label: 'Cuero búfalo' },
@@ -831,6 +838,14 @@ export const PRICED_GROUPS: Record<ConfiguredKind, PricedGroup[]> = {
       })),
     },
     {
+      id: 'talle',
+      label: 'Talle genérico',
+      options: BOTA_MODELOS.map((modelo) => ({
+        id: botaTallePriceId(modelo.id),
+        label: 'Talle genérico',
+      })),
+    },
+    {
       id: 'material',
       label: 'Material',
       options: BOTA_MATERIALS.map((material) => ({
@@ -874,9 +889,14 @@ export function parsePricing(raw: unknown): ConfiguredPricing {
     for (const [id, value] of Object.entries(source)) {
       if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
       const point = value as Record<string, unknown>;
+      const signed = id.startsWith('talle_');
+      const amount = (raw: unknown, label: string) =>
+        signed && typeof raw === 'number' && raw < 0
+          ? -moneyAmount(-raw, label)
+          : moneyAmount(raw, label);
       extras[id] = {
-        cost: moneyAmount(point.cost, `Costo de ${id}`),
-        price: moneyAmount(point.price, `Precio de ${id}`),
+        cost: amount(point.cost, `Costo de ${id}`),
+        price: amount(point.price, `Precio de ${id}`),
       };
     }
     for (const [from, to] of [
@@ -948,6 +968,9 @@ export function selectedPriceKeys(
     return [
       ...(config.modelo !== BOTA_BASE_MODELO
         ? [botaModeloPriceId(config.modelo)]
+        : []),
+      ...((config.medidasMode || 'personalizadas') === 'talle'
+        ? [botaTallePriceId(config.modelo)]
         : []),
       `material_${config.material}`,
       ...(config.parche ? ['parche'] : []),

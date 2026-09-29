@@ -1035,6 +1035,42 @@ test('bota modelo extras add their price over standard doble cuero', () => {
   assert.equal(extraTotals('bota', texanas, pricing).price, 3000);
 });
 
+test('bota talle genérico uses its own price per model', () => {
+  const pricing = parsePricing({
+    extras: {
+      modelo_polo_argentino_doble_cuero: { cost: 2000, price: 4000 },
+      talle_standard_doble_cuero: { cost: -1000, price: -5000 },
+      talle_polo_argentino_doble_cuero: { cost: 500, price: -2000 },
+      material_cuero_vaca: { cost: 0, price: 0 },
+    },
+  });
+  const talle = (modelo: string) =>
+    parseBota({ ...defaultBota(), modelo, medidasMode: 'talle', talle: '41' });
+  const medida = parseBota({
+    ...defaultBota(),
+    modelo: 'polo_argentino_doble_cuero',
+    medidas: botaMeasures,
+  });
+  assert.deepEqual(extraTotals('bota', medida, pricing), {
+    price: 4000,
+    cost: 2000,
+    pending: false,
+  });
+  assert.deepEqual(extraTotals('bota', talle('standard_doble_cuero'), pricing), {
+    price: -5000,
+    cost: -1000,
+    pending: false,
+  });
+  assert.deepEqual(
+    extraTotals('bota', talle('polo_argentino_doble_cuero'), pricing),
+    { price: 2000, cost: 2500, pending: false },
+  );
+  assert.equal(extraTotals('bota', talle('texanas'), pricing).pending, true);
+  assert.throws(() =>
+    parsePricing({ extras: { modelo_texanas: { cost: -1, price: 0 } } }),
+  );
+});
+
 test('bota labels list the selected options and measures', () => {
   const labels = configLabels(
     'bota',

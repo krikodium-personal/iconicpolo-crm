@@ -3360,6 +3360,9 @@ output.hint {
 .price-variant-row.has-photo .option-photo {
   grid-column: 1 / -1;
 }
+.price-variant-row .talle-price {
+  grid-column: 2;
+}
 .price-variant-row.photo-only {
   grid-template-columns: minmax(120px, 0.6fr) 1fr;
   align-items: center;
@@ -3410,6 +3413,9 @@ output.hint {
   .price-variant-row > span {
     grid-column: 1 / -1;
     padding-bottom: 0;
+  }
+  .price-variant-row .talle-price {
+    grid-column: 1;
   }
   .pdp .stock-item {
     flex-wrap: wrap;

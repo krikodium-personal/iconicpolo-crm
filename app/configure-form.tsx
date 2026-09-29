@@ -2135,6 +2135,7 @@ function extraForLabel(
     if (charge.id.startsWith('asiento_') && label === 'Material asiento')
       return true;
     if (charge.id.startsWith('modelo_') && label === 'Modelo') return true;
+    if (charge.id.startsWith('talle_') && label === 'Talle') return true;
     if (charge.id.startsWith('material_') && label === 'Material externo')
       return true;
     return false;
@@ -2173,7 +2174,7 @@ function ConfigSummary({
               {charge?.extra.pending
                 ? ' · extra pendiente'
                 : charge?.extra.price
-                  ? ` · +${formatMoney(charge.extra.price, currency)}`
+                  ? ` · ${charge.extra.price > 0 ? '+' : '−'}${formatMoney(Math.abs(charge.extra.price), currency)}`
                   : ''}
             </li>
           );
