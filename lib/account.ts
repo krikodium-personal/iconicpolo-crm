@@ -539,20 +539,16 @@ export type FinancialPosition = {
   settlement: number;
 };
 
-/** Costo recuperable de un pedido cobrado (prorrateado si el cobro es parcial). */
+/** Costo recuperado: solo cuando el pedido está pagado por completo. */
 export function orderCostRecovered(order: Order) {
   if (order.paid <= 0 || order.cost <= 0) return 0;
-  if (!order.total || order.paid >= order.total) return order.cost;
-  return Number(
-    (BigInt(order.cost) * BigInt(order.paid) + BigInt(order.total) / 2n) /
-      BigInt(order.total),
-  );
+  return order.paid >= order.total ? order.cost : 0;
 }
 
 /**
  * Situación financiera por socio:
  * - Inversión = costos de stock que pagó + movimientos de cuenta que pagó
- * - Recuperado = costos de ventas cobradas asignados a ese socio
+ * - Recuperado = costos de ventas pagadas por completo asignados a ese socio
  * - Ganancia = % sobre la ganancia del negocio (igual que caja de socios)
  */
 export function financialSituation(

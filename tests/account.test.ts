@@ -433,3 +433,26 @@ test('financial situation: cost recovery + profit split', () => {
   assert.equal(cris?.profit, 5_000);
   assert.equal(cris?.settlement, 5_000);
 });
+
+test('cost is recovered only while the order is fully paid', () => {
+  const ivan: Partner = {
+    id: 'ivan',
+    name: 'Ivan',
+    share: 10000,
+    archived: 0,
+    version: 1,
+  };
+  const paid = order('o1', '2026-03-01', 30_000, 20_000, 'entregado', 'ivan', 'ivan');
+  const partial: Order = { ...paid, paid: 15_000 };
+  const unpaid: Order = { ...paid, paid: 0, paid_partner_id: '' };
+  const raised: Order = { ...paid, total: 40_000 };
+  assert.equal(orderCostRecovered(paid), 20_000);
+  assert.equal(orderCostRecovered(partial), 0);
+  assert.equal(orderCostRecovered(unpaid), 0);
+  assert.equal(orderCostRecovered(raised), 0);
+  const recovered = (o: Order) =>
+    financialSituation(0, [ivan], [], [o], [], [])[0]?.recovered;
+  assert.equal(recovered(paid), 20_000);
+  assert.equal(recovered(partial), 0);
+  assert.equal(recovered(unpaid), 0);
+});
