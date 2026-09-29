@@ -55,6 +55,9 @@ import {
   itemStockHold,
   reservedHolds,
   stockAvailability,
+  stockLoadRows,
+  findStockLoad,
+  type StockLoadRow,
   stockKey,
   stockForConfig,
   stockAtPlace,
@@ -1369,7 +1372,7 @@ export function ProductDetail({
               : cabezada
                 ? cabezadaRiendasLabel(cabezada)
                 : '';
-          const itemKey = `${m.config_key || ''}\t${m.location || ''}`;
+          const itemKey = `${m.config_key || ''}\t${m.location || ''}\t${m.id}`;
           const canOpen =
             !!onOpenStock && m.quantity > 0 && !m.order_id;
           const paidLabel =
@@ -3733,17 +3736,30 @@ function inventoryItemContext(
   record: Product,
   itemKey: string,
 ) {
-  const row = stockAvailability(
-    data.movements,
-    reservedHolds(data.orders, data.products),
-    record.id,
-  ).find((item) => item.key === itemKey);
+  const row = findStockLoad(
+    stockLoadRows(
+      data.movements,
+      reservedHolds(data.orders, data.products),
+      record.id,
+    ),
+    itemKey,
+  );
   if (!row) return null;
   return {
     row,
-    inbound: inboundForStockRow(data.movements, record.id, row),
+    inbound: loadInbound(data.movements, record.id, row),
     title: stockItemHeading(record, row.config),
   };
+}
+function loadInbound(
+  movements: Movement[],
+  productId: string,
+  row: StockLoadRow,
+) {
+  return (
+    movements.find((movement) => movement.id === row.movement_id) ||
+    inboundForStockRow(movements, productId, row)
+  );
 }
 function StockItemPhotos({ urls, name }: { urls: string[]; name: string }) {
   return (
@@ -3842,7 +3858,7 @@ export function StockItemDetail({
   const row = item?.row;
   const unitPhotos = uniquePhotoUrls([
     ...(inbound?.photos || []),
-    ...(row
+    ...(row && !row.movement_id
       ? data.movements
           .filter(
             (movement) =>
@@ -3999,7 +4015,7 @@ export function StockOverview({
   onOpenOrder?: (order: Order) => void;
   onDelete?: (movement: Movement, name: string) => void;
 }) {
-  const rows = stockAvailability(
+  const rows = stockLoadRows(
     data.movements,
     reservedHolds(data.orders, data.products),
     record.id,
@@ -4080,11 +4096,7 @@ export function StockOverview({
       </section>
       {rows.length ? (
         rows.map((row) => {
-          const inbound = inboundForStockRow(
-            data.movements,
-            record.id,
-            row,
-          );
+          const inbound = loadInbound(data.movements, record.id, row);
           const title = stockItemHeading(record, row.config);
           return (
             <div

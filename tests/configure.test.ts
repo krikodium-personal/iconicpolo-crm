@@ -18,6 +18,8 @@ import {
   selectedReferenceIds,
   reservedHolds,
   stockAvailability,
+  stockLoadRows,
+  findStockLoad,
   stockByConfig,
   stockKey,
   summarizeConfig,
@@ -433,6 +435,32 @@ test('reserved stock stays listed and only leftover units can be picked', () => 
   assert.equal(rows[0].reserved, 1);
   assert.equal(rows[0].available, 1);
   assert.equal(rows[0].reservations[0]?.orderNumber, 'IC-1');
+});
+
+test('stock lines split into loads, orders use the oldest load first', () => {
+  const key = stockKey('montura', defaultMontura());
+  const base = { product_id: 'm1', config_key: key, location: 'ivan', config: defaultMontura() };
+  const moves = [
+    { ...base, id: 'a', quantity: 2, supplier_id: 'gabriel', created_at: '2026-09-28T10:00' },
+    { ...base, id: 'd', quantity: -2, order_id: 'o1', created_at: '2026-09-28T11:00' },
+    { ...base, id: 'b', quantity: 1, supplier_id: 'martin', created_at: '2026-09-29T10:00' },
+  ];
+  const used = stockLoadRows(moves, [], 'm1');
+  assert.equal(used.length, 1);
+  assert.equal(used[0]?.movement_id, 'b');
+  assert.equal(used[0]?.quantity, 1);
+  assert.equal(used[0]?.supplier_id, 'martin');
+  assert.equal(findStockLoad(used, `${key}\tivan`)?.movement_id, 'b');
+  const returned = stockLoadRows(
+    [...moves, { ...base, id: 'r', quantity: 2, order_id: 'o1', created_at: '2026-09-29T11:00' }],
+    [{ orderId: 'o2', orderNumber: 'IC-2', productId: 'm1', configKey: key, location: 'ivan', quantity: 3 }],
+    'm1',
+  );
+  assert.deepEqual(
+    returned.map((row) => [row.movement_id, row.quantity, row.supplier_id, row.reserved]),
+    [['a', 2, 'gabriel', 2], ['b', 1, 'martin', 1]],
+  );
+  assert.equal(findStockLoad(returned, `${key}\tivan\tb`)?.available, 0);
 });
 
 test('a single reserved unit cannot be assigned to another order', () => {

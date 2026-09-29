@@ -2466,38 +2466,35 @@ export async function mutate(
         throw new Error('Solo se pueden borrar ingresos de stock.');
       const key = movement.config_key || '';
       const location = movement.location || '';
-      const holds = await reservedHoldsForProducts(
-        [movement.product_id],
-        '',
-      );
-      if (
-        holds.some(
-          (hold) =>
-            hold.configKey === key &&
-            (!hold.location || hold.location === location),
-        )
-      )
-        throw new Error(
-          'No se puede borrar: hay pedidos que reservan esta unidad.',
-        );
-      const outbound = await stmt(
-        "SELECT COALESCE(SUM(quantity),0) qty FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? AND COALESCE(location,'')=? AND (quantity<0 OR COALESCE(order_id,'')!='')",
+      const stock = await stmt(
+        "SELECT COALESCE(SUM(quantity),0) total, COALESCE(SUM(CASE WHEN COALESCE(location,'')=? THEN quantity ELSE 0 END),0) here FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=?",
+        location,
         movement.product_id,
         key,
-        location,
-      ).first<{ qty: number }>();
-      if ((outbound?.qty || 0) < 0)
+      ).first<{ total: number; here: number }>();
+      const total = (stock?.total || 0) - movement.quantity;
+      const here = (stock?.here || 0) - movement.quantity;
+      if (here < 0)
         throw new Error(
-          'No se puede borrar: esta unidad ya se usó en un pedido.',
+          'No se puede borrar: parte de esta carga ya se usó en un pedido.',
+        );
+      const holds = (
+        await reservedHoldsForProducts([movement.product_id], '')
+      ).filter((hold) => hold.configKey === key);
+      const heldHere = holds
+        .filter((hold) => hold.location === location)
+        .reduce((sum, hold) => sum + hold.quantity, 0);
+      const heldAll = holds.reduce((sum, hold) => sum + hold.quantity, 0);
+      if (here < heldHere || total < heldAll)
+        throw new Error(
+          'No se puede borrar: hay pedidos que reservan esta unidad.',
         );
       const d = db();
       const r = await d.batch([
         stmt('DROP TRIGGER IF EXISTS stock_immutable_delete'),
         stmt(
-          "DELETE FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? AND COALESCE(location,'')=? AND quantity>0 AND COALESCE(order_id,'')=''",
-          movement.product_id,
-          key,
-          location,
+          "DELETE FROM stock_movements WHERE id=? AND quantity>0 AND COALESCE(order_id,'')=''",
+          movement.id,
         ),
         stmt(
           "CREATE TRIGGER stock_immutable_delete BEFORE DELETE ON stock_movements BEGIN SELECT RAISE(ABORT,'STOCK_IMMUTABLE'); END",

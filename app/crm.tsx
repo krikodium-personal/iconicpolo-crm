@@ -115,6 +115,8 @@ import {
   parseConfig,
   reservedHolds,
   stockAvailability,
+  stockLoadRows,
+  findStockLoad,
 } from '@/lib/configure';
 import {
   cabezadaRiendasLabel,
@@ -198,20 +200,25 @@ function inventoryItemContext(
   record: Product,
   itemKey: string,
 ) {
-  const row = stockAvailability(
-    data.movements,
-    reservedHolds(data.orders, data.products),
-    record.id,
-  ).find((item) => item.key === itemKey);
-  if (!row) return null;
-  const inbound = data.movements.find(
-    (movement) =>
-      movement.product_id === record.id &&
-      movement.quantity > 0 &&
-      !movement.order_id &&
-      (movement.config_key || '') === row.config_key &&
-      (movement.location || '') === row.location,
+  const row = findStockLoad(
+    stockLoadRows(
+      data.movements,
+      reservedHolds(data.orders, data.products),
+      record.id,
+    ),
+    itemKey,
   );
+  if (!row) return null;
+  const inbound =
+    data.movements.find((movement) => movement.id === row.movement_id) ||
+    data.movements.find(
+      (movement) =>
+        movement.product_id === record.id &&
+        movement.quantity > 0 &&
+        !movement.order_id &&
+        (movement.config_key || '') === row.config_key &&
+        (movement.location || '') === row.location,
+    );
   const described = describeConfigured(record, row.config);
   const cabezada = isCabezadaProduct(record)
     ? tryParseCabezadaConfig(row.config)
@@ -999,7 +1006,7 @@ export default function CRM({
           ) {
             const movement = next.movements.find((item) => item.id === body.id);
             if (movement) {
-              itemKey = `${movement.config_key || ''}\t${movement.location || ''}`;
+              itemKey = `${movement.config_key || ''}\t${movement.location || ''}\t${movement.id}`;
             }
           }
           P({

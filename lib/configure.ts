@@ -2823,6 +2823,95 @@ export function stockAvailability(
   return rows;
 }
 
+export type StockLoadRow = StockAvailabilityRow & { movement_id: string };
+
+/**
+ * Splits each stock line into the inbound loads that compose it. Units used by
+ * orders are taken from the oldest loads first; reservations fill the
+ * remaining units in the same order.
+ */
+export function stockLoadRows(
+  movements: (Parameters<typeof stockByConfig>[0][number] & {
+    id: string;
+    order_id?: string | null;
+    created_at?: string;
+  })[],
+  holds: StockHold[],
+  productId: string,
+): StockLoadRow[] {
+  const result: StockLoadRow[] = [];
+  for (const row of stockAvailability(movements, holds, productId)) {
+    const loads = movements
+      .filter(
+        (movement) =>
+          movement.product_id === productId &&
+          movement.quantity > 0 &&
+          !movement.order_id &&
+          (movement.config_key || '') === row.config_key &&
+          (movement.location || '') === row.location,
+      )
+      .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+    if (!loads.length) {
+      result.push({ ...row, movement_id: '' });
+      continue;
+    }
+    let used = Math.max(
+      0,
+      loads.reduce((sum, load) => sum + load.quantity, 0) - row.quantity,
+    );
+    const parts = loads.map((load) => {
+      const take = Math.min(load.quantity, used);
+      used -= take;
+      return {
+        ...row,
+        key: `${row.key}\t${load.id}`,
+        movement_id: load.id,
+        quantity: load.quantity - take,
+        supplier_id: load.supplier_id || row.supplier_id,
+        config:
+          load.config && Object.keys(load.config).length
+            ? load.config
+            : row.config,
+        reserved: 0,
+        available: 0,
+        reservations: [] as StockReservation[],
+      };
+    });
+    const extra =
+      row.quantity - parts.reduce((sum, part) => sum + part.quantity, 0);
+    if (extra > 0) parts[parts.length - 1]!.quantity += extra;
+    const live = parts.filter((part) => part.quantity > 0);
+    for (const reservation of row.reservations) {
+      let remaining = reservation.quantity;
+      for (const part of live) {
+        if (remaining <= 0) break;
+        const take = Math.min(part.quantity - part.reserved, remaining);
+        if (take <= 0) continue;
+        part.reserved += take;
+        part.reservations.push({ ...reservation, quantity: take });
+        remaining -= take;
+      }
+      if (remaining > 0 && live[0]) {
+        live[0].reserved += remaining;
+        live[0].reservations.push({ ...reservation, quantity: remaining });
+      }
+    }
+    for (const part of live) {
+      part.available = Math.max(0, part.quantity - part.reserved);
+      result.push(part);
+    }
+  }
+  return result;
+}
+
+/** Finds a load row by its key, accepting a line key without the load id. */
+export function findStockLoad(rows: StockLoadRow[], itemKey: string) {
+  return (
+    rows.find((row) => row.key === itemKey) ||
+    rows.find((row) => row.key.startsWith(`${itemKey}\t`))
+  );
+}
+
 function lowerEs(value: string) {
   return value.toLocaleLowerCase('es');
 }
