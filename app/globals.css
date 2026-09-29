@@ -2029,6 +2029,10 @@ button.dialog-kicker:hover {
   min-width: 0;
   color: #6e8064;
 }
+.history-line > .product-photo + div {
+  flex: 1;
+  min-width: 0;
+}
 .insight {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
