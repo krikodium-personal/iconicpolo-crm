@@ -114,6 +114,19 @@ export type Save = (body: Record<string, unknown>) => Promise<void>;
 export { whatsapp, whatsappGroup };
 const options = (values: string[]) =>
   values.map((value) => ({ value, label: value }));
+const COST_PENDING = 'Costo pendiente';
+function metaLine(parts: (string | undefined)[]) {
+  return parts.filter(Boolean).map((part, index) => (
+    <span key={index}>
+      {index ? ' · ' : ''}
+      {part === COST_PENDING ? (
+        <span className="pending-text">{part}</span>
+      ) : (
+        part
+      )}
+    </span>
+  ));
+}
 function snapshotConfig(config?: ProductConfig | CabezadaConfig) {
   return JSON.stringify(config ?? null);
 }
@@ -1365,7 +1378,7 @@ export function ProductDetail({
                 ? `Pagado · ${
                     actorName(data.partners, m.paid_partner_id) || 'Sin socio'
                   }`
-                : 'Costo pendiente'
+                : COST_PENDING
               : '';
           return (
             <div
@@ -1389,13 +1402,11 @@ export function ProductDetail({
                 {m.reason || (m.quantity > 0 ? 'Stock' : 'Devolución')}
                 {m.location || m.supplier_id || paidLabel ? (
                   <small>
-                    {[
+                    {metaLine([
                       m.location ? stockPlaceLabel(m.location) : '',
                       data.contacts.find((c) => c.id === m.supplier_id)?.name,
                       paidLabel,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
+                    ])}
                   </small>
                 ) : null}
                 {detail ? (
@@ -4093,7 +4104,7 @@ export function StockOverview({
                 <div>
                   <b>{title}</b>
                   <small>
-                    {[
+                    {metaLine([
                       stockPlaceLabel(row.location),
                       data.contacts.find((c) => c.id === row.supplier_id)?.name,
                       inbound?.cost_paid
@@ -4102,14 +4113,12 @@ export function StockOverview({
                             'Sin socio'
                           }`
                         : inbound
-                          ? 'Costo pendiente'
+                          ? COST_PENDING
                           : '',
                       inbound
                         ? actorName(data.partners, inbound.created_by)
                         : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
+                    ])}
                   </small>
                   {row.reservations.length ? (
                     <div className="stock-reserve-actions">
@@ -4497,7 +4506,7 @@ export function StockForm({
                 <span>
                   {m.reason || (m.quantity > 0 ? 'Stock' : 'Devolución')}
                   <small>
-                    {[
+                    {metaLine([
                       stockPlaceLabel(m.location),
                       data.contacts.find((c) => c.id === m.supplier_id)?.name,
                       m.quantity > 0
@@ -4506,11 +4515,9 @@ export function StockForm({
                               actorName(data.partners, m.paid_partner_id) ||
                               'Sin socio'
                             }`
-                          : 'Costo pendiente'
+                          : COST_PENDING
                         : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
+                    ])}
                   </small>
                   <small>{movementWhen(data.partners, m)}</small>
                 </span>
