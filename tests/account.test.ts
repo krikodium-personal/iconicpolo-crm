@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { stockUnitCost } from '../lib/configure.ts';
 
 import {
   accountInflow,
@@ -432,6 +433,26 @@ test('financial situation: cost recovery + profit split', () => {
   assert.equal(cris?.recovered, 0);
   assert.equal(cris?.profit, 5_000);
   assert.equal(cris?.settlement, 5_000);
+});
+
+test('special unit cost overrides the list cost for stock investment', () => {
+  const ivan: Partner = { id: 'ivan', name: 'Ivan', share: 10000, archived: 0, version: 1 };
+  const products = [{ id: 'casco', cost: 20_000 }];
+  const invested = (unit_cost?: number) =>
+    financialSituation(0, [ivan], [], [], [
+      { product_id: 'casco', quantity: 2, cost_paid: 1, paid_partner_id: 'ivan', unit_cost },
+    ], products)[0]?.investment;
+  assert.equal(invested(), 40_000);
+  assert.equal(invested(0), 40_000);
+  assert.equal(invested(15_000), 30_000);
+  assert.deepEqual(stockUnitCost({ category: 'Cascos', cost: 20_000 }, {}, 15_000), {
+    cost: 15_000,
+    pending: false,
+  });
+  assert.deepEqual(stockUnitCost({ category: 'Cascos', cost: 20_000 }), {
+    cost: 20_000,
+    pending: false,
+  });
 });
 
 test('cost is recovered only while the order is fully paid', () => {

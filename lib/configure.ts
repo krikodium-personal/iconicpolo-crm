@@ -2498,7 +2498,7 @@ export function extraTotals(
   );
 }
 
-/** Costo unitario de una unidad en stock: base del producto + extras de su combinación. */
+/** Costo unitario de una unidad en stock: el especial de la carga, o base del producto + extras de su combinación. */
 export function stockUnitCost(
   product: {
     kind?: string;
@@ -2508,7 +2508,9 @@ export function stockUnitCost(
     attributes?: Record<string, string>;
   },
   config: Record<string, unknown> = {},
+  special = 0,
 ) {
+  if (special > 0) return { cost: special, pending: false };
   const basePending = product.attributes?.Costo === 'Pendiente de definir';
   const kind = configuredKindOf(product);
   if (!kind) return { cost: product.cost, pending: basePending };

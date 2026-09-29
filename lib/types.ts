@@ -141,6 +141,8 @@ export type Movement = {
   cost_paid: number;
   paid_partner_id: string;
   created_by?: string;
+  /** Costo unitario especial de la carga; 0 = costo de lista. */
+  unit_cost?: number;
 };
 export type Partner = {
   id: string;

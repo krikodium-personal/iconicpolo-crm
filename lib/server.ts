@@ -176,6 +176,13 @@ async function stockCostPayment(b: Record<string, unknown>, inbound: boolean) {
   if (!partner) throw new Error('Elegí un socio activo que pagó el costo.');
   return { costPaid: 1, paidPartnerId: partnerId };
 }
+/** Special unit cost of an inbound load; 0 means the list cost. */
+function specialUnitCost(b: Record<string, unknown>, inbound: boolean) {
+  if (!inbound || b.cost_mode !== 'especial') return 0;
+  const cost = integer(b.unit_cost, 'Precio costo');
+  if (!cost) throw new Error('Precio costo: ingresá el costo especial.');
+  return cost;
+}
 /** Optional supplier: empty string allowed. */
 async function optionalSupplier(id: unknown, keep?: string) {
   const supplier = str(id ?? '', 'Proveedor');
@@ -441,6 +448,12 @@ export async function ensureActorColumns() {
       movementNames,
       'created_by',
       "created_by text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'stock_movements',
+      movementNames,
+      'unit_cost',
+      'unit_cost integer NOT NULL DEFAULT 0',
     ),
     await addColumn(
       'partner_cashouts',
@@ -904,6 +917,7 @@ export async function allData() {
         cost_paid: Number(row.cost_paid) ? 1 : 0,
         paid_partner_id:
           typeof row.paid_partner_id === 'string' ? row.paid_partner_id : '',
+        unit_cost: Number(row.unit_cost) || 0,
       };
     }),
     categories: cat.results.map((r) => decode<Category>(r, ['fields'])),
@@ -1922,7 +1936,7 @@ export async function mutate(
           );
       }
       await stmt(
-        'INSERT INTO stock_movements (id,product_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos,created_by,cost_paid,paid_partner_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO stock_movements (id,product_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos,created_by,cost_paid,paid_partner_id,unit_cost) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         crypto.randomUUID(),
         id,
         q,
@@ -1936,6 +1950,7 @@ export async function mutate(
         actor.id,
         payment.costPaid,
         payment.paidPartnerId,
+        specialUnitCost(b, q > 0),
       ).run();
       const sync = await syncProductSupplier(id, supplier);
       if (sync) await sync.run();
@@ -2016,7 +2031,7 @@ export async function mutate(
       await d.batch([
         stmt('DROP TRIGGER IF EXISTS stock_immutable_update'),
         stmt(
-          'UPDATE stock_movements SET quantity=?,reason=?,config=?,config_key=?,location=?,supplier_id=?,photos=?,cost_paid=?,paid_partner_id=? WHERE id=?',
+          'UPDATE stock_movements SET quantity=?,reason=?,config=?,config_key=?,location=?,supplier_id=?,photos=?,cost_paid=?,paid_partner_id=?,unit_cost=? WHERE id=?',
           q,
           typeof b.reason === 'string' ? str(b.reason, 'Motivo', false, 500) : '',
           configJson,
@@ -2026,6 +2041,7 @@ export async function mutate(
           JSON.stringify(photos(b.photos)),
           payment.costPaid,
           payment.paidPartnerId,
+          specialUnitCost(b, q > 0),
           movementId,
         ),
         ...(sync ? [sync] : []),

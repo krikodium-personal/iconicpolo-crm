@@ -3893,6 +3893,7 @@ export function StockItemDetail({
     : '';
   const heading = stockItemHeading(record, config);
   const location = row?.location || inbound?.location || '';
+  const unitCost = stockUnitCost(record, config, inbound?.unit_cost);
   return (
     <div className="pdp stock-item-detail">
       <StockItemPhotos urls={photos} name={record.name} />
@@ -3955,6 +3956,15 @@ export function StockItemDetail({
             label="Proveedor"
             value={supplier?.name || 'Sin proveedor'}
             pending={!supplier}
+          />
+          <Fact
+            label={inbound?.unit_cost ? 'Precio costo · especial' : 'Precio costo · de lista'}
+            value={
+              unitCost.pending
+                ? 'Pendiente de definir'
+                : formatMoney(unitCost.cost, data.currency)
+            }
+            pending={unitCost.pending}
           />
           <Fact
             label="Costo al proveedor"
@@ -4027,7 +4037,11 @@ export function StockOverview({
   );
   const rowCosts = new Map(
     rows.map((row) => {
-      const unit = stockUnitCost(record, row.config);
+      const unit = stockUnitCost(
+        record,
+        row.config,
+        data.movements.find((m) => m.id === row.movement_id)?.unit_cost,
+      );
       return [
         row.key,
         { total: unit.cost * row.quantity, pending: unit.pending },
@@ -4128,6 +4142,7 @@ export function StockOverview({
                         : inbound
                           ? COST_PENDING
                           : '',
+                      inbound?.unit_cost ? 'Costo especial' : '',
                       inbound
                         ? actorName(data.partners, inbound.created_by)
                         : '',
@@ -4268,6 +4283,12 @@ export function StockForm({
     [paidPartner, setPaidPartner] = useState(
       movement?.cost_paid ? movement.paid_partner_id || '' : '',
     ),
+    [costMode, setCostMode] = useState(
+      movement?.unit_cost ? 'especial' : 'de_lista',
+    ),
+    [specialCost, setSpecialCost] = useState(
+      movement?.unit_cost ? decimal(movement.unit_cost) : '',
+    ),
     [uploading, U] = useState(false),
     [config, setConfig] = useState<ProductConfig>(() => {
       if (!configured) return defaultConfig('montura');
@@ -4304,6 +4325,10 @@ export function StockForm({
     place || undefined,
   );
   const inbound = editing ? (movement?.quantity || 0) > 0 : kind === 'in';
+  const listCost = stockUnitCost(
+    record,
+    configured ? config : cabezadaConfig || {},
+  );
   return (
     <form
       onSubmit={async (e) => {
@@ -4312,6 +4337,10 @@ export function StockForm({
         try {
           if (configured) parseConfig(configured, config);
           if (!place) throw new Error('Elegí si el stock está en Ivan o Kriko.');
+          const unitCost =
+            inbound && costMode === 'especial' ? parseDecimal(specialCost) : 0;
+          if (inbound && costMode === 'especial' && !unitCost)
+            throw new Error('Precio costo: ingresá el costo especial.');
           if (inbound && paidPartner) {
             if (!partners.length)
               throw new Error(
@@ -4327,6 +4356,8 @@ export function StockForm({
             ? {
                 cost_paid: paidPartner ? 1 : 0,
                 paid_partner_id: paidPartner || '',
+                cost_mode: costMode,
+                unit_cost: unitCost,
               }
             : { cost_paid: 0, paid_partner_id: '' };
           await save(
@@ -4474,6 +4505,37 @@ export function StockForm({
                   label: partner.name,
                 })),
               ]}
+            />
+          </Field>
+        ) : null}
+        {inbound ? (
+          <Field label="Precio costo">
+            <Pick
+              label="Precio costo"
+              value={costMode}
+              onChange={setCostMode}
+              options={[
+                {
+                  value: 'de_lista',
+                  label: `De lista · ${
+                    listCost.pending
+                      ? 'pendiente de definir'
+                      : formatMoney(listCost.cost, data.currency)
+                  }`,
+                },
+                { value: 'especial', label: 'Especial' },
+              ]}
+            />
+          </Field>
+        ) : null}
+        {inbound && costMode === 'especial' ? (
+          <Field label="Costo especial por unidad *">
+            <input
+              inputMode="decimal"
+              required
+              value={specialCost}
+              onChange={(e) => setSpecialCost(e.target.value)}
+              placeholder="0,00"
             />
           </Field>
         ) : null}

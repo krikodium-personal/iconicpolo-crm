@@ -561,6 +561,7 @@ export function financialSituation(
     quantity: number;
     cost_paid?: number;
     paid_partner_id?: string;
+    unit_cost?: number;
   }[],
   products: { id: string; cost: number }[],
   entries: AccountEntry[] = [],
@@ -580,7 +581,7 @@ export function financialSituation(
       !movement.paid_partner_id
     )
       continue;
-    const unit = productCost.get(movement.product_id) || 0;
+    const unit = movement.unit_cost || productCost.get(movement.product_id) || 0;
     add(investment, movement.paid_partner_id, unit * movement.quantity);
   }
   for (const entry of entries) {
