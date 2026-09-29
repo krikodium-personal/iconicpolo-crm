@@ -708,10 +708,33 @@ export function Photos({
     </div>
   );
 }
-export function ErrorBox({ message }: { message: string }) {
-  return message ? (
+export function ErrorBox({
+  message,
+  onClose,
+}: {
+  message: string;
+  onClose?: () => void;
+}) {
+  const [hidden, setHidden] = useState('');
+  if (!message) {
+    if (hidden) setHidden('');
+    return null;
+  }
+  if (message === hidden) return null;
+  return (
     <p className="error" role="alert">
-      {message}
+      <span>{message}</span>
+      <button
+        type="button"
+        className="error-close"
+        aria-label="Cerrar mensaje"
+        onClick={() => {
+          setHidden(message);
+          onClose?.();
+        }}
+      >
+        <X size={16} />
+      </button>
     </p>
-  ) : null;
+  );
 }

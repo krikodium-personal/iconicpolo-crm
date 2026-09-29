@@ -2487,6 +2487,10 @@ button.dialog-kicker:hover {
   margin-bottom: 16px;
 }
 .error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   background: #fceceb;
   border: 1px solid #ebc8c4;
   padding: 14px 18px;
@@ -2494,6 +2498,23 @@ button.dialog-kicker:hover {
   border-radius: 7px;
   margin-bottom: 18px;
   font-size: 14px;
+}
+.error-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -3px -6px -3px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.error-close:hover {
+  background: #f5d9d6;
 }
 .notice {
   position: fixed;

@@ -1419,7 +1419,7 @@ export default function CRM({
   if (authMode === 'setup' || authMode === 'login') {
     return (
       <>
-        <ErrorBox message={error} />
+        <ErrorBox message={error} onClose={() => E('')} />
         <AuthScreen
           mode={authMode}
           partners={setupPartners}
@@ -1590,7 +1590,7 @@ export default function CRM({
                 </button>
               )}
             </div>
-            <ErrorBox message={error} />
+            <ErrorBox message={error} onClose={() => E('')} />
             {!data ? (
               <ModuleSkeleton module={viewModule} />
             ) : !data.categories.length ? (
