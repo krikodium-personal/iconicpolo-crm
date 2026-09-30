@@ -17,6 +17,7 @@ export type Contact = {
   notes: string;
   fiscal: { name?: string; taxId?: string; address?: string; vat?: string };
   archived: number;
+  deleted?: number;
   version: number;
 };
 export type Option = {

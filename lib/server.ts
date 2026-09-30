@@ -405,7 +405,14 @@ export async function ensureActorColumns() {
   const productNames = await columnNames('products');
   const movementNames = await columnNames('stock_movements');
   const cashoutNames = await columnNames('partner_cashouts');
+  const contactNames = await columnNames('contacts');
   const alters = [
+    await addColumn(
+      'contacts',
+      contactNames,
+      'deleted',
+      'deleted integer NOT NULL DEFAULT 0',
+    ),
     await addColumn(
       'partners',
       partnerNames,
@@ -2168,7 +2175,7 @@ export async function mutate(
       const r =
         table === 'contacts'
           ? await stmt(
-              `UPDATE contacts SET archived=?,version=? WHERE id=?`,
+              `UPDATE contacts SET archived=?,version=? WHERE id=? AND deleted=0`,
               archived,
               integer(b.version, 'Versión') + 1,
               id,
@@ -2593,6 +2600,42 @@ export async function mutate(
         1,
       ).run();
       return { id };
+    }
+    case 'supplier_delete': {
+      await ensureAccountTables();
+      await ensureTasksTable();
+      const id = str(b.id, 'ID', true);
+      const supplier = await stmt(
+        "SELECT id,version FROM contacts WHERE id=? AND kind='supplier' AND deleted=0",
+        id,
+      ).first<{ id: string; version: number }>();
+      if (!supplier) throw new Error('Proveedor no disponible.');
+      const history = await stmt(
+        "SELECT EXISTS(SELECT 1 FROM stock_movements WHERE supplier_id=?) OR EXISTS(SELECT 1 FROM account_entries WHERE supplier_id=?) OR EXISTS(SELECT 1 FROM order_items WHERE json_extract(selections,'$.supplier_id')=?) used",
+        id,
+        id,
+        id,
+      ).first<{ used: number }>();
+      const r = await db().batch([
+        stmt(
+          'UPDATE products SET supplier_id=NULL,version=version+1 WHERE supplier_id=?',
+          id,
+        ),
+        stmt(
+          "UPDATE tasks SET supplier_id='',version=version+1 WHERE supplier_id=?",
+          id,
+        ),
+        history?.used
+          ? stmt(
+              'UPDATE contacts SET archived=1,deleted=1,version=? WHERE id=? AND version=?',
+              supplier.version + 1,
+              id,
+              supplier.version,
+            )
+          : stmt('DELETE FROM contacts WHERE id=?', id),
+      ]);
+      if (!r[2]?.meta.changes) throw new Error('Proveedor no disponible.');
+      return { ok: true };
     }
     case 'task_delete': {
       await ensureTasksTable();

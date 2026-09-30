@@ -793,6 +793,7 @@ export default function CRM({
       | { type: 'order'; record: Order }
       | { type: 'restore-order'; record: Order }
       | { type: 'stock'; name: string; movementId: string }
+      | { type: 'supplier'; record: Contact }
       | null
     >(null),
     [configDirty, setConfigDirty] = useState(false),
@@ -1117,6 +1118,7 @@ export default function CRM({
     data?.contacts.filter(
       (c) =>
         c.kind === (module === 'proveedores' ? 'supplier' : 'customer') &&
+        !c.deleted &&
         !!c.archived === archived &&
         search(c.name, c.contact, c.email, c.phone),
     ) || [];
@@ -1192,6 +1194,22 @@ export default function CRM({
         onClick={(event) => {
           event.stopPropagation();
           setRemove({ type: 'order', record: order });
+        }}
+      >
+        <Trash2 size={16} />
+      </button>
+    );
+  }
+  function renderDeleteSupplierButton(supplier: Contact) {
+    return (
+      <button
+        type="button"
+        className="icon-button danger"
+        title="Borrar"
+        aria-label={`Borrar ${supplier.name}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          setRemove({ type: 'supplier', record: supplier });
         }}
       >
         <Trash2 size={16} />
@@ -2181,10 +2199,14 @@ export default function CRM({
                                 )}
                               </TableCell>
                               <TableCell>
-                                {renderArchiveButton({
-                                  entity: 'contacts',
-                                  record: c,
-                                })}
+                                <div className="row-actions">
+                                  {renderArchiveButton({
+                                    entity: 'contacts',
+                                    record: c,
+                                  })}
+                                  {c.kind === 'supplier' &&
+                                    renderDeleteSupplierButton(c)}
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}
@@ -2207,10 +2229,16 @@ export default function CRM({
                               (o) => o.customer_id === c.id && orderIsLive(o),
                             ).length
                           }
-                          archiveButton={renderArchiveButton({
-                            entity: 'contacts',
-                            record: c,
-                          })}
+                          archiveButton={
+                            <>
+                              {renderArchiveButton({
+                                entity: 'contacts',
+                                record: c,
+                              })}
+                              {c.kind === 'supplier' &&
+                                renderDeleteSupplierButton(c)}
+                            </>
+                          }
                           onOpen={() => P({ type: c.kind, record: c })}
                         />
                       ))}
@@ -2784,14 +2812,18 @@ export default function CRM({
                   ? 'Restaurar pedido'
                   : remove?.type === 'stock'
                     ? 'Borrar de stock'
-                    : 'Borrar pedido'}
+                    : remove?.type === 'supplier'
+                      ? 'Borrar proveedor'
+                      : 'Borrar pedido'}
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {remove?.type === 'restore-order'
                   ? 'El pedido vuelve a los activos y otra vez cuenta para ganancias y el estado de cuenta.'
                   : remove?.type === 'stock'
                     ? `Se borra ${remove.name} del stock. Esta acción no se puede deshacer.`
-                    : 'El pedido pasa a Borrados. Deja de contar para ganancias, cobros y el estado de cuenta, pero queda el registro.'}
+                    : remove?.type === 'supplier'
+                      ? `Se borra ${remove.record.name} de Proveedores y se quita de los productos y tareas donde figura. Los movimientos anteriores conservan su nombre. Esta acción no se puede deshacer.`
+                      : 'El pedido pasa a Borrados. Deja de contar para ganancias, cobros y el estado de cuenta, pero queda el registro.'}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -2820,6 +2852,16 @@ export default function CRM({
                       setRemove(null);
                       await refresh();
                       N('Unidad borrada del stock.');
+                    } else if (remove.type === 'supplier') {
+                      await post({
+                        action: 'supplier_delete',
+                        id: remove.record.id,
+                      });
+                      if (panel?.type === 'supplier' && panel.record?.id === remove.record.id)
+                        P(null);
+                      setRemove(null);
+                      await refresh();
+                      N('Proveedor borrado.');
                     } else {
                       await post({
                         action: 'order_delete',
