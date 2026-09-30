@@ -22,7 +22,7 @@ import {
   ChevronRight,
   RefreshCw,
   ArrowRight,
-  Landmark,
+  ChartLine,
   Check,
   Pencil,
   LogOut,
@@ -131,6 +131,7 @@ import {
   orderIsQuote,
   orderIsSponsor,
   orderPipelineStatus,
+  formatDate,
   type Data,
   type Contact,
   type Product,
@@ -138,14 +139,14 @@ import {
   type Movement,
   type Partner,
 } from '@/lib/types';
-import { tasksNeedAttention } from '@/lib/tasks';
+import { taskIsOpen, tasksNeedAttention } from '@/lib/tasks';
 
 const nav: { id: string; title: string; short: string; icon: LucideIcon }[] = [
   {
     id: 'dashboard',
     title: 'Estado de cuenta',
     short: 'Inicio',
-    icon: Landmark,
+    icon: ChartLine,
   },
   { id: 'pedidos', title: 'Pedidos', short: 'Pedidos', icon: ShoppingBag },
   { id: 'tareas', title: 'Tareas', short: 'Tareas', icon: ListTodo },
@@ -541,10 +542,7 @@ function unitsLabel(quantity: number) {
   return quantity === 1 ? '1 ud.' : `${quantity} uds.`;
 }
 function cardDate(value: string) {
-  if (!value) return '';
-  const [year, month, day] = value.split('-');
-  if (!year || !month || !day) return value;
-  return `${day}/${month}/${year}`;
+  return value ? formatDate(value) : '';
 }
 function OrderCard({
   order,
@@ -1017,6 +1015,13 @@ export default function CRM({
           return;
         }
       }
+      if (
+        panel?.type === 'order' &&
+        ['order_payment', 'order_payment_delete', 'account_entry'].includes(
+          String(body.action),
+        )
+      )
+        return;
       P(null);
     } catch {
       P(null);
@@ -1086,6 +1091,18 @@ export default function CRM({
         b.date.localeCompare(a.date) || b.number.localeCompare(a.number),
     );
   const tasksAlert = tasksNeedAttention(data?.tasks || []);
+  const activeOrderCount = (data?.orders || []).filter(
+    (order) => orderIsLive(order) && order.status !== 'entregado',
+  ).length;
+  const openTaskCount = (data?.tasks || []).filter(taskIsOpen).length;
+  const navCount = (id: string) =>
+    id === 'pedidos' ? activeOrderCount : id === 'tareas' ? openTaskCount : 0;
+  const navLabel = (id: string, title: string) =>
+    id === 'tareas' && openTaskCount
+      ? `${title} (${openTaskCount} por hacer${tasksAlert ? ', hay vencimientos' : ''})`
+      : id === 'pedidos' && activeOrderCount
+        ? `${title} (${activeOrderCount} activos)`
+        : title;
   function latestOrder(customerId: string) {
     return activeOrders
       .filter((order) => order.customer_id === customerId)
@@ -1456,22 +1473,20 @@ export default function CRM({
                     isActive={viewModule === id}
                     render={
                       <CrmLink
-                        aria-label={
-                          id === 'tareas' && tasksAlert
-                            ? `${title} (hay vencimientos)`
-                            : title
-                        }
+                        aria-label={navLabel(id, title)}
                         href={id === 'dashboard' ? '/' : `/${id}`}
                       />
                     }
                   >
                     <span className="nav-icon-wrap">
                       <Icon />
-                      {id === 'tareas' && tasksAlert ? (
-                        <span className="nav-alert-dot" aria-hidden />
-                      ) : null}
                     </span>
                     {title}
+                    {navCount(id) ? (
+                      <span className="nav-count" aria-hidden>
+                        {navCount(id)}
+                      </span>
+                    ) : null}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -1559,19 +1574,6 @@ export default function CRM({
                     <CrmLink href="/">Volver</CrmLink>
                   ) : null}
                 </div>
-                <p>
-                  {viewModule === 'dashboard'
-                    ? 'Facturación, costos, ganancia, cashouts y el recorrido de tus pedidos.'
-                    : viewModule === 'tareas'
-                      ? 'Pendientes, responsables y avance de cada trabajo.'
-                      : viewModule === 'productos'
-                          ? 'Tu catálogo, sus precios y cada movimiento de stock.'
-                          : viewModule === 'clientes'
-                            ? 'Cada relación, con su historia y su próxima oportunidad.'
-                            : viewModule === 'proveedores'
-                              ? 'Las personas y talleres detrás de tus productos.'
-                              : 'De la primera consulta a la entrega.'}
-                </p>
               </div>
               {viewModule !== 'tareas' && viewModule !== 'dashboard' && (
                 <button
@@ -2232,16 +2234,16 @@ export default function CRM({
               href={id === 'dashboard' ? '/' : `/${id}`}
               className={`mobile-tab ${viewModule === id ? 'active' : ''}`}
               aria-label={
-                id === 'tareas' && tasksAlert
-                  ? `${short} (hay vencimientos)`
-                  : undefined
+                navLabel(id, short) === short ? undefined : navLabel(id, short)
               }
               aria-current={viewModule === id ? 'page' : undefined}
             >
               <span className="nav-icon-wrap">
                 <Icon size={22} />
-                {id === 'tareas' && tasksAlert ? (
-                  <span className="nav-alert-dot" aria-hidden />
+                {navCount(id) ? (
+                  <span className="nav-count nav-count-icon" aria-hidden>
+                    {navCount(id)}
+                  </span>
                 ) : null}
               </span>
               {short}

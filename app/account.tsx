@@ -36,7 +36,7 @@ import {
   type MonthlyResult,
 } from '@/lib/account';
 import { decimal, formatMoney, formatRate, parseDecimal, arsFromUsd } from '@/lib/money';
-import { orderIsLive, type Data, type Order } from '@/lib/types';
+import { formatDate, orderIsLive, type Data, type Order } from '@/lib/types';
 
 const today = () =>
   new Date().toLocaleDateString('en-CA', {
@@ -292,7 +292,7 @@ export function AccountBoard({
         label: [
           order.number,
           customerNames.get(order.customer_id) || 'Sin cliente',
-          order.date,
+          formatDate(order.date),
         ].join(' · '),
       }));
   }, [data.orders, entrySupplierId, customerNames]);
@@ -326,6 +326,7 @@ export function AccountBoard({
     supplierNames,
     data.orders,
     customerNames,
+    data.payments || [],
   );
   const yearLedger = [
     ...ledger.filter((entry) => entry.date.startsWith(String(year))),
@@ -538,7 +539,7 @@ export function AccountBoard({
                       }
                     >
                       <TableCell className="ledger-col-date">
-                        {entry.date}
+                        {formatDate(entry.date)}
                       </TableCell>
                       <TableCell className="ledger-col-movement">
                         {clickable ? (
@@ -632,7 +633,7 @@ export function AccountBoard({
                   </span>
                 </div>
                 <small>
-                  {entry.date}
+                  {formatDate(entry.date)}
                   {entry.partner ? ` · ${entry.partner}` : ''}
                   {entry.actor ? ` · Registrado por ${entry.actor}` : ''}
                   {entry.notes ? ` · ${entry.notes}` : ''}

@@ -169,7 +169,7 @@ test('casco ficha includes color swatches, initials preview and custom logo', ()
   });
   assert.equal(ficha.productTitle, 'Casco');
   assert.equal(ficha.orderNumber, '142');
-  assert.equal(ficha.date, '15/09/2026');
+  assert.equal(ficha.date, '15-09-2026');
   assert.equal(ficha.supplierName, 'Talabarteria');
   assert.equal(ficha.customerName, 'Juan P.');
   assert.ok(ficha.supplierWhatsapp?.includes('5491155550000'));

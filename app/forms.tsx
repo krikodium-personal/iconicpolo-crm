@@ -9,6 +9,8 @@ import {
   orderIsLocked,
   orderIsQuote,
   orderIsSponsor,
+  formatDate,
+  formatDateTime,
   type OrderKind,
   type Contact,
   type Product,
@@ -36,6 +38,7 @@ import {
 } from '@/lib/money';
 import {
   SHARE_TOTAL,
+  conceptLabel,
   parseShare,
   shareInput,
   shareLabel,
@@ -495,7 +498,9 @@ export function ContactForm({
                 <span>
                   Última compra
                   <strong>
-                    {purchased[0]?.date || 'Sin compras cerradas'}
+                    {purchased[0]?.date
+                      ? formatDate(purchased[0].date)
+                      : 'Sin compras cerradas'}
                   </strong>
                 </span>
                 <span>
@@ -524,7 +529,7 @@ export function ContactForm({
                       </p>
                     </div>
                     <span>
-                      {o.date}
+                      {formatDate(o.date)}
                       <br />
                       <Status value={o.status} />
                     </span>
@@ -1057,7 +1062,7 @@ function ActorNote({
 }
 function movementWhen(partners: Partner[], movement: Movement) {
   const who = actorName(partners, movement.created_by);
-  const when = new Date(movement.created_at).toLocaleString('es-AR');
+  const when = formatDateTime(movement.created_at);
   return who ? `${when} · ${who}` : when;
 }
 function unitsLabel(quantity: number) {
@@ -1462,10 +1467,7 @@ function productFieldValues(
   );
 }
 function formatOrderDate(value: string) {
-  if (!value) return 'Sin definir';
-  const [year, month, day] = value.split('-');
-  if (!year || !month || !day) return value;
-  return `${day}/${month}/${year}`;
+  return value ? formatDate(value) : 'Sin definir';
 }
 
 function itemDescription(
@@ -1634,10 +1636,20 @@ export function OrderDetail({
   const closed = orderIsLocked(record.status);
   const units = record.items.reduce((total, item) => total + item.quantity, 0);
   const due = Math.max(0, record.total - record.paid);
-  const paidPartner =
+  const payers = Array.from(
+    new Set(
+      (data.payments || [])
+        .filter((payment) => payment.order_id === record.id)
+        .map((payment) => payment.partner_id),
+    ),
+  );
+  const paidPartners =
     record.paid > 0
-      ? data.partners.find((partner) => partner.id === record.paid_partner_id)
-      : undefined;
+      ? (payers.length ? payers : [record.paid_partner_id])
+          .map((id) => actorName(data.partners, id))
+          .filter(Boolean)
+          .join(', ')
+      : '';
   const costPartner = record.cost_partner_id
     ? data.partners.find((partner) => partner.id === record.cost_partner_id)
     : undefined;
@@ -1843,8 +1855,7 @@ export function OrderDetail({
                 <div>
                   <dt>Cobró</dt>
                   <dd>
-                    {paidPartner?.name ||
-                      (record.paid > 0 ? 'Sin socio' : '—')}
+                    {paidPartners || (record.paid > 0 ? 'Sin socio' : '—')}
                   </dd>
                 </div>
                 <div>
@@ -1982,7 +1993,7 @@ export function OrderDetail({
         </div>
       </section>
       {!orderIsQuote(record.status) ? (
-        <OrderSupplierPayments order={record} data={data} save={save} />
+        <OrderMovements order={record} data={data} save={save} />
       ) : null}
       {record.notes.trim() ? (
         <section className="form-section">
@@ -2003,7 +2014,7 @@ function previewArsAmount(amount: string, rate: string) {
   }
 }
 
-function OrderSupplierPayments({
+function OrderMovements({
   order,
   data,
   save,
@@ -2028,10 +2039,76 @@ function OrderSupplierPayments({
       !suppliersFromOrder.length || suppliersFromOrder.includes(supplier.id),
   );
   const supplierChoices = suppliers.length ? suppliers : allSuppliers;
-  const payments = (data.entries || []).filter(
-    (entry) =>
-      entry.concept === 'pago_proveedor' && entry.order_id === order.id,
+  const entries = (data.entries || [])
+    .filter((entry) => entry.order_id === order.id)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const sponsor = orderIsSponsor(order);
+  const due = Math.max(0, order.total - order.paid);
+  const partnerName = (id?: string) =>
+    data.partners.find((partner) => partner.id === id)?.name || '';
+  const payments = (data.payments || []).filter(
+    (payment) => payment.order_id === order.id,
   );
+  const [charge, setCharge] = useState({
+    open: false,
+    busy: false,
+    error: '',
+    amount: '',
+    partner_id: '',
+    cost_partner_id: '',
+    date: today(),
+  });
+  const [removing, setRemoving] = useState('');
+  const [removeError, setRemoveError] = useState('');
+  function openCharge() {
+    setCharge({
+      open: true,
+      busy: false,
+      error: '',
+      amount: decimal(due),
+      partner_id: order.paid_partner_id || partners[0]?.id || '',
+      cost_partner_id: order.cost_partner_id || partners[0]?.id || '',
+      date: today(),
+    });
+  }
+  async function removePayment(id: string) {
+    setRemoveError('');
+    try {
+      await save({ action: 'order_payment_delete', id });
+      setRemoving('');
+    } catch (err) {
+      setRemoveError((err as Error).message);
+    }
+  }
+  async function submitCharge() {
+    try {
+      const amount = parseDecimal(charge.amount);
+      if (amount <= 0) throw new Error('El cobro tiene que ser mayor a 0.');
+      if (amount > due)
+        throw new Error(
+          `El cobro no puede superar el saldo (${formatMoney(due, data.currency)}).`,
+        );
+      if (!charge.partner_id) throw new Error('Elegí qué socio recibió el cobro.');
+      if (order.cost > 0 && !charge.cost_partner_id)
+        throw new Error('Elegí qué socio recupera el costo del proveedor.');
+      setCharge({ ...charge, busy: true, error: '' });
+      await save({
+        action: 'order_payment',
+        order_id: order.id,
+        amount,
+        partner_id: charge.partner_id,
+        cost_partner_id: order.cost > 0 ? charge.cost_partner_id : '',
+        date: charge.date,
+      });
+      setCharge((prev) => ({ ...prev, open: false, busy: false }));
+    } catch (err) {
+      setCharge((prev) => ({
+        ...prev,
+        busy: false,
+        error: (err as Error).message,
+      }));
+    }
+  }
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -2065,48 +2142,146 @@ function OrderSupplierPayments({
   }
   return (
     <section className="form-section">
-      <div className="section-heading">
-        <h3>Pagos a proveedor</h3>
-        <button
-          type="button"
-          className="secondary"
-          disabled={!partners.length || !supplierChoices.length}
-          onClick={openForm}
-        >
-          <Plus size={15} /> pago
-        </button>
+      <div className="section-heading order-movements-heading">
+        <h3>Movimientos</h3>
+        <div className="order-movements-actions">
+          <button
+            type="button"
+            className="secondary"
+            disabled={!partners.length || !supplierChoices.length}
+            onClick={openForm}
+          >
+            <Plus size={15} /> Nuevo pago a proveedor
+          </button>
+          {!sponsor ? (
+            <button
+              type="button"
+              className="secondary"
+              disabled={!partners.length || due <= 0}
+              title={due <= 0 ? 'El pedido ya está cobrado.' : undefined}
+              onClick={openCharge}
+            >
+              <Plus size={15} /> Nuevo cobro al cliente
+            </button>
+          ) : null}
+        </div>
       </div>
       {!partners.length ? (
         <p className="hint">
-          Agregá un socio en Configuración para registrar quién pagó.
+          Agregá un socio en Configuración para registrar movimientos.
         </p>
-      ) : !supplierChoices.length ? (
-        <p className="hint">
-          Agregá un proveedor para registrar el pago desde este pedido.
-        </p>
-      ) : payments.length ? (
+      ) : null}
+      {(!sponsor && order.paid > 0) || (sponsor && order.cost > 0) || entries.length ? (
         <ul className="order-supplier-payments">
-          {payments.map((entry) => {
+          {!sponsor && order.paid > 0 && !payments.length ? (
+            <li>
+              <div className="order-supplier-payment-top">
+                <b>Cobro al cliente</b>
+                <span>{formatMoney(order.paid, data.currency)}</span>
+              </div>
+              <small>
+                {partnerName(order.paid_partner_id)
+                  ? `Cobró ${partnerName(order.paid_partner_id)}`
+                  : 'Sin socio'}
+              </small>
+            </li>
+          ) : null}
+          {!sponsor
+            ? payments.map((payment) => (
+                <li key={payment.id}>
+                  <div className="order-supplier-payment-top">
+                    <b>Cobro al cliente</b>
+                    <span className="order-payment-amount">
+                      {formatMoney(payment.amount, data.currency)}
+                      {removing === payment.id ? (
+                        <span className="order-payment-confirm">
+                          <button
+                            type="button"
+                            className="ghost danger"
+                            onClick={() => void removePayment(payment.id)}
+                          >
+                            Borrar
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost"
+                            onClick={() => {
+                              setRemoving('');
+                              setRemoveError('');
+                            }}
+                          >
+                            No
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="ghost icon-button"
+                          aria-label="Borrar cobro"
+                          title="Borrar cobro"
+                          onClick={() => setRemoving(payment.id)}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                  <small>
+                    {[
+                      formatDate(payment.date),
+                      partnerName(payment.partner_id)
+                        ? `Cobró ${partnerName(payment.partner_id)}`
+                        : 'Sin socio',
+                      partnerName(payment.created_by) &&
+                      payment.created_by !== payment.partner_id
+                        ? `Registró ${partnerName(payment.created_by)}`
+                        : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </small>
+                </li>
+              ))
+            : null}
+          {sponsor && order.cost > 0 ? (
+            <li>
+              <div className="order-supplier-payment-top">
+                <b>Inversión en sponsoreo</b>
+                <span className="money-neg">
+                  {formatMoney(order.cost, data.currency)}
+                </span>
+              </div>
+              <small>
+                {[
+                  formatDate(order.date),
+                  partnerName(order.created_by)
+                    ? `Registró ${partnerName(order.created_by)}`
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </small>
+            </li>
+          ) : null}
+          {entries.map((entry) => {
             const supplier = data.contacts.find(
               (contact) => contact.id === entry.supplier_id,
-            );
-            const partner = data.partners.find(
-              (row) => row.id === entry.partner_id,
             );
             return (
               <li key={entry.id}>
                 <div className="order-supplier-payment-top">
                   <b>
-                    {[supplier?.name, entry.detail].filter(Boolean).join(' · ') ||
-                      'Pago proveedor'}
+                    {conceptLabel(entry.concept, entry.detail, supplier?.name)}
                   </b>
                   <span className="money-neg">
                     {formatMoney(entry.amount, entry.currency)}
                   </span>
                 </div>
                 <small>
-                  {entry.date}
-                  {partner ? ` · Pagó ${partner.name}` : ''}
+                  {formatDate(entry.date)}
+                  {partnerName(entry.partner_id)
+                    ? ` · Pagó ${partnerName(entry.partner_id)}`
+                    : ''}
                   {entry.currency === 'USD' && entry.amount_ars
                     ? ` · ${formatMoney(entry.amount_ars, 'ARS')} · TC ${formatRate(entry.fx_rate || 0)}`
                     : ''}
@@ -2116,12 +2291,107 @@ function OrderSupplierPayments({
             );
           })}
         </ul>
-      ) : (
-        <p className="hint">
-          Todavía no hay pagos a proveedor vinculados a este pedido. Podés
-          cargarlos acá o desde Estado de cuenta → Movimientos.
+      ) : null}
+      {removeError ? <p className="pending-text">{removeError}</p> : null}
+      {!sponsor && order.paid > 0 ? (
+        <p className="order-payments-summary">
+          {[
+            `Cobrado ${formatMoney(order.paid, data.currency)}`,
+            due > 0
+              ? `Saldo ${formatMoney(due, data.currency)}`
+              : 'Pagado completo',
+            order.cost > 0 && partnerName(order.cost_partner_id)
+              ? `Recupera costo ${partnerName(order.cost_partner_id)}`
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </p>
-      )}
+      ) : null}
+      {(!sponsor && order.paid > 0) ||
+      (sponsor && order.cost > 0) ||
+      entries.length ? null : partners.length ? (
+        <p className="hint">
+          Todavía no hay movimientos vinculados a este pedido. Podés cargarlos
+          acá o desde Estado de cuenta → Movimientos.
+        </p>
+      ) : null}
+      <Dialog
+        open={charge.open}
+        onOpenChange={(next) =>
+          setCharge((prev) => ({ ...prev, open: next, error: '' }))
+        }
+      >
+        <DialogContent className="crm-dialog crm-dialog-movement max-[767px]:top-0 max-[767px]:left-0 max-[767px]:right-0 max-[767px]:bottom-0 max-[767px]:translate-x-0 max-[767px]:translate-y-0 max-[767px]:w-full max-[767px]:max-w-none max-[767px]:h-dvh max-[767px]:max-h-dvh max-[767px]:rounded-none max-[767px]:animate-none">
+          <DialogHeader>
+            <DialogTitle>Cobro al cliente</DialogTitle>
+            <DialogDescription>
+              Se suma a lo cobrado de {order.number}. Cobrado{' '}
+              {formatMoney(order.paid, data.currency)} · saldo{' '}
+              {formatMoney(due, data.currency)}.
+            </DialogDescription>
+          </DialogHeader>
+          <ErrorBox message={charge.error} />
+          <form
+            className="cashout-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submitCharge();
+            }}
+          >
+            <div className="form-grid">
+              <Field label={`Monto · ${data.currency} *`} wide>
+                <input
+                  inputMode="decimal"
+                  required
+                  value={charge.amount}
+                  onChange={(e) =>
+                    setCharge({ ...charge, amount: e.target.value })
+                  }
+                />
+              </Field>
+              <Field label="Socio que recibió el cobro *" wide>
+                <Pick
+                  label="Socio que recibió el cobro"
+                  value={charge.partner_id}
+                  onChange={(value) =>
+                    setCharge({ ...charge, partner_id: value })
+                  }
+                  options={partners.map((partner) => ({
+                    value: partner.id,
+                    label: partner.name,
+                  }))}
+                />
+              </Field>
+              {order.cost > 0 ? (
+                <Field label="Quién recupera el costo del proveedor *" wide>
+                  <Pick
+                    label="Quién recupera el costo del proveedor"
+                    value={charge.cost_partner_id}
+                    onChange={(value) =>
+                      setCharge({ ...charge, cost_partner_id: value })
+                    }
+                    options={partners.map((partner) => ({
+                      value: partner.id,
+                      label: partner.name,
+                    }))}
+                  />
+                </Field>
+              ) : null}
+              <Field label="Fecha *" wide>
+                <DateCalendar
+                  label="Fecha"
+                  value={charge.date}
+                  onChange={(value) => setCharge({ ...charge, date: value })}
+                />
+              </Field>
+            </div>
+            <button className="primary" disabled={charge.busy}>
+              {charge.busy ? 'Guardando…' : 'Cargar cobro'}
+            </button>
+          </form>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={open}
         onOpenChange={(next) => {

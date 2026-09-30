@@ -783,7 +783,7 @@ const QUOTE_COPY = {
 function quoteDateLabel(iso: string, lang: QuoteLang) {
   const [year, month, day] = iso.split('-');
   if (!year || !month || !day) return iso || (lang === 'en' ? 'No date' : 'Sin fecha');
-  return lang === 'en' ? `${month}/${day}/${year}` : `${day}/${month}/${year}`;
+  return lang === 'en' ? `${month}/${day}/${year}` : `${day}-${month}-${year}`;
 }
 
 function quoteGrandTotal(quote: CotizacionData, options: CotizacionOptions) {

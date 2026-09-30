@@ -257,10 +257,6 @@ h3 {
   font-size: 16px;
   font-weight: 600;
 }
-.page-title p:last-child {
-  color: #667973;
-  margin-top: 9px;
-}
 .primary {
   display: inline-flex;
   align-items: center;
@@ -1855,6 +1851,41 @@ button.dialog-kicker:hover {
 .section-heading h3 {
   margin: 0;
 }
+.order-movements-heading {
+  flex-wrap: wrap;
+}
+.order-movements-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.order-payment-amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.order-payment-amount .icon-button {
+  padding: 2px 4px;
+  min-height: 0;
+  color: #8a9a90;
+}
+.order-payment-confirm {
+  display: inline-flex;
+  gap: 4px;
+}
+.order-payment-confirm button {
+  padding: 2px 8px;
+  min-height: 0;
+  font-size: 13px;
+}
+.order-payment-confirm .danger {
+  color: #ad3333;
+}
+.order-payments-summary {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: #5e7268;
+}
 .order-supplier-payments {
   list-style: none;
   margin: 0;
@@ -2768,9 +2799,6 @@ fieldset:disabled textarea {
   .seg button {
     min-height: 44px;
   }
-  .page-title p:last-child {
-    font-size: 14px;
-  }
   .primary {
     font-size: 14px;
     padding: 11px 14px;
@@ -2889,8 +2917,7 @@ fieldset:disabled textarea {
     margin-bottom: 18px;
     gap: 12px;
   }
-  .page-title .eyebrow,
-  .page-title p:last-child {
+  .page-title .eyebrow {
     display: none;
   }
   h1 {
@@ -3963,26 +3990,34 @@ button.order-stock-pick strong,
   align-items: center;
   justify-content: center;
 }
-.nav-alert-dot {
-  position: absolute;
-  top: -2px;
-  right: -3px;
-  width: 8px;
-  height: 8px;
+.nav-count {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
   border-radius: 999px;
   background: #e11d48;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.nav-count-icon {
+  position: absolute;
+  top: -7px;
+  right: -12px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 17px;
+  margin-left: 0;
   box-shadow: 0 0 0 2px #000;
 }
-[data-slot='sidebar-menu-button'] .nav-alert-dot {
-  box-shadow: 0 0 0 2px #f4f7f1;
-}
-[data-slot='sidebar-menu-button'][data-active='true'] .nav-alert-dot {
-  box-shadow: 0 0 0 2px #dcef80;
-}
-.mobile-tab .nav-alert-dot {
-  box-shadow: 0 0 0 2px #000;
-}
-.mobile-tab.active .nav-alert-dot {
+.mobile-tab.active .nav-count-icon {
   box-shadow: 0 0 0 2px #dcef80;
 }
 .toolbar-filters {

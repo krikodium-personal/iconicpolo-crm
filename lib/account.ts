@@ -2,6 +2,7 @@ import type {
   AccountEntry,
   AccountExpense,
   Order,
+  OrderPayment,
   Partner,
   PartnerCashout,
 } from './types';
@@ -404,21 +405,35 @@ export function accountLedger(
   supplierNames: Map<string, string> = new Map(),
   orders: Order[] = [],
   customerNames: Map<string, string> = new Map(),
+  payments: OrderPayment[] = [],
 ): LedgerEntry[] {
   const names = new Map(partners.map((partner) => [partner.id, partner.name]));
   const orderNumbers = new Map(orders.map((order) => [order.id, order.number]));
-  const cobros = collectedOrders(orders).map((order) => {
-    const customer = customerNames.get(order.customer_id) || 'Sin cliente';
-    return {
-      date: order.date,
+  const cobros = collectedOrders(orders).flatMap((order) => {
+    const base = {
       label: `Cobro · ${order.number}`,
       kind: 'cobro' as const,
-      amount: order.paid,
       currency: order.currency || boardCurrency,
-      partner: names.get(order.paid_partner_id) || undefined,
-      notes: customer,
+      notes: customerNames.get(order.customer_id) || 'Sin cliente',
       order_id: order.id,
     };
+    const rows = payments.filter((payment) => payment.order_id === order.id);
+    if (!rows.length)
+      return [
+        {
+          ...base,
+          date: order.date,
+          amount: order.paid,
+          partner: names.get(order.paid_partner_id) || undefined,
+        },
+      ];
+    return rows.map((payment) => ({
+      ...base,
+      date: payment.date,
+      amount: payment.amount,
+      partner: names.get(payment.partner_id) || undefined,
+      actor: names.get(payment.created_by || '') || undefined,
+    }));
   });
   const sponsors = sponsoredOrders(orders)
     .filter((order) => order.cost > 0)

@@ -100,7 +100,7 @@ function formatDate(value: string) {
   if (!value) return 'Sin definir';
   const [year, month, day] = value.split('-');
   if (!year || !month || !day) return value;
-  return `${day}/${month}/${year}`;
+  return `${day}-${month}-${year}`;
 }
 
 /** "Rodrigo Mendoza" → "Rodrigo M." (solo en ficha técnica). */

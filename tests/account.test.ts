@@ -141,6 +141,49 @@ test('sponsorship orders count as marketing and debit the account', () => {
   assert.equal(ledger.at(-1)?.balance, 70_000);
 });
 
+test('ledger lists each customer payment with its own date and partner', () => {
+  const paidOrder = order('o1', '2026-01-05', 100_000, 40_000);
+  const ledger = accountLedger(
+    [],
+    [],
+    partners,
+    [],
+    'USD',
+    new Map(),
+    [paidOrder],
+    new Map(),
+    [
+      {
+        id: 'p1',
+        order_id: 'o1',
+        amount: 60_000,
+        partner_id: 'ivan',
+        date: '2026-01-05',
+        created_at: '',
+      },
+      {
+        id: 'p2',
+        order_id: 'o1',
+        amount: 40_000,
+        partner_id: 'pablo',
+        date: '2026-01-20',
+        created_at: '',
+        created_by: 'ivan',
+      },
+    ],
+  );
+  const cobros = ledger.filter((entry) => entry.kind === 'cobro');
+  assert.deepEqual(
+    cobros.map((entry) => [entry.date, entry.amount, entry.partner]),
+    [
+      ['2026-01-05', 60_000, 'Ivan'],
+      ['2026-01-20', 40_000, 'Pablo'],
+    ],
+  );
+  assert.equal(cobros[1]?.actor, 'Ivan');
+  assert.equal(ledger.at(-1)?.balance, 100_000);
+});
+
 test('ledger credits order cobros and debits partner cashouts', () => {
   const paidOrder = order('o1', '2026-01-05', 100_000, 40_000);
   const results = monthlyResults([paidOrder], []);

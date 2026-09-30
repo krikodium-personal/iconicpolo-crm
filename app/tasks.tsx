@@ -33,25 +33,20 @@ import {
   taskUrgency,
   type TaskKind,
 } from '@/lib/tasks';
-import { todayInBuenosAires, type Data, type Task } from '@/lib/types';
+import {
+  formatDate,
+  formatDateTime,
+  todayInBuenosAires,
+  type Data,
+  type Task,
+} from '@/lib/types';
 import type { Save } from './forms';
 
 const today = () => todayInBuenosAires();
 
 function formatCreated(iso: string) {
   if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleString('es-AR', {
-      timeZone: 'America/Argentina/Buenos_Aires',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return iso.slice(0, 10);
-  }
+  return formatDateTime(iso);
 }
 
 function urgencyLabel(urgency: ReturnType<typeof taskUrgency>) {
@@ -288,7 +283,7 @@ export function TasksBoard({ data, save }: { data: Data; save: Save }) {
                 <dl className="task-meta">
                   <div>
                     <dt>Vence</dt>
-                    <dd>{task.due_date}</dd>
+                    <dd>{formatDate(task.due_date)}</dd>
                   </div>
                   <div>
                     <dt>Responsable</dt>

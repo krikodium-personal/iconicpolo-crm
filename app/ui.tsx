@@ -20,7 +20,7 @@ import { Camera, Package, Upload, X } from 'lucide-react';
 import { DayPicker } from 'react-day-picker';
 import { es } from 'react-day-picker/locale';
 import 'react-day-picker/style.css';
-import type { Order, Partner } from '@/lib/types';
+import { formatDate, type Order, type Partner } from '@/lib/types';
 import { decimal, parseDecimal } from '@/lib/money';
 function selectFieldInput(e: { target: EventTarget }) {
   const input = e.target;
@@ -492,10 +492,7 @@ export function OrderPayMenu({
   );
 }
 function cardDate(value: string) {
-  if (!value) return '';
-  const [year, month, day] = value.split('-');
-  if (!year || !month || !day) return value;
-  return `${day}/${month}/${year}`;
+  return value ? formatDate(value) : '';
 }
 export function OrderDeliveryMenu({
   delivery,

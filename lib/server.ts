@@ -13,6 +13,8 @@ import {
   orderIsDelivered,
   orderIsLocked,
   orderIsQuote,
+  todayInBuenosAires,
+  type OrderPayment,
   type Product,
   type Item,
   type Order,
@@ -256,6 +258,12 @@ export async function ensureAccountTables() {
     d.prepare(
       'CREATE INDEX IF NOT EXISTS idx_account_entries_date ON account_entries (date)',
     ),
+    d.prepare(
+      "CREATE TABLE IF NOT EXISTS order_payments (id text PRIMARY KEY NOT NULL, order_id text NOT NULL, amount integer NOT NULL, partner_id text NOT NULL DEFAULT '', date text NOT NULL, created_at text NOT NULL, created_by text NOT NULL DEFAULT '')",
+    ),
+    d.prepare(
+      'CREATE INDEX IF NOT EXISTS idx_order_payments_order ON order_payments (order_id, date)',
+    ),
   ]);
   const partnerCols = await stmt('PRAGMA table_info(partners)').all();
   const partnerNames = new Set(
@@ -302,6 +310,9 @@ export async function ensureAccountTables() {
   ].filter(Boolean);
   if (orderAlters.length)
     await d.batch(orderAlters as ReturnType<typeof stmt>[]);
+  await stmt(
+    "INSERT INTO order_payments(id,order_id,amount,partner_id,date,created_at,created_by) SELECT lower(hex(randomblob(16))),o.id,o.paid-COALESCE((SELECT SUM(p.amount) FROM order_payments p WHERE p.order_id=o.id),0),o.paid_partner_id,o.date,strftime('%Y-%m-%dT%H:%M:%fZ','now'),'' FROM orders o WHERE o.paid>COALESCE((SELECT SUM(p.amount) FROM order_payments p WHERE p.order_id=o.id),0)",
+  ).run();
   const entryNames = await columnNames('account_entries');
   const entryAlters = [
     await addColumn(
@@ -828,12 +839,84 @@ async function orderWarehouseMoves(
   return statements;
 }
 
+/** Adjusts an order's payments so they add up to `target`: adds the difference or trims the newest ones. */
+async function paymentSync(
+  orderId: string,
+  target: number,
+  partnerId: string,
+  actor: { id: string },
+) {
+  const rows = (
+    await stmt(
+      'SELECT * FROM order_payments WHERE order_id=? ORDER BY date DESC, created_at DESC',
+      orderId,
+    ).all<OrderPayment>()
+  ).results;
+  let sum = rows.reduce((total, row) => total + Number(row.amount), 0);
+  const statements: D1PreparedStatement[] = [];
+  if (target > sum) {
+    statements.push(
+      stmt(
+        'INSERT INTO order_payments(id,order_id,amount,partner_id,date,created_at,created_by) VALUES(?,?,?,?,?,?,?)',
+        crypto.randomUUID(),
+        orderId,
+        target - sum,
+        partnerId,
+        todayInBuenosAires(),
+        new Date().toISOString(),
+        actor.id,
+      ),
+    );
+    return statements;
+  }
+  for (const row of rows) {
+    if (sum <= target) break;
+    const amount = Number(row.amount);
+    if (sum - amount >= target) {
+      statements.push(stmt('DELETE FROM order_payments WHERE id=?', row.id));
+      sum -= amount;
+    } else {
+      statements.push(
+        stmt(
+          'UPDATE order_payments SET amount=? WHERE id=?',
+          amount - (sum - target),
+          row.id,
+        ),
+      );
+      sum = target;
+    }
+  }
+  return statements;
+}
+
+async function latestPaymentPartner(orderId: string, excludeId = '') {
+  const row = await stmt(
+    'SELECT partner_id FROM order_payments WHERE order_id=? AND id<>? ORDER BY date DESC, created_at DESC LIMIT 1',
+    orderId,
+    excludeId,
+  ).first<{ partner_id: string }>();
+  return row?.partner_id || '';
+}
+
 export async function allData() {
   await ensureAccountTables();
   await ensureConfiguredCatalog();
   const d = db();
-  const [c, p, o, i, m, cat, s, partners, expenses, cashouts, entries, tasks] =
-    await d.batch([
+  const [
+    c,
+    p,
+    o,
+    i,
+    m,
+    cat,
+    s,
+    partners,
+    expenses,
+    cashouts,
+    entries,
+    tasks,
+    payments,
+  ] = await d.batch([
     d.prepare('SELECT * FROM contacts ORDER BY name'),
     d.prepare(
       'SELECT p.*,COALESCE((SELECT SUM(quantity) FROM stock_movements m WHERE m.product_id=p.id),0) stock FROM products p ORDER BY name',
@@ -856,6 +939,7 @@ export async function allData() {
     d.prepare(
       'SELECT * FROM tasks ORDER BY done ASC, due_date ASC, created_at DESC',
     ),
+    d.prepare('SELECT * FROM order_payments ORDER BY date ASC, created_at ASC'),
   ]);
   const items = i.results.map((r) => decode<Item>(r, ['selections']));
   return {
@@ -941,6 +1025,12 @@ export async function allData() {
       receipt: typeof row.receipt === 'string' ? row.receipt : '',
       fx_rate: Number(row.fx_rate) || 0,
       amount_ars: Number(row.amount_ars) || 0,
+    })),
+    payments: (payments.results as OrderPayment[]).map((row) => ({
+      ...row,
+      amount: Number(row.amount) || 0,
+      partner_id: typeof row.partner_id === 'string' ? row.partner_id : '',
+      created_by: typeof row.created_by === 'string' ? row.created_by : '',
     })),
     tasks: (tasks.results as Task[]).map((row) => ({
       ...row,
@@ -1611,6 +1701,7 @@ export async function saveOrder(
       );
     }
   }
+  statements.push(...(await paymentSync(id, paid, paidPartnerId, actor)));
   await d.batch(statements);
   return { id, number };
 }
@@ -1737,15 +1828,18 @@ export async function patchOrder(
       : typeof existing.cost_partner_id === 'string'
         ? existing.cost_partner_id
         : '';
-  const result = await stmt(
-    'UPDATE orders SET paid=?,paid_partner_id=?,cost_partner_id=?,version=? WHERE id=?',
-    paid,
-    paidPartnerId,
-    costPartnerId,
-    version,
-    id,
-  ).run();
-  if (!result.meta.changes) throw new Error('Pedido no disponible.');
+  const [result] = await db().batch([
+    stmt(
+      'UPDATE orders SET paid=?,paid_partner_id=?,cost_partner_id=?,version=? WHERE id=?',
+      paid,
+      paidPartnerId,
+      costPartnerId,
+      version,
+      id,
+    ),
+    ...(await paymentSync(id, paid, paidPartnerId, actor)),
+  ]);
+  if (!result?.meta.changes) throw new Error('Pedido no disponible.');
   return { ok: true };
 }
 const keptAttributes = new Set([
@@ -2276,6 +2370,88 @@ export async function mutate(
         new Date().toISOString(),
         actor.id,
       ).run();
+      return { ok: true };
+    }
+    case 'order_payment': {
+      await ensureAccountTables();
+      const orderId = str(b.order_id, 'Pedido', true);
+      const order = await stmt(
+        'SELECT * FROM orders WHERE id=? AND archived=0 AND deleted=0',
+        orderId,
+      ).first<Order>();
+      if (!order) throw new Error('Pedido no disponible.');
+      if (order.kind === 'sponsoreo')
+        throw new Error('Los pedidos de sponsoreo no se cobran.');
+      if (orderIsQuote(order.status))
+        throw new Error('Las cotizaciones no se cobran.');
+      const amount = integer(b.amount, 'Monto');
+      if (!amount) throw new Error('Monto: debe ser mayor a cero.');
+      const paid = Number(order.paid) + amount;
+      if (paid > Number(order.total))
+        throw new Error('El cobro no puede superar el saldo del pedido.');
+      const partnerId = str(b.partner_id, 'Socio que recibió el cobro', true);
+      if (
+        !(await stmt(
+          'SELECT id FROM partners WHERE id=? AND archived=0',
+          partnerId,
+        ).first())
+      )
+        throw new Error('Elegí un socio activo que recibió el cobro.');
+      const costPartnerId =
+        Number(order.cost) > 0
+          ? await requireCostPartner(
+              b.cost_partner_id ?? order.cost_partner_id,
+              Number(order.cost),
+            )
+          : order.cost_partner_id || '';
+      const [update] = await db().batch([
+        stmt(
+          'UPDATE orders SET paid=?,paid_partner_id=?,cost_partner_id=?,version=version+1 WHERE id=? AND paid=?',
+          paid,
+          partnerId,
+          costPartnerId,
+          orderId,
+          Number(order.paid),
+        ),
+        stmt(
+          'INSERT INTO order_payments(id,order_id,amount,partner_id,date,created_at,created_by) SELECT ?,?,?,?,?,?,? WHERE changes()>0',
+          crypto.randomUUID(),
+          orderId,
+          amount,
+          partnerId,
+          date(b.date, true),
+          new Date().toISOString(),
+          actor.id,
+        ),
+      ]);
+      if (!update?.meta.changes)
+        throw new Error('El pedido cambió. Actualizá y probá de nuevo.');
+      return { ok: true };
+    }
+    case 'order_payment_delete': {
+      await ensureAccountTables();
+      const id = str(b.id, 'Cobro', true);
+      const payment = await stmt(
+        'SELECT * FROM order_payments WHERE id=?',
+        id,
+      ).first<OrderPayment>();
+      if (!payment) throw new Error('Cobro no disponible.');
+      const order = await stmt(
+        'SELECT * FROM orders WHERE id=? AND deleted=0',
+        payment.order_id,
+      ).first<Order>();
+      if (!order) throw new Error('Pedido no disponible.');
+      const amount = Number(payment.amount);
+      const [update] = await db().batch([
+        stmt(
+          'UPDATE orders SET paid=MAX(0,paid-?),paid_partner_id=?,version=version+1 WHERE id=?',
+          amount,
+          await latestPaymentPartner(order.id, id),
+          order.id,
+        ),
+        stmt('DELETE FROM order_payments WHERE id=?', id),
+      ]);
+      if (!update?.meta.changes) throw new Error('Pedido no disponible.');
       return { ok: true };
     }
     case 'account_entry': {

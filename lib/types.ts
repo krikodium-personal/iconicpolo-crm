@@ -186,6 +186,16 @@ export type AccountEntry = {
   created_at: string;
   created_by?: string;
 };
+/** Cobro al cliente; `orders.paid` es la suma de los cobros del pedido. */
+export type OrderPayment = {
+  id: string;
+  order_id: string;
+  amount: number;
+  partner_id: string;
+  date: string;
+  created_at: string;
+  created_by?: string;
+};
 export type PartnerCashout = {
   id: string;
   partner_id: string;
@@ -219,6 +229,7 @@ export type Data = {
   expenses: AccountExpense[];
   cashouts: PartnerCashout[];
   entries: AccountEntry[];
+  payments?: OrderPayment[];
   tasks: Task[];
   currency: string;
 };
@@ -236,6 +247,26 @@ export function orderIsQuote(status: string) {
 }
 export function orderIsDelivered(status: string) {
   return status === 'entregado';
+}
+/** `YYYY-MM-DD` (o ISO con hora) → `DD-MM-AAAA`. */
+export function formatDate(value: string) {
+  const [year, month, day] = (value || '').slice(0, 10).split('-');
+  if (!year || !month || !day) return value;
+  return `${day}-${month}-${year}`;
+}
+/** Timestamp ISO → `DD-MM-AAAA HH:mm` en hora de Buenos Aires. */
+export function formatDateTime(iso: string) {
+  const when = new Date(iso);
+  if (!iso || Number.isNaN(when.getTime())) return formatDate(iso);
+  const timeZone = 'America/Argentina/Buenos_Aires';
+  const day = when.toLocaleDateString('en-CA', { timeZone });
+  const time = when.toLocaleTimeString('es-AR', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  return `${formatDate(day)} ${time}`;
 }
 export function todayInBuenosAires() {
   return new Date().toLocaleDateString('en-CA', {
