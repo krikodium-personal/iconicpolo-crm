@@ -640,7 +640,8 @@ export function AccountBoard({
           <h2>Situación financiera</h2>
         </div>
         <p className="hint">
-          Inversión = costos de stock pagados + movimientos. En cada venta, un
+          Inversión = movimientos pagados por cada socio (cada ingreso de stock
+          pagado genera su movimiento). En cada venta, un
           socio recupera el costo del proveedor; la ganancia se reparte según el
           %. Ejemplo: costo 200, venta 300 → quien recupera cobra 250 y el otro
           50.

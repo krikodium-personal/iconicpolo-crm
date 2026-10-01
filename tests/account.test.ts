@@ -489,6 +489,13 @@ test('special unit cost overrides the list cost for stock investment', () => {
   assert.equal(invested(), 40_000);
   assert.equal(invested(0), 40_000);
   assert.equal(invested(15_000), 30_000);
+  const linked = financialSituation(0, [ivan], [], [], [
+    { id: 'carga', product_id: 'casco', quantity: 2, cost_paid: 1, paid_partner_id: 'ivan' },
+  ], products, [{
+    id: 'pago', concept: 'pago_proveedor', detail: 'Casco · 2 uds.', partner_id: 'ivan',
+    stock_movement_id: 'carga', amount: 40_000, currency: 'USD', date: '2026-03-01', created_at: '',
+  }], 'USD')[0]?.investment;
+  assert.equal(linked, 40_000);
   assert.deepEqual(stockUnitCost({ category: 'Cascos', cost: 20_000 }, {}, 15_000), {
     cost: 15_000,
     pending: false,

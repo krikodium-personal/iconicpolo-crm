@@ -15,6 +15,7 @@ import {
   orderIsDelivered,
   orderIsLocked,
   orderIsQuote,
+  quantityLabel,
   todayInBuenosAires,
   type OrderPayment,
   type Product,
@@ -187,6 +188,57 @@ function specialUnitCost(b: Record<string, unknown>, inbound: boolean) {
   if (!cost) throw new Error('Precio costo: ingresá el costo especial.');
   return cost;
 }
+/** Replaces the supplier payment entry tied to an inbound stock load. */
+async function stockPaymentEntry(load: {
+  movementId: string;
+  product: Product;
+  quantity: number;
+  unitCost: number;
+  paidPartnerId: string;
+  supplierId: string;
+  createdBy: string;
+  createdAt: string;
+}) {
+  const statements = [
+    stmt(
+      'DELETE FROM account_entries WHERE stock_movement_id=?',
+      load.movementId,
+    ),
+  ];
+  const amount =
+    load.quantity * (load.unitCost || Number(load.product.cost) || 0);
+  if (!load.paidPartnerId || load.quantity <= 0 || amount <= 0)
+    return statements;
+  const settings = await stmt(
+    'SELECT currency FROM settings WHERE id=1',
+  ).first<{ currency: string }>();
+  const currency = settings?.currency === 'ARS' ? 'ARS' : 'USD';
+  const unit = isProductUnit(load.product.unit) ? load.product.unit : 'unidad';
+  statements.push(
+    stmt(
+      'INSERT INTO account_entries(id,concept,detail,partner_id,supplier_id,order_id,stock_movement_id,receipt,amount,currency,fx_rate,amount_ars,amount_usd,date,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      crypto.randomUUID(),
+      'pago_proveedor',
+      `${load.product.name} · ${quantityLabel(load.quantity, unit)}`.slice(0, 160),
+      load.paidPartnerId,
+      load.supplierId,
+      '',
+      load.movementId,
+      '',
+      amount,
+      currency,
+      0,
+      currency === 'ARS' ? amount : 0,
+      currency === 'USD' ? amount : 0,
+      new Date(load.createdAt).toLocaleDateString('en-CA', {
+        timeZone: 'America/Argentina/Buenos_Aires',
+      }),
+      new Date().toISOString(),
+      load.createdBy,
+    ),
+  );
+  return statements;
+}
 /** Optional supplier: empty string allowed. */
 async function optionalSupplier(id: unknown, keep?: string) {
   const supplier = str(id ?? '', 'Proveedor');
@@ -352,6 +404,12 @@ export async function ensureAccountTables() {
       entryNames,
       'order_id',
       "order_id text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'account_entries',
+      entryNames,
+      'stock_movement_id',
+      "stock_movement_id text NOT NULL DEFAULT ''",
     ),
   ].filter(Boolean);
   if (entryAlters.length)
@@ -1044,6 +1102,8 @@ export async function allData() {
       ...row,
       supplier_id: typeof row.supplier_id === 'string' ? row.supplier_id : '',
       order_id: typeof row.order_id === 'string' ? row.order_id : '',
+      stock_movement_id:
+        typeof row.stock_movement_id === 'string' ? row.stock_movement_id : '',
       receipt: typeof row.receipt === 'string' ? row.receipt : '',
       fx_rate: Number(row.fx_rate) || 0,
       amount_ars: Number(row.amount_ars) || 0,
@@ -2061,25 +2121,44 @@ export async function mutate(
             `No hay suficiente stock en ${stockPlaceLabel(location)}.`,
           );
       }
-      await stmt(
-        'INSERT INTO stock_movements (id,product_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos,created_by,cost_paid,paid_partner_id,unit_cost) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-        crypto.randomUUID(),
-        id,
-        q,
-        typeof b.reason === 'string' ? str(b.reason, 'Motivo', false, 500) : '',
-        new Date().toISOString(),
-        configJson,
-        key,
-        location,
-        supplier,
-        JSON.stringify(photos(b.photos)),
-        actor.id,
-        payment.costPaid,
-        payment.paidPartnerId,
-        specialUnitCost(b, q > 0),
-      ).run();
+      const movementId = crypto.randomUUID();
+      const createdAt = new Date().toISOString();
+      const unitCost = specialUnitCost(b, q > 0);
+      if (payment.costPaid) await ensureAccountTables();
+      const entry = payment.costPaid
+        ? await stockPaymentEntry({
+            movementId,
+            product,
+            quantity: q,
+            unitCost,
+            paidPartnerId: payment.paidPartnerId,
+            supplierId: supplier,
+            createdBy: actor.id,
+            createdAt,
+          })
+        : [];
       const sync = await syncProductSupplier(id, supplier);
-      if (sync) await sync.run();
+      await db().batch([
+        stmt(
+          'INSERT INTO stock_movements (id,product_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos,created_by,cost_paid,paid_partner_id,unit_cost) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          movementId,
+          id,
+          q,
+          typeof b.reason === 'string' ? str(b.reason, 'Motivo', false, 500) : '',
+          createdAt,
+          configJson,
+          key,
+          location,
+          supplier,
+          JSON.stringify(photos(b.photos)),
+          actor.id,
+          payment.costPaid,
+          payment.paidPartnerId,
+          unitCost,
+        ),
+        ...entry,
+        ...(sync ? [sync] : []),
+      ]);
       return { ok: true };
     }
     case 'stock_update': {
@@ -2152,9 +2231,22 @@ export async function mutate(
             `No hay suficiente stock en ${stockPlaceLabel(location)}.`,
           );
       }
+      const unitCost = specialUnitCost(b, q > 0);
+      await ensureAccountTables();
+      const entry = await stockPaymentEntry({
+        movementId,
+        product,
+        quantity: q,
+        unitCost,
+        paidPartnerId: payment.costPaid ? payment.paidPartnerId : '',
+        supplierId: supplier,
+        createdBy: typeof current.created_by === 'string' ? current.created_by : actor.id,
+        createdAt: typeof current.created_at === 'string' ? current.created_at : new Date().toISOString(),
+      });
       const d = db();
       const sync = await syncProductSupplier(id, supplier);
       await d.batch([
+        ...entry,
         stmt('DROP TRIGGER IF EXISTS stock_immutable_update'),
         stmt(
           'UPDATE stock_movements SET quantity=?,reason=?,config=?,config_key=?,location=?,supplier_id=?,photos=?,cost_paid=?,paid_partner_id=?,unit_cost=? WHERE id=?',
@@ -2167,7 +2259,7 @@ export async function mutate(
           JSON.stringify(photos(b.photos)),
           payment.costPaid,
           payment.paidPartnerId,
-          specialUnitCost(b, q > 0),
+          unitCost,
           movementId,
         ),
         ...(sync ? [sync] : []),
@@ -2761,6 +2853,10 @@ export async function mutate(
         ),
         stmt(
           "CREATE TRIGGER stock_immutable_delete BEFORE DELETE ON stock_movements BEGIN SELECT RAISE(ABORT,'STOCK_IMMUTABLE'); END",
+        ),
+        stmt(
+          'DELETE FROM account_entries WHERE stock_movement_id=?',
+          movement.id,
         ),
       ]);
       if (!r[1]?.meta.changes)

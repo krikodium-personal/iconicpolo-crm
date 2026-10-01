@@ -4805,6 +4805,12 @@ export function StockForm({
                 })),
               ]}
             />
+            {paidPartner ? (
+              <small className="hint">
+                Se registra un movimiento de pago a proveedor por el costo, a
+                nombre de quien pagó.
+              </small>
+            ) : null}
           </Field>
         ) : null}
         {inbound ? (

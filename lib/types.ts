@@ -248,6 +248,8 @@ export type AccountEntry = {
   partner_id: string;
   supplier_id?: string;
   order_id?: string;
+  /** Ingreso de stock que originó este pago a proveedor. */
+  stock_movement_id?: string;
   receipt?: string;
   amount: number;
   currency: 'ARS' | 'USD';

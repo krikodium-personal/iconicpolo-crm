@@ -506,7 +506,11 @@ export function accountLedger(
         currency: entry.currency,
         partner: names.get(entry.partner_id),
         actor: names.get(entry.created_by || '') || undefined,
-        notes: orderNumber ? `Pedido ${orderNumber}` : '',
+        notes: orderNumber
+          ? `Pedido ${orderNumber}`
+          : entry.stock_movement_id
+            ? 'Ingreso de stock'
+            : '',
         receipt: entry.receipt || '',
         fx_rate: entry.fx_rate || 0,
         amount_ars: entry.amount_ars || 0,
@@ -599,7 +603,8 @@ export function orderCostRecovered(order: Order) {
 
 /**
  * Situación financiera por socio:
- * - Inversión = costos de stock que pagó + movimientos de cuenta que pagó
+ * - Inversión = movimientos de cuenta que pagó (los ingresos de stock pagados
+ *   generan su propio movimiento) + stock pagado viejo sin movimiento vinculado
  * - Recuperado = costos de ventas pagadas por completo asignados a ese socio
  * - Ganancia = % sobre la ganancia del negocio (igual que caja de socios)
  */
@@ -609,6 +614,7 @@ export function financialSituation(
   cashouts: PartnerCashout[],
   orders: Order[],
   movements: {
+    id?: string;
     product_id: string;
     quantity: number;
     cost_paid?: number;
@@ -622,12 +628,16 @@ export function financialSituation(
   const productCost = new Map(products.map((p) => [p.id, p.cost]));
   const investment = new Map<string, number>();
   const recovered = new Map<string, number>();
+  const linkedLoads = new Set(
+    entries.map((entry) => entry.stock_movement_id).filter(Boolean),
+  );
   function add(map: Map<string, number>, id: string, amount: number) {
     if (!id || !amount) return;
     map.set(id, (map.get(id) || 0) + amount);
   }
   for (const movement of movements) {
     if (
+      (movement.id && linkedLoads.has(movement.id)) ||
       movement.quantity <= 0 ||
       !movement.cost_paid ||
       !movement.paid_partner_id
