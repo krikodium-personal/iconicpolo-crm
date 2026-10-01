@@ -27,6 +27,21 @@ export type Option = {
   cost: number;
   photo: string;
 };
+export type ProductUnit = 'unidad' | 'par';
+export const PRODUCT_UNITS: { id: ProductUnit; label: string }[] = [
+  { id: 'unidad', label: 'Unidad' },
+  { id: 'par', label: 'Par' },
+];
+/** `3 uds.` / `1 par` / `3 pares` según cómo se cuenta el producto. */
+export function quantityLabel(quantity: number, unit?: ProductUnit) {
+  if (unit === 'par') return quantity === 1 ? '1 par' : `${quantity} pares`;
+  return quantity === 1 ? '1 ud.' : `${quantity} uds.`;
+}
+/** `unidades` / `pares`. */
+export function unitWord(unit?: ProductUnit, quantity = 2) {
+  if (unit === 'par') return quantity === 1 ? 'par' : 'pares';
+  return quantity === 1 ? 'unidad' : 'unidades';
+}
 export type Product = {
   id: string;
   name: string;
@@ -44,6 +59,7 @@ export type Product = {
   attributes: Record<string, string>;
   pricing: ConfiguredPricing;
   kind: 'sku' | 'configured';
+  unit?: ProductUnit;
   stock: number;
   archived: number;
   version: number;

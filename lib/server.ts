@@ -462,6 +462,12 @@ export async function ensureActorColumns() {
       "archived_by text NOT NULL DEFAULT ''",
     ),
     await addColumn(
+      'products',
+      productNames,
+      'unit',
+      "unit text NOT NULL DEFAULT 'unidad'",
+    ),
+    await addColumn(
       'stock_movements',
       movementNames,
       'created_by',
@@ -960,6 +966,7 @@ export async function allData() {
       return {
         ...product,
         kind: product.kind === 'configured' ? 'configured' : 'sku',
+        unit: product.unit === 'par' ? 'par' : 'unidad',
         pricing: parsePricing(product.pricing),
       };
     }),
@@ -1199,6 +1206,8 @@ export async function product(
   const pricingJson = JSON.stringify(
     kind === 'configured' ? parsePricing(b.pricing) : {},
   );
+  const unit =
+    b.unit === undefined ? null : choice(b.unit, ['unidad', 'par'], 'Unidad');
   const values = [
     str(b.name, 'Nombre', true, 150),
     str(b.sku, 'SKU', true, 80).toUpperCase(),
@@ -1218,8 +1227,9 @@ export async function product(
   ];
   if (b.id) {
     const result = await stmt(
-      'UPDATE products SET name=?,sku=?,category=?,supplier_id=?,cost=?,price=?,ff_discount=?,ff_price=?,promo_kind=?,promo_value=?,photos=?,options=?,attributes=?,pricing=?,kind=?,version=? WHERE id=? AND archived=0',
+      'UPDATE products SET name=?,sku=?,category=?,supplier_id=?,cost=?,price=?,ff_discount=?,ff_price=?,promo_kind=?,promo_value=?,photos=?,options=?,attributes=?,pricing=?,kind=?,unit=COALESCE(?,unit),version=? WHERE id=? AND archived=0',
       ...values,
+      unit,
       integer(b.version, 'Versión') + 1,
       id,
     ).run();
@@ -1227,8 +1237,9 @@ export async function product(
   } else {
     if (!actor?.id) throw new Error('Tenés que ingresar.');
     await stmt(
-      'INSERT INTO products(name,sku,category,supplier_id,cost,price,ff_discount,ff_price,promo_kind,promo_value,photos,options,attributes,pricing,kind,id,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO products(name,sku,category,supplier_id,cost,price,ff_discount,ff_price,promo_kind,promo_value,photos,options,attributes,pricing,kind,unit,id,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       ...values,
+      unit || 'unidad',
       id,
       actor.id,
     ).run();

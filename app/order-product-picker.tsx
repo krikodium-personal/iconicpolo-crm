@@ -19,7 +19,12 @@ import {
   type CabezadaConfig,
 } from '@/lib/cabezada';
 import { formatMoney, friendsPrice } from '@/lib/money';
-import type { Data, Product } from '@/lib/types';
+import {
+  quantityLabel,
+  unitWord,
+  type Data,
+  type Product,
+} from '@/lib/types';
 import { TypeCards } from './type-config';
 import { ProductPhoto } from './ui';
 
@@ -90,8 +95,9 @@ function OrderStockPicker({
         </div>
       </div>
       <p className="hint">
-        Elegí unidades disponibles. Las asignadas a un pedido abierto o cerrado
-        quedan reservadas; solo se puede tomar el remanente sin asignar.
+        Elegí {unitWord(product.unit)} disponibles. Las asignadas a un pedido
+        abierto o cerrado quedan reservadas; solo se puede tomar el remanente
+        sin asignar.
       </p>
       {rows.length ? (
         <div className="order-stock-list">
@@ -114,10 +120,10 @@ function OrderStockPicker({
                     stockPlaceLabel(row.location),
                     data.contacts.find((c) => c.id === row.supplier_id)?.name,
                     row.available > 0
-                      ? `${row.available} disponible${row.available === 1 ? '' : 's'}`
+                      ? `${quantityLabel(row.available, product.unit)} disponible${row.available === 1 ? '' : 's'}`
                       : 'Sin disponible',
                     row.reserved
-                      ? `${row.reserved} reservada${row.reserved === 1 ? '' : 's'}`
+                      ? `${quantityLabel(row.reserved, product.unit)} reservad${product.unit === 'par' ? 'o' : 'a'}${row.reserved === 1 ? '' : 's'}`
                       : '',
                   ]
                     .filter(Boolean)
@@ -133,8 +139,8 @@ function OrderStockPicker({
                         key={reservation.orderId}
                         className="stock-order-link is-static"
                       >
-                        {reservation.orderNumber} · {reservation.quantity} ud
-                        {reservation.quantity === 1 ? '' : 's'}
+                        {reservation.orderNumber} ·{' '}
+                        {quantityLabel(reservation.quantity, product.unit)}
                       </span>
                     ))}
                   </div>
@@ -150,7 +156,9 @@ function OrderStockPicker({
                   {copy}
                   <strong>
                     Agotado
-                    <small>{row.quantity} uds. en pedidos</small>
+                    <small>
+                      {quantityLabel(row.quantity, product.unit)} en pedidos
+                    </small>
                   </strong>
                 </div>
               );
@@ -175,7 +183,8 @@ function OrderStockPicker({
                 <strong>
                   Elegir
                   <small>
-                    {row.available} disponible{row.available === 1 ? '' : 's'}
+                    {quantityLabel(row.available, product.unit)} disponible
+                    {row.available === 1 ? '' : 's'}
                   </small>
                 </strong>
               </button>
@@ -183,7 +192,10 @@ function OrderStockPicker({
           })}
         </div>
       ) : (
-        <p className="hint">Todavía no hay unidades cargadas.</p>
+        <p className="hint">
+          Todavía no hay {unitWord(product.unit)} cargad
+          {product.unit === 'par' ? 'os' : 'as'}.
+        </p>
       )}
     </div>
   );

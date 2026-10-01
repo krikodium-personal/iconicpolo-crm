@@ -1126,6 +1126,41 @@ h3 {
 [data-slot='table-row'] {
   border-color: #ecf0ed;
 }
+.order-open {
+  --open-bg: #f3f4f5;
+  --open-hover: #eaecee;
+  --open-bar: #8a9196;
+  --open-border: #d3d7da;
+}
+.order-open.order-due-today {
+  --open-bg: #fff8e1;
+  --open-hover: #fdf0c4;
+  --open-bar: #e0a800;
+  --open-border: #f0d78a;
+}
+.order-open.order-overdue {
+  --open-bg: #fdecec;
+  --open-hover: #fadcdc;
+  --open-bar: #c62828;
+  --open-border: #efb8b8;
+}
+[data-slot='table-row'].order-open {
+  background: var(--open-bg);
+}
+[data-slot='table-row'].order-open:hover {
+  background: var(--open-hover);
+}
+[data-slot='table-row'].order-open > td:first-child {
+  box-shadow: inset 4px 0 0 var(--open-bar);
+}
+.order-open .record-link {
+  font-weight: 650;
+}
+.record-card.order-open {
+  border-color: var(--open-border);
+  background: var(--open-bg);
+  box-shadow: inset 4px 0 0 var(--open-bar);
+}
 .amount {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1237,6 +1272,11 @@ small.pending-text {
 .status.entrega {
   background: #e7f1ea;
   color: #3f6b58;
+}
+.status.entrega.entrega-vencida {
+  background: #fbe3e3;
+  color: #b42323;
+  font-weight: 600;
 }
 .status.sin-definir {
   background: #f3efe8;
@@ -1637,6 +1677,10 @@ button.dialog-kicker:hover {
 .seg button.selected {
   background: #134c45;
   color: #fff;
+}
+.seg.product-unit {
+  justify-self: start;
+  width: fit-content;
 }
 .check {
   display: flex;

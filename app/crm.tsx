@@ -132,6 +132,8 @@ import {
   orderIsSponsor,
   orderPipelineStatus,
   formatDate,
+  quantityLabel,
+  todayInBuenosAires,
   type Data,
   type Contact,
   type Product,
@@ -330,7 +332,7 @@ function ProductCard({
       </div>
       <div className="record-card-meta">
         <span className={`stock-pill ${stockAvailable <= 2 ? 'low' : ''}`}>
-          {stockAvailable} uds.
+          {quantityLabel(stockAvailable, product.unit)}
         </span>
         <div className="row-actions">
           {!archived && (
@@ -544,6 +546,19 @@ function unitsLabel(quantity: number) {
 function cardDate(value: string) {
   return value ? formatDate(value) : '';
 }
+function orderIsOpen(order: Order) {
+  return orderIsLive(order) && !orderIsLocked(order.status);
+}
+function openOrderClass(order: Order) {
+  if (!orderIsOpen(order)) return '';
+  const delivery = /^\d{4}-\d{2}-\d{2}/.test(order.delivery || '')
+    ? order.delivery.slice(0, 10)
+    : '';
+  const today = todayInBuenosAires();
+  if (delivery && delivery < today) return 'order-open order-overdue';
+  if (delivery === today) return 'order-open order-due-today';
+  return 'order-open';
+}
 function OrderCard({
   order,
   customerName,
@@ -580,7 +595,9 @@ function OrderCard({
   const discount = discountLabel(order, products);
   const sponsor = orderIsSponsor(order);
   return (
-    <article className="record-card clickable-row">
+    <article
+      className={`record-card clickable-row ${compact ? '' : openOrderClass(order)}`}
+    >
       <button
         type="button"
         className="row-hit"
@@ -638,6 +655,7 @@ function OrderCard({
             ) : null}
             <OrderDeliveryMenu
               delivery={order.delivery}
+              status={order.status}
               onChange={onDelivery}
             />
           </>
@@ -1086,7 +1104,7 @@ export default function CRM({
     values.join(' ').toLowerCase().includes(query.toLowerCase());
   const activeOrders = data?.orders.filter(orderIsLive) || [];
   const openOrders = activeOrders
-    .filter((order) => !orderIsLocked(order.status))
+    .filter(orderIsOpen)
     .sort(
       (a, b) =>
         b.date.localeCompare(a.date) || b.number.localeCompare(a.number),
@@ -1167,7 +1185,7 @@ export default function CRM({
         search(o.number, customer(o.customer_id)) &&
         (filter === 'all' || orderPipelineStatus(o) === filter)
       );
-    }) || [];
+    }).sort((a, b) => Number(orderIsOpen(b)) - Number(orderIsOpen(a))) || [];
   function renderArchiveButton({ entity, record }: Archived) {
     return (
       <button
@@ -1290,7 +1308,10 @@ export default function CRM({
             </TableHeader>
             <TableBody>
               {rows.map((o) => (
-                <TableRow key={o.id}>
+                <TableRow
+                  key={o.id}
+                  className={openOrderClass(o) || undefined}
+                >
                   <TableCell>
                     <button
                       className="record-link"
@@ -1342,6 +1363,7 @@ export default function CRM({
                           ) : null}
                           <OrderDeliveryMenu
                             delivery={o.delivery}
+                            status={o.status}
                             onChange={(delivery) =>
                               patchOrder(o, { delivery })
                             }
@@ -1901,7 +1923,7 @@ export default function CRM({
                                     <span
                                       className={`stock-pill ${stockAvailable <= 2 ? 'low' : ''}`}
                                     >
-                                      {stockAvailable} uds.
+                                      {quantityLabel(stockAvailable, p.unit)}
                                     </span>
                                   </TableCell>
                                   <TableCell>

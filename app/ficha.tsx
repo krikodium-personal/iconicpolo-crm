@@ -11,7 +11,7 @@ import {
   type FichaProductDetail,
 } from '@/lib/ficha';
 import { formatMoney, decimal, parseDecimal } from '@/lib/money';
-import type { Order } from '@/lib/types';
+import { quantityLabel, type Order } from '@/lib/types';
 import { ProductPhoto, Check, Pick, Field } from './ui';
 
 function hexLuminance(hex: string) {
@@ -175,7 +175,7 @@ async function renderFichaCanvas(ficha: FichaData) {
   y += 18;
 
   const meta = [
-    ['Cantidad', `${ficha.quantity} ${ficha.quantity === 1 ? 'ud.' : 'uds.'}`],
+    ['Cantidad', quantityLabel(ficha.quantity, ficha.unit)],
     ficha.supplierName ? ['Proveedor', ficha.supplierName] : null,
     ficha.customerName ? ['Cliente', ficha.customerName] : null,
     ficha.sku ? ['SKU', ficha.sku] : null,
@@ -497,9 +497,7 @@ export function FichaSheet({ ficha }: { ficha: FichaData }) {
       <dl className="ficha-meta">
         <div>
           <dt>Cantidad</dt>
-          <dd>
-            {ficha.quantity} {ficha.quantity === 1 ? 'ud.' : 'uds.'}
-          </dd>
+          <dd>{quantityLabel(ficha.quantity, ficha.unit)}</dd>
         </div>
         {ficha.supplierName ? (
           <div>

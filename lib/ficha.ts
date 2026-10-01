@@ -29,7 +29,7 @@ import {
   type ColorElegido,
 } from './configure.ts';
 import { cascoChosenColorName } from './casco-catalog.ts';
-import type { Contact, Item, Product } from './types';
+import type { Contact, Item, Product, ProductUnit } from './types';
 import { whatsapp, whatsappGroup } from './whatsapp.ts';
 
 const KIND_NAME: Record<ConfiguredKind, Record<ConfigLang, string>> = {
@@ -80,6 +80,7 @@ export type FichaData = {
   date: string;
   productTitle: string;
   quantity: number;
+  unit?: ProductUnit;
   sku: string;
   supplierName: string;
   supplierPhone: string;
@@ -477,6 +478,7 @@ export function buildFicha({
     date: formatDate(order.date),
     productTitle: detail.productTitle,
     quantity: item.quantity,
+    unit: product?.unit,
     sku: item.sku || product?.sku || '',
     supplierName: supplier?.name || '',
     supplierPhone: supplier?.phone || '',

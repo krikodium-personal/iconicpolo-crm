@@ -11,7 +11,11 @@ import {
   orderIsSponsor,
   formatDate,
   formatDateTime,
+  PRODUCT_UNITS,
+  quantityLabel,
+  unitWord,
   type OrderKind,
+  type ProductUnit,
   type Contact,
   type Product,
   type Order,
@@ -485,7 +489,7 @@ export function ContactForm({
                 <p className="history-line" key={p.id}>
                   {p.name}
                   <span>
-                    {p.sku} · {p.stock} unidades
+                    {p.sku} · {p.stock} {unitWord(p.unit, p.stock)}
                   </span>
                 </p>
               ))
@@ -592,6 +596,7 @@ export function ProductForm({
         ?.id ||
       '',
     supplier_id: record?.supplier_id || '',
+    unit: (record?.unit || 'unidad') as ProductUnit,
     cost: decimal(record?.cost || 0),
     price: decimal(record?.price || 0),
     ff_discount: percent(record?.ff_discount ?? 1500),
@@ -731,6 +736,28 @@ export function ProductForm({
             ]}
           />
         </Field>
+        <div className="field">
+          <span>Se cuenta por</span>
+          <fieldset className="seg product-unit">
+            <legend className="sr-only">Se cuenta por</legend>
+            {PRODUCT_UNITS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className={f.unit === option.id ? 'selected' : ''}
+                aria-pressed={f.unit === option.id}
+                onClick={() => set({ ...f, unit: option.id })}
+              >
+                {option.label}
+              </button>
+            ))}
+          </fieldset>
+          <small className="hint">
+            {f.unit === 'par'
+              ? 'Stock, pedidos y fichas se cuentan en pares.'
+              : 'Stock, pedidos y fichas se cuentan por unidad.'}
+          </small>
+        </div>
       </div>
       <section className="form-section">
         <h3>Fotos del producto</h3>
@@ -1065,8 +1092,12 @@ function movementWhen(partners: Partner[], movement: Movement) {
   const when = formatDateTime(movement.created_at);
   return who ? `${when} · ${who}` : when;
 }
-function unitsLabel(quantity: number) {
-  return quantity === 1 ? '1 ud.' : `${quantity} uds.`;
+function unitsLabel(quantity: number, unit?: ProductUnit) {
+  return quantityLabel(quantity, unit);
+}
+function lineQuantity(quantity: number, unit?: ProductUnit) {
+  if (unit === 'par') return ` × ${quantityLabel(quantity, unit)}`;
+  return quantity > 1 ? ` × ${quantity}` : '';
 }
 function aggregateStockReservations(
   reservations: StockReservation[],
@@ -1199,7 +1230,7 @@ export function ProductDetail({
             value={supplier?.name || 'Sin proveedor'}
             pending={!supplier}
           />
-          <Fact label="Stock" value={`${available} uds.`} />
+          <Fact label="Stock" value={quantityLabel(available, record.unit)} />
         </div>
       </section>
       <section className="form-section">
@@ -1313,10 +1344,11 @@ export function ProductDetail({
       </section>
       <section className="form-section">
         <h3>
-          Movimientos de stock · {available} disponible
+          Movimientos de stock · {quantityLabel(available, record.unit)}{' '}
+          disponible
           {available === 1 ? '' : 's'}
           {reserved
-            ? ` · ${reserved} reservada${reserved === 1 ? '' : 's'}`
+            ? ` · ${quantityLabel(reserved, record.unit)} reservad${record.unit === 'par' ? 'o' : 'a'}${reserved === 1 ? '' : 's'}`
             : ''}
         </h3>
         {isConfiguredProduct(record) ? (
@@ -1781,6 +1813,7 @@ export function OrderDetail({
             {orderIsSponsor(record) && !orderIsQuote(record.status) ? (
               <OrderDeliveryMenu
                 delivery={record.delivery}
+                status={record.status}
                 onChange={(delivery) => onPatch({ delivery })}
               />
             ) : null}
@@ -1800,6 +1833,7 @@ export function OrderDetail({
                 />
                 <OrderDeliveryMenu
                   delivery={record.delivery}
+                  status={record.status}
                   onChange={(delivery) => onPatch({ delivery })}
                 />
                 <StatusMenu
@@ -1934,7 +1968,7 @@ export function OrderDetail({
                     <strong>{formatMoney(item.cost, data.currency)}</strong>
                     <small>
                       Costo {formatMoney(item.unit_cost, data.currency)}
-                      {item.quantity > 1 ? ` × ${item.quantity}` : ''}
+                      {lineQuantity(item.quantity, product?.unit)}
                     </small>
                   </div>
                 ) : (
@@ -1953,7 +1987,7 @@ export function OrderDetail({
                   </strong>
                   <small>
                     {formatMoney(item.unit_price, data.currency)}
-                    {item.quantity > 1 ? ` × ${item.quantity}` : ''}
+                    {lineQuantity(item.quantity, product?.unit)}
                   </small>
                 </div>
                 )}
@@ -3278,7 +3312,7 @@ export function OrderForm({
                         {i.snapshot
                           ? `${i.snapshot.sku} · precio y costo guardados en este pedido`
                           : p
-                            ? `A configurar · ${p.stock} uds.`
+                            ? `A configurar · ${quantityLabel(p.stock, p.unit)}`
                             : 'Producto no disponible'}
                       </small>
                       {supplierName(i, p) ? (
@@ -3324,12 +3358,12 @@ export function OrderForm({
                       <small>
                         {p
                           ? i.from_stock
-                            ? `Unidad de stock${
+                            ? `${p.unit === 'par' ? 'Par' : 'Unidad'} de stock${
                                 i.stock_qty != null
-                                  ? ` · ${i.stock_qty} uds.`
+                                  ? ` · ${quantityLabel(i.stock_qty, p.unit)}`
                                   : ''
                               }`
-                            : `${p.sku} · ${p.stock} uds.`
+                            : `${p.sku} · ${quantityLabel(p.stock, p.unit)}`
                           : 'Producto no disponible'}
                       </small>
                       {supplierName(i, p) ? (
@@ -3344,8 +3378,8 @@ export function OrderForm({
                   <Field
                     label={
                       i.from_stock && (i.stock_qty || 1) > 1
-                        ? `Cantidad * · máx. ${i.stock_qty}`
-                        : 'Cantidad *'
+                        ? `${p?.unit === 'par' ? 'Pares' : 'Cantidad'} * · máx. ${i.stock_qty}`
+                        : `${p?.unit === 'par' ? 'Pares' : 'Cantidad'} *`
                     }
                   >
                     {i.from_stock && (i.stock_qty || 1) > 1 ? (
@@ -3718,7 +3752,7 @@ export function OrderForm({
                         {skuKeys.length && shown ? (
                           <p className="sku-line">
                             SKU <strong>{shown.sku}</strong>
-                            {` · ${shown.stock} uds. disponibles`}
+                            {` · ${quantityLabel(shown.stock, shown.unit)} disponibles`}
                           </p>
                         ) : null}
                         {lineError === 'No hay un SKU para esa combinación.' ? (
@@ -4048,11 +4082,13 @@ function StockReservationsList({
   data,
   onOpenOrder,
   emptyHint,
+  unit,
 }: {
   reservations: StockReservation[];
   data: Data;
   onOpenOrder?: (order: Order) => void;
   emptyHint?: string;
+  unit?: ProductUnit;
 }) {
   if (!reservations.length) {
     return emptyHint ? <p className="hint">{emptyHint}</p> : null;
@@ -4072,7 +4108,7 @@ function StockReservationsList({
               <div className="stock-reservation-heading">
                 <b>{reservation.orderNumber}</b>
                 <span className="reserved-badge">
-                  {unitsLabel(reservation.quantity)}
+                  {unitsLabel(reservation.quantity, unit)}
                 </span>
               </div>
               <small>
@@ -4202,18 +4238,21 @@ export function StockItemDetail({
         <div className="pdp-facts stock-item-facts">
           <Fact
             label="Cantidad"
-            value={unitsLabel(row?.quantity ?? inbound?.quantity ?? 0)}
+            value={unitsLabel(
+              row?.quantity ?? inbound?.quantity ?? 0,
+              record.unit,
+            )}
           />
           {row ? (
             <>
               <Fact
                 label="Disponible"
-                value={unitsLabel(row.available)}
+                value={unitsLabel(row.available, record.unit)}
               />
               {row.reserved ? (
                 <Fact
                   label="Reservadas"
-                  value={unitsLabel(row.reserved)}
+                  value={unitsLabel(row.reserved, record.unit)}
                 />
               ) : null}
             </>
@@ -4266,7 +4305,7 @@ export function StockItemDetail({
           <h3>Pedidos con este stock</h3>
           {row?.reserved ? (
             <span className="reserved-badge">
-              {unitsLabel(row.reserved)} reservadas
+              {unitsLabel(row.reserved, record.unit)} reservadas
             </span>
           ) : null}
         </div>
@@ -4274,7 +4313,8 @@ export function StockItemDetail({
           reservations={row?.reservations || []}
           data={data}
           onOpenOrder={onOpenOrder}
-          emptyHint="Ningún pedido reserva estas unidades. Quedan todas disponibles para el próximo pedido."
+          unit={record.unit}
+          emptyHint={`Ningún pedido reserva estas ${unitWord(record.unit)}. Quedan todas disponibles para el próximo pedido.`}
         />
       </section>
     </div>
@@ -4337,11 +4377,13 @@ export function StockOverview({
         <div>
           <span>Disponible</span>
           <strong>
-            {available} <small>unidades</small>
+            {available} <small>{unitWord(record.unit, available)}</small>
           </strong>
           {reserved ? (
             <small className="stock-reserved-total">
-              {reserved} reservada{reserved === 1 ? '' : 's'} · solo el resto
+              {unitsLabel(reserved, record.unit)} reservad
+              {record.unit === 'par' ? 'o' : 'a'}
+              {reserved === 1 ? '' : 's'} · solo el resto
               se puede asignar a un pedido nuevo
             </small>
           ) : null}
@@ -4368,14 +4410,17 @@ export function StockOverview({
         <div className="section-heading">
           <h3>Pedidos con este stock</h3>
           {reserved ? (
-            <span className="reserved-badge">{unitsLabel(reserved)}</span>
+            <span className="reserved-badge">
+              {unitsLabel(reserved, record.unit)}
+            </span>
           ) : null}
         </div>
         <StockReservationsList
           reservations={productReservations}
           data={data}
           onOpenOrder={onOpenOrder}
-          emptyHint="Ningún pedido abierto o cerrado reserva unidades de este producto."
+          unit={record.unit}
+          emptyHint={`Ningún pedido abierto o cerrado reserva ${unitWord(record.unit)} de este producto.`}
         />
       </section>
       {rows.length ? (
@@ -4421,8 +4466,9 @@ export function StockOverview({
                   {row.reservations.length ? (
                     <div className="stock-reserve-actions">
                       <span className="reserved-badge">
-                        {unitsLabel(row.reserved)} reservadas ·{' '}
-                        {unitsLabel(row.available)} libres
+                        {unitsLabel(row.reserved, record.unit)} reservad
+                        {record.unit === 'par' ? 'os' : 'as'} ·{' '}
+                        {unitsLabel(row.available, record.unit)} libres
                       </span>
                       {row.reservations.map((reservation) => {
                         const order = data.orders.find(
@@ -4440,7 +4486,7 @@ export function StockOverview({
                             }}
                           >
                             {reservation.orderNumber} ·{' '}
-                            {unitsLabel(reservation.quantity)}
+                            {unitsLabel(reservation.quantity, record.unit)}
                           </button>
                         );
                       })}
@@ -4451,7 +4497,16 @@ export function StockOverview({
               <div className="stock-item-side row-actions">
                 <div className="stock-item-amounts">
                   <strong>
-                    {row.quantity} <small>uds.</small>
+                    {row.quantity}{' '}
+                    <small>
+                      {record.unit === 'par'
+                        ? row.quantity === 1
+                          ? 'par'
+                          : 'pares'
+                        : row.quantity === 1
+                          ? 'ud.'
+                          : 'uds.'}
+                    </small>
                   </strong>
                   <small
                     className={
@@ -4462,7 +4517,7 @@ export function StockOverview({
                     title={
                       rowCosts.get(row.key)?.pending
                         ? 'Hay costos sin definir en este producto.'
-                        : 'Costo total de estas unidades'
+                        : `Costo total de estas ${unitWord(record.unit)}`
                     }
                   >
                     {formatMoney(
@@ -4510,7 +4565,10 @@ export function StockOverview({
           );
         })
       ) : (
-        <p className="hint">Todavía no hay unidades cargadas.</p>
+        <p className="hint">
+          Todavía no hay {unitWord(record.unit)} cargad
+          {record.unit === 'par' ? 'os' : 'as'}.
+        </p>
       )}
     </div>
   );
@@ -4672,7 +4730,7 @@ export function StockForm({
             : ''}
         </span>
         <strong>
-          {available} <small>unidades</small>
+          {available} <small>{unitWord(record.unit, available)}</small>
         </strong>
       </div>
       {configured ? (
@@ -4724,7 +4782,7 @@ export function StockForm({
             />
           </Field>
         ) : null}
-        <Field label="Cantidad *">
+        <Field label={record.unit === 'par' ? 'Pares *' : 'Cantidad *'}>
           <input
             type="number"
             min="1"

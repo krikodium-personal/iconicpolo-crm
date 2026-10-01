@@ -20,7 +20,14 @@ import { Camera, Package, Upload, X } from 'lucide-react';
 import { DayPicker } from 'react-day-picker';
 import { es } from 'react-day-picker/locale';
 import 'react-day-picker/style.css';
-import { formatDate, type Order, type Partner } from '@/lib/types';
+import {
+  formatDate,
+  orderIsLocked,
+  orderIsQuote,
+  todayInBuenosAires,
+  type Order,
+  type Partner,
+} from '@/lib/types';
 import { decimal, parseDecimal } from '@/lib/money';
 function selectFieldInput(e: { target: EventTarget }) {
   const input = e.target;
@@ -496,11 +503,19 @@ function cardDate(value: string) {
 }
 export function OrderDeliveryMenu({
   delivery,
+  status,
   onChange,
 }: {
   delivery: string;
+  status?: string;
   onChange: (delivery: string) => Promise<void>;
 }) {
+  const due =
+    !!delivery &&
+    !!status &&
+    !orderIsLocked(status) &&
+    !orderIsQuote(status) &&
+    delivery.slice(0, 10) <= todayInBuenosAires();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [value, setValue] = useState(delivery);
@@ -521,7 +536,7 @@ export function OrderDeliveryMenu({
     >
       <button
         type="button"
-        className={`status ${delivery ? 'entrega' : 'sin-definir'} status-pick`}
+        className={`status ${delivery ? 'entrega' : 'sin-definir'} ${due ? 'entrega-vencida' : ''} status-pick`}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`Cambiar entrega: ${label}`}
