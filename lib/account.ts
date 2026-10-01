@@ -527,22 +527,104 @@ export function accountLedger(
   });
   let balance = 0;
   return raw.map((entry) => {
-    const currency = entry.currency || boardCurrency;
-    if (currency === boardCurrency) balance += entry.amount;
-    else {
-      const converted = amountIn(
-        {
-          amount: Math.abs(entry.amount),
-          currency,
-          amount_ars: entry.amount_ars,
-          amount_usd: entry.amount_usd,
-        },
-        boardCurrency,
-      );
-      balance += entry.amount < 0 ? -converted : converted;
-    }
+    balance += ledgerAmountIn(entry, boardCurrency);
     return { ...entry, balance };
   });
+}
+
+/** Importe con signo de una fila de movimientos en la moneda del tablero. */
+export function ledgerAmountIn(
+  entry: Pick<
+    LedgerEntry,
+    'amount' | 'currency' | 'amount_ars' | 'amount_usd'
+  >,
+  boardCurrency: string,
+) {
+  const currency = entry.currency || boardCurrency;
+  if (currency === boardCurrency) return entry.amount;
+  const converted = amountIn(
+    {
+      amount: Math.abs(entry.amount),
+      currency,
+      amount_ars: entry.amount_ars,
+      amount_usd: entry.amount_usd,
+    },
+    boardCurrency,
+  );
+  return entry.amount < 0 ? -converted : converted;
+}
+
+export type LedgerSummaryRow = {
+  partner: string;
+  collected: number;
+  outflow: number;
+  count: number;
+};
+
+export const LEDGER_NO_PARTNER = 'Sin socio';
+
+export type LedgerFocus = {
+  /** null = todos los socios */
+  partner: string | null;
+  kind: 'cobros' | 'egresos' | 'todos';
+};
+
+/** Movimientos que suman una celda de `ledgerSummary`. */
+export function ledgerFilter<
+  T extends Pick<
+    LedgerEntry,
+    'amount' | 'currency' | 'amount_ars' | 'amount_usd' | 'partner'
+  >,
+>(entries: T[], boardCurrency: string, focus: LedgerFocus): T[] {
+  return entries.filter((entry) => {
+    if (
+      focus.partner !== null &&
+      (entry.partner || LEDGER_NO_PARTNER) !== focus.partner
+    )
+      return false;
+    if (focus.kind === 'todos') return true;
+    const amount = ledgerAmountIn(entry, boardCurrency);
+    return focus.kind === 'cobros' ? amount >= 0 : amount < 0;
+  });
+}
+
+/** Cobros y egresos por socio. No se netean: los cobros son ganancia a repartir entre socios. */
+export function ledgerSummary(
+  entries: Pick<
+    LedgerEntry,
+    'amount' | 'currency' | 'amount_ars' | 'amount_usd' | 'partner'
+  >[],
+  boardCurrency: string,
+) {
+  const NO_PARTNER = LEDGER_NO_PARTNER;
+  const rows = new Map<string, LedgerSummaryRow>();
+  for (const entry of entries) {
+    const partner = entry.partner || NO_PARTNER;
+    const row = rows.get(partner) || {
+      partner,
+      collected: 0,
+      outflow: 0,
+      count: 0,
+    };
+    const amount = ledgerAmountIn(entry, boardCurrency);
+    if (amount >= 0) row.collected += amount;
+    else row.outflow -= amount;
+    row.count += 1;
+    rows.set(partner, row);
+  }
+  const list = [...rows.values()].sort((a, b) =>
+    a.partner === NO_PARTNER
+      ? 1
+      : b.partner === NO_PARTNER
+        ? -1
+        : a.partner.localeCompare(b.partner),
+  );
+  return {
+    rows: list,
+    collected: list.reduce((sum, row) => sum + row.collected, 0),
+    outflow: list.reduce((sum, row) => sum + row.outflow, 0),
+    count: list.reduce((sum, row) => sum + row.count, 0),
+  };
 }
 
 export function cashoutsByMonth(

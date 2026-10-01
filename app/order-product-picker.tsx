@@ -141,8 +141,16 @@ function OrderStockPicker({
                       <span
                         key={reservation.orderId}
                         className="stock-order-link is-static"
+                        title={`Pedido ${reservation.orderNumber}`}
                       >
-                        {reservation.orderNumber} ·{' '}
+                        {data.contacts.find(
+                          (contact) =>
+                            contact.id ===
+                            data.orders.find(
+                              (order) => order.id === reservation.orderId,
+                            )?.customer_id,
+                        )?.name || reservation.orderNumber}{' '}
+                        ·{' '}
                         {quantityLabel(reservation.quantity, product.unit)}
                       </span>
                     ))}

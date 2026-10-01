@@ -4453,18 +4453,24 @@ export function StockOverview({
                         const order = data.orders.find(
                           (item) => item.id === reservation.orderId,
                         );
+                        const customer = order
+                          ? data.contacts.find(
+                              (contact) => contact.id === order.customer_id,
+                            )?.name
+                          : '';
                         return (
                           <button
                             key={reservation.orderId}
                             type="button"
                             className="secondary stock-order-link"
+                            title={`Pedido ${reservation.orderNumber}`}
                             disabled={!order || !onOpenOrder}
                             onClick={(e) => {
                               e.stopPropagation();
                               if (order) onOpenOrder?.(order);
                             }}
                           >
-                            {reservation.orderNumber} ·{' '}
+                            {customer || reservation.orderNumber} ·{' '}
                             {unitsLabel(reservation.quantity, record.unit)}
                           </button>
                         );

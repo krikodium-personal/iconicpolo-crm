@@ -1176,6 +1176,29 @@ h3 {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.heading-note {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+.summary-pick {
+  margin: -3px -6px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.summary-pick:hover {
+  background: #eef3ef;
+  text-decoration-style: solid;
+}
+.summary-pick.is-active {
+  background: #dfe9e2;
+  box-shadow: inset 0 0 0 1px #9db8a6;
+  text-decoration: none;
+}
 .clickable-row {
   cursor: pointer;
   position: relative;

@@ -7,6 +7,8 @@ import {
   accountLedger,
   allocateShares,
   amountIn,
+  ledgerFilter,
+  ledgerSummary,
   assertCashoutFits,
   assertSharesComplete,
   cashoutLimit,
@@ -536,4 +538,43 @@ test('converts account entries to the board currency with the stored equivalents
   assert.equal(amountIn(ars, 'ARS'), 30_000_000);
   assert.equal(amountIn(usd, 'ARS'), 30_000_000);
   assert.equal(amountIn({ amount: 5_000, currency: 'ARS' }, 'USD'), 0);
+});
+
+test('summarizes ledger collections and outflows per partner in the board currency', () => {
+  const summary = ledgerSummary(
+    [
+      { amount: 100_000, currency: 'USD', partner: 'Ivan' },
+      { amount: -30_000, currency: 'USD', partner: 'Ivan' },
+      { amount: -30_000_000, currency: 'ARS', amount_usd: 20_000, partner: 'Christian' },
+      { amount: -5_000, currency: 'USD' },
+    ],
+    'USD',
+  );
+  assert.deepEqual(
+    summary.rows.map((row) => [row.partner, row.collected, row.outflow, row.count]),
+    [
+      ['Christian', 0, 20_000, 1],
+      ['Ivan', 100_000, 30_000, 2],
+      ['Sin socio', 0, 5_000, 1],
+    ],
+  );
+  assert.equal(summary.collected, 100_000);
+  assert.equal(summary.outflow, 55_000);
+  assert.equal(summary.count, 4);
+});
+
+test('filters the ledger entries behind a summary cell', () => {
+  const entries = [
+    { amount: 100_000, currency: 'USD', partner: 'Ivan' },
+    { amount: -30_000, currency: 'USD', partner: 'Ivan' },
+    { amount: -30_000_000, currency: 'ARS', amount_usd: 20_000, partner: 'Christian' },
+    { amount: -5_000, currency: 'USD' },
+  ];
+  const amounts = (focus: Parameters<typeof ledgerFilter>[2]) =>
+    ledgerFilter(entries, 'USD', focus).map((entry) => entry.amount);
+  assert.deepEqual(amounts({ partner: 'Ivan', kind: 'egresos' }), [-30_000]);
+  assert.deepEqual(amounts({ partner: 'Ivan', kind: 'todos' }), [100_000, -30_000]);
+  assert.deepEqual(amounts({ partner: 'Sin socio', kind: 'egresos' }), [-5_000]);
+  assert.deepEqual(amounts({ partner: null, kind: 'cobros' }), [100_000]);
+  assert.deepEqual(amounts({ partner: null, kind: 'egresos' }), [-30_000, -30_000_000, -5_000]);
 });

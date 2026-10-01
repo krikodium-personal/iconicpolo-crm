@@ -140,6 +140,7 @@ import {
   type Order,
   type Movement,
   type Partner,
+  type AccountView,
 } from '@/lib/types';
 import { taskIsOpen, tasksNeedAttention } from '@/lib/tasks';
 
@@ -794,7 +795,7 @@ export default function CRM({
 }: {
   module: string;
   initialFilter?: string;
-  accountView?: 'board' | 'resultados';
+  accountView?: AccountView;
   accountYear?: number;
 }) {
   const viewModule = module === 'tablero' ? 'dashboard' : module;
@@ -1097,7 +1098,9 @@ export default function CRM({
     });
   }
   const title =
-    nav.find((n) => n.id === viewModule)?.title || 'Estado de cuenta';
+    viewModule === 'dashboard' && accountView === 'movimientos'
+      ? 'Movimientos'
+      : nav.find((n) => n.id === viewModule)?.title || 'Estado de cuenta';
   const currency = data?.currency || 'ARS';
   const money = (n: number) => formatMoney(n, currency);
   const search = (...values: (string | undefined)[]) =>
@@ -1609,8 +1612,7 @@ export default function CRM({
                 </p>
                 <div className="page-heading-row">
                   <h1>{title}</h1>
-                  {viewModule === 'dashboard' &&
-                  accountView === 'resultados' ? (
+                  {viewModule === 'dashboard' && accountView !== 'board' ? (
                     <CrmLink href="/">Volver</CrmLink>
                   ) : null}
                 </div>
@@ -1665,6 +1667,15 @@ export default function CRM({
                   Los ejemplos incluyen productos, clientes y pedidos ficticios.
                 </small>
               </section>
+            ) : viewModule === 'dashboard' && accountView === 'movimientos' ? (
+              <AccountBoard
+                key={`movimientos-${accountYear ?? ''}`}
+                data={data}
+                save={save}
+                view="movimientos"
+                initialYear={accountYear}
+                onOpenOrder={(order) => P({ type: 'order', record: order })}
+              />
             ) : viewModule === 'dashboard' ? (
               <>
                 <div className="dashboard-grid">

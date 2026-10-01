@@ -1,5 +1,5 @@
 import CrmApp from '../crm-app';
-import { modules, ORDER_STATUSES } from '@/lib/types';
+import { accountViewOf, modules, ORDER_STATUSES } from '@/lib/types';
 import { notFound } from 'next/navigation';
 
 export default async function Page({
@@ -26,9 +26,8 @@ export default async function Page({
       module={module}
       initialFilter={initialFilter}
       accountView={
-        vista === 'resultados' &&
-        (moduleRaw === 'tablero' || module === 'dashboard')
-          ? 'resultados'
+        moduleRaw === 'tablero' || module === 'dashboard'
+          ? accountViewOf(vista)
           : 'board'
       }
       accountYear={Number.isFinite(year) ? year : undefined}

@@ -10,12 +10,17 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react';
-import { ORDER_STATUSES, modules } from '@/lib/types';
+import {
+  ORDER_STATUSES,
+  accountViewOf,
+  modules,
+  type AccountView,
+} from '@/lib/types';
 
 export type CrmRoute = {
   module: string;
   initialFilter: string;
-  accountView: 'board' | 'resultados';
+  accountView: AccountView;
   accountYear?: number;
 };
 
@@ -42,8 +47,8 @@ export function parseCrmHref(href: string): CrmRoute {
         ? (estado as string)
         : 'all',
     accountView:
-      (modRaw === 'tablero' || mod === 'dashboard') && vista === 'resultados'
-        ? 'resultados'
+      modRaw === 'tablero' || mod === 'dashboard'
+        ? accountViewOf(vista)
         : 'board',
     accountYear: Number.isFinite(year) ? year : undefined,
   };

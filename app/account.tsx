@@ -33,11 +33,21 @@ import {
   totalsOf,
   yearSheet,
   entryFxNote,
+  ledgerFilter,
+  ledgerSummary,
+  LEDGER_NO_PARTNER,
   type LedgerEntry,
+  type LedgerFocus,
   type MonthlyResult,
 } from '@/lib/account';
 import { decimal, formatMoney, parseDecimal, previewFx } from '@/lib/money';
-import { formatDate, orderIsLive, type Data, type Order } from '@/lib/types';
+import {
+  formatDate,
+  orderIsLive,
+  type AccountView,
+  type Data,
+  type Order,
+} from '@/lib/types';
 
 const today = () =>
   new Date().toLocaleDateString('en-CA', {
@@ -47,9 +57,7 @@ const today = () =>
 function currentYear() {
   return Number(today().slice(0, 4));
 }
-function currentMonthIndex() {
-  return Number(today().slice(5, 7)) - 1;
-}
+const ALL_MONTHS = -1;
 function sheetValue(cents: number, money: (n: number) => string) {
   return cents ? money(cents) : '—';
 }
@@ -104,7 +112,8 @@ function ResultMonth({
   row: MonthlyResult;
   money: (n: number) => string;
   busy: boolean;
-  onSave: (kind: 'mkt' | 'comisiones', amount: number) => Promise<void>;
+  /** Sin onSave (vista anual) las comisiones son de solo lectura. */
+  onSave?: (kind: 'mkt' | 'comisiones', amount: number) => Promise<void>;
 }) {
   const hasResult = !!(row.billed || row.cost || row.mkt || row.commissions);
   return (
@@ -127,14 +136,18 @@ function ResultMonth({
         </div>
         <div>
           <dt>Comisiones</dt>
-          <dd>
-            <MonthAmount
-              cents={row.commissions}
-              disabled={busy}
-              label={`Comisiones ${row.label}`}
-              onSave={(amount) => onSave('comisiones', amount)}
-            />
-          </dd>
+          {onSave ? (
+            <dd>
+              <MonthAmount
+                cents={row.commissions}
+                disabled={busy}
+                label={`Comisiones ${row.label}`}
+                onSave={(amount) => onSave('comisiones', amount)}
+              />
+            </dd>
+          ) : (
+            <dd className="amount">{sheetValue(row.commissions, money)}</dd>
+          )}
         </div>
         <div className="result-profit-row">
           <dt>Ganancia</dt>
@@ -158,7 +171,7 @@ export function AccountBoard({
 }: {
   data: Data;
   save: (body: Record<string, unknown>) => Promise<void>;
-  view?: 'board' | 'resultados';
+  view?: AccountView;
   initialYear?: number;
   onOpenOrder?: (order: Order) => void;
 }) {
@@ -189,10 +202,16 @@ export function AccountBoard({
     );
     return withData || years[0] || currentYear();
   });
-  const [monthIndex, setMonthIndex] = useState(() => {
-    const now = currentMonthIndex();
-    return now >= 0 && now < 12 ? now : 0;
-  });
+  const [monthIndex, setMonthIndex] = useState(ALL_MONTHS);
+  const [ledgerMonth, setLedgerMonth] = useState('all');
+  const [ledgerFocus, setLedgerFocus] = useState<LedgerFocus | null>(null);
+  useEffect(() => {
+    if (view !== 'movimientos') return;
+    const params = new URLSearchParams(window.location.search);
+    const kind = params.get('tipo');
+    if (kind === 'cobros' || kind === 'egresos' || kind === 'todos')
+      setLedgerFocus({ partner: params.get('socio'), kind });
+  }, [view]);
   const [busy, B] = useState(false);
   const [error, E] = useState('');
   const [cashoutOpen, setCashoutOpen] = useState(false);
@@ -216,7 +235,16 @@ export function AccountBoard({
     date: today(),
   });
   const yearRows = yearSheet(year, results);
-  const previewRow = yearRows[monthIndex] || yearRows[0];
+  const previewRow: MonthlyResult =
+    monthIndex === ALL_MONTHS
+      ? {
+          ...totalsOf(yearRows),
+          month: `${year}-00`,
+          year,
+          monthIndex: ALL_MONTHS,
+          label: 'Año',
+        }
+      : yearRows[monthIndex] || yearRows[0];
   const boardTotals = totalsOf(results);
   const allProfit = boardTotals.profit;
   // En cuenta = cobros − MKT − comisiones − cashouts − movimientos.
@@ -329,7 +357,64 @@ export function AccountBoard({
     yearLedger[0]?.balance ??
     ledger.filter((entry) => entry.date < `${year}-01-01`).at(-1)?.balance ??
     0;
+  const yearSummary = ledgerSummary(yearLedger, data.currency);
+  const monthLedger =
+    ledgerMonth === 'all'
+      ? yearLedger
+      : yearLedger.filter(
+          (entry) =>
+            entry.date.slice(5, 7) ===
+            String(Number(ledgerMonth) + 1).padStart(2, '0'),
+        );
+  const monthSummary = ledgerSummary(monthLedger, data.currency);
+  const detailLedger = ledgerFocus
+    ? ledgerFilter(monthLedger, data.currency, ledgerFocus)
+    : monthLedger;
+  const focusHref = (focus: LedgerFocus | null) => {
+    const params = new URLSearchParams({
+      vista: 'movimientos',
+      anio: String(year),
+    });
+    if (focus?.partner) params.set('socio', focus.partner);
+    if (focus) params.set('tipo', focus.kind);
+    return `/?${params}`;
+  };
+  function pickFocus(focus: LedgerFocus | null) {
+    setLedgerFocus(focus);
+    window.history.replaceState(null, '', focusHref(focus));
+  }
+  function focusLegend(focus: LedgerFocus, count: number) {
+    const [one, many] =
+      focus.kind === 'cobros'
+        ? ['cobro', 'cobros']
+        : focus.kind === 'egresos'
+          ? ['egreso', 'egresos']
+          : ['movimiento', 'movimientos'];
+    const who =
+      focus.partner === null
+        ? ''
+        : focus.partner === LEDGER_NO_PARTNER
+          ? ' sin socio'
+          : ` de ${focus.partner}`;
+    return `${count} ${count === 1 ? one : many}${who}`;
+  }
   const money = (cents: number) => formatMoney(cents, data.currency);
+  function openEntryForm() {
+    E('');
+    setEntry({
+      concept: 'pago_proveedor',
+      detail: '',
+      partner_id: partners[0]?.id || '',
+      supplier_id: suppliers[0]?.id || '',
+      order_id: '',
+      receipt: '',
+      amount: '',
+      currency: data.currency === 'ARS' ? 'ARS' : 'USD',
+      fx_rate: '',
+      date: today(),
+    });
+    setEntryOpen(true);
+  }
   function openLedgerOrder(entry: LedgerEntry) {
     if (!entry.order_id || !onOpenOrder) return;
     const order = ordersById.get(entry.order_id);
@@ -368,141 +453,157 @@ export function AccountBoard({
       label="Mes"
       value={String(monthIndex)}
       onChange={(value) => setMonthIndex(Number(value))}
-      options={MONTHS.map((label, index) => ({
-        value: String(index),
-        label,
-      }))}
+      options={[
+        { value: String(ALL_MONTHS), label: 'Todos los meses' },
+        ...MONTHS.map((label, index) => ({
+          value: String(index),
+          label,
+        })),
+      ]}
     />
   );
-  if (view === 'resultados') {
+  const newEntryButton = (
+    <button type="button" className="secondary" onClick={openEntryForm}>
+      <Plus size={15} /> movimiento
+    </button>
+  );
+  function summaryTable(summary: ReturnType<typeof ledgerSummary>) {
+    const signed = (cents: number, sign: 1 | -1) =>
+      cents ? money(sign * cents) : '—';
+    const pick = (
+      partner: string,
+      kind: LedgerFocus['kind'],
+      value: number,
+      label: string,
+    ) => {
+      if (!value) return label;
+      const focus = { partner: partner === 'Total' ? null : partner, kind };
+      if (view !== 'movimientos')
+        return (
+          <CrmLink className="summary-pick" href={focusHref(focus)}>
+            {label}
+          </CrmLink>
+        );
+      const active =
+        ledgerFocus?.partner === focus.partner && ledgerFocus.kind === kind;
+      return (
+        <button
+          type="button"
+          className={`summary-pick${active ? ' is-active' : ''}`}
+          aria-pressed={active}
+          onClick={() => pickFocus(active ? null : focus)}
+        >
+          {label}
+        </button>
+      );
+    };
     return (
-      <div className="account-board">
-        <ErrorBox message={error} />
-        <section className="panel account-sheet">
-          <div className="panel-heading">
-            <h2>Resultados</h2>
-          </div>
-          <div className="result-tools result-tools-bar">{yearPick}</div>
-          <div className="result-months">
-            {yearRows.map((row) => (
-              <ResultMonth
-                key={row.month}
-                row={row}
-                money={money}
-                busy={busy}
-                onSave={(kind, amount) => saveMonth(row.month, kind, amount)}
-              />
-            ))}
-          </div>
-        </section>
-      </div>
+      <>
+        <div className="desktop-table">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Socio</TableHead>
+                <TableHead>Movimientos</TableHead>
+                <TableHead className="ledger-col-amount">Cobros</TableHead>
+                <TableHead className="ledger-col-amount">Egresos</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {summary.rows.length ? (
+                <>
+                  {[...summary.rows, { ...summary, partner: 'Total' }].map(
+                    (row) => (
+                      <TableRow
+                        key={row.partner}
+                        className={
+                          'rows' in row ? 'account-total' : undefined
+                        }
+                      >
+                        <TableCell>{row.partner}</TableCell>
+                        <TableCell>
+                          {pick(row.partner, 'todos', row.count, String(row.count))}
+                        </TableCell>
+                        <TableCell className="ledger-col-amount">
+                          {pick(
+                            row.partner,
+                            'cobros',
+                            row.collected,
+                            signed(row.collected, 1),
+                          )}
+                        </TableCell>
+                        <TableCell
+                          className={`ledger-col-amount${row.outflow ? ' money-neg' : ''}`}
+                        >
+                          {pick(
+                            row.partner,
+                            'egresos',
+                            row.outflow,
+                            signed(row.outflow, -1),
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ),
+                  )}
+                </>
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={4}>
+                    No hay movimientos en este período.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="record-card-list partner-balance-cards">
+          {(summary.rows.length
+            ? [...summary.rows, { ...summary, partner: 'Total' }]
+            : []
+          ).map((row) => (
+            <article className="record-card" key={row.partner}>
+              <div className="record-card-top">
+                <b>{row.partner}</b>
+              </div>
+              <dl className="record-card-facts">
+                <div>
+                  <dt>Cobros</dt>
+                  <dd>
+                    {pick(
+                      row.partner,
+                      'cobros',
+                      row.collected,
+                      signed(row.collected, 1),
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Egresos</dt>
+                  <dd className={row.outflow ? 'money-neg' : ''}>
+                    {pick(
+                      row.partner,
+                      'egresos',
+                      row.outflow,
+                      signed(row.outflow, -1),
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Movimientos</dt>
+                  <dd>
+                    {pick(row.partner, 'todos', row.count, String(row.count))}
+                  </dd>
+                </div>
+              </dl>
+            </article>
+          ))}
+        </div>
+      </>
     );
   }
-  return (
-    <div className="account-board">
-      <ErrorBox message={error} />
-      <div className="seg year-seg" role="tablist" aria-label="Año">
-        {years.map((value) => (
-          <button
-            key={value}
-            type="button"
-            role="tab"
-            aria-selected={year === value}
-            className={year === value ? 'selected' : ''}
-            onClick={() => Y(value)}
-          >
-            {value}
-          </button>
-        ))}
-      </div>
-      <div className="metrics">
-        {[
-          {
-            label: 'Por cobrar',
-            value: outstanding,
-            hint: unpaidOrders.length
-              ? `${unpaidOrders.length} pedido${unpaidOrders.length === 1 ? '' : 's'} con saldo`
-              : 'Sin saldos pendientes',
-          },
-          {
-            label: 'En cuenta',
-            value: leftover,
-            hint: sharesReady
-              ? 'Suma disponible de los socios'
-              : 'Definí los % en Configuración',
-          },
-          {
-            label: 'Cashouts',
-            value: yearCashouts,
-            hint: `${year}`,
-          },
-        ].map(({ label, value, hint }) => (
-          <article className="metric" key={label}>
-            <p>{label}</p>
-            <strong className={value < 0 ? 'money-neg' : ''}>
-              {money(value)}
-            </strong>
-            <span>{hint}</span>
-          </article>
-        ))}
-      </div>
-      <section className="panel account-sheet">
-        <div className="panel-heading">
-          <h2>Resultados</h2>
-          <CrmLink href={`/?vista=resultados&anio=${year}`}>
-            Ver todo <ArrowUpRight size={15} />
-          </CrmLink>
-        </div>
-        <div className="result-tools result-tools-bar">
-          {monthPick}
-          {yearPick}
-        </div>
-        {previewRow ? (
-          <div className="result-months result-preview">
-            <ResultMonth
-              row={previewRow}
-              money={money}
-              busy={busy}
-              onSave={(kind, amount) =>
-                saveMonth(previewRow.month, kind, amount)
-              }
-            />
-          </div>
-        ) : null}
-      </section>
-      <section className="panel">
-        <div className="panel-heading">
-          <h2>Movimientos {year}</h2>
-          <div className="ledger-heading-actions">
-            <span
-              className={`ledger-heading-saldo${yearEndBalance < 0 ? ' money-neg' : ''}`}
-            >
-              Saldo {money(yearEndBalance)}
-            </span>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                E('');
-                setEntry({
-                  concept: 'pago_proveedor',
-                  detail: '',
-                  partner_id: partners[0]?.id || '',
-                  supplier_id: suppliers[0]?.id || '',
-                  order_id: '',
-                  receipt: '',
-                  amount: '',
-                  currency: data.currency === 'ARS' ? 'ARS' : 'USD',
-                  fx_rate: '',
-                  date: today(),
-                });
-                setEntryOpen(true);
-              }}
-            >
-              <Plus size={15} /> movimiento
-            </button>
-          </div>
-        </div>
+  function ledgerList(rows: LedgerEntry[], emptyText: string) {
+    return (
+      <>
         <div className="desktop-table ledger-table">
           <Table>
             <TableHeader>
@@ -513,8 +614,8 @@ export function AccountBoard({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {yearLedger.length ? (
-                yearLedger.map((entry, index) => {
+              {rows.length ? (
+                rows.map((entry, index) => {
                   const clickable =
                     !!entry.order_id &&
                     !!onOpenOrder &&
@@ -578,16 +679,15 @@ export function AccountBoard({
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={3}>
-                    No hay movimientos para mostrar en {year}.
-                  </TableCell>
+                  <TableCell colSpan={3}>{emptyText}</TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </div>
         <div className="record-card-list ledger-list">
-          {yearLedger.map((entry, index) => {
+          {rows.length ? null : <p className="hint">{emptyText}</p>}
+          {rows.map((entry, index) => {
             const clickable =
               !!entry.order_id &&
               !!onOpenOrder &&
@@ -634,178 +734,377 @@ export function AccountBoard({
             );
           })}
         </div>
-      </section>
-      <section className="panel">
-        <div className="panel-heading">
-          <h2>Situación financiera</h2>
-        </div>
-        <p className="hint">
-          Inversión = movimientos pagados por cada socio (cada ingreso de stock
-          pagado genera su movimiento). En cada venta, un
-          socio recupera el costo del proveedor; la ganancia se reparte según el
-          %. Ejemplo: costo 200, venta 300 → quien recupera cobra 250 y el otro
-          50.
-        </p>
-        {partners.length ? (
-          <>
-            <div className="desktop-table">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Socio</TableHead>
-                    <TableHead>Inversión</TableHead>
-                    <TableHead>Capital recuperado</TableHead>
-                    <TableHead>Pendiente</TableHead>
-                    <TableHead>Ganancia</TableHead>
-                    <TableHead>Liquidación</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+      </>
+    );
+  }
+  if (view === 'resultados') {
+    return (
+      <div className="account-board">
+        <ErrorBox message={error} />
+        <section className="panel account-sheet">
+          <div className="panel-heading">
+            <h2>Resultados</h2>
+          </div>
+          <div className="result-tools result-tools-bar">{yearPick}</div>
+          <div className="result-months">
+            {yearRows.map((row) => (
+              <ResultMonth
+                key={row.month}
+                row={row}
+                money={money}
+                busy={busy}
+                onSave={(kind, amount) => saveMonth(row.month, kind, amount)}
+              />
+            ))}
+          </div>
+        </section>
+      </div>
+    );
+  }
+  return (
+    <div className="account-board">
+      <ErrorBox message={error} />
+      {view === 'movimientos' ? (
+        <>
+          <section className="panel">
+            <div className="panel-heading">
+              <h2>
+                {ledgerMonth === 'all'
+                  ? `Movimientos ${year}`
+                  : `Movimientos ${MONTHS[Number(ledgerMonth)]} ${year}`}
+              </h2>
+              <div className="ledger-heading-actions">
+                <span
+                  className={`ledger-heading-saldo${yearEndBalance < 0 ? ' money-neg' : ''}`}
+                >
+                  Saldo {money(yearEndBalance)}
+                </span>
+                {newEntryButton}
+              </div>
+            </div>
+            <div className="result-tools result-tools-bar">
+              <Pick
+                label="Mes"
+                value={ledgerMonth}
+                onChange={setLedgerMonth}
+                options={[
+                  { value: 'all', label: 'Todos los meses' },
+                  ...MONTHS.map((label, index) => ({
+                    value: String(index),
+                    label,
+                  })),
+                ]}
+              />
+              {yearPick}
+            </div>
+            {summaryTable(monthSummary)}
+          </section>
+          <section className="panel">
+            <div className="panel-heading">
+              <h2>
+                Detalle
+                {ledgerFocus ? (
+                  <span className="heading-note">
+                    {' '}
+                    ({focusLegend(ledgerFocus, detailLedger.length)})
+                  </span>
+                ) : null}
+              </h2>
+              {ledgerFocus ? (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => pickFocus(null)}
+                >
+                  Ver todos
+                </button>
+              ) : (
+                <span>
+                  {monthLedger.length} movimiento
+                  {monthLedger.length === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+            {ledgerList(
+              detailLedger,
+              ledgerMonth === 'all'
+                ? `No hay movimientos en ${year}.`
+                : `No hay movimientos en ${MONTHS[Number(ledgerMonth)]} ${year}.`,
+            )}
+          </section>
+        </>
+      ) : (
+        <>
+          <div className="seg year-seg" role="tablist" aria-label="Año">
+            {years.map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={year === value}
+                className={year === value ? 'selected' : ''}
+                onClick={() => Y(value)}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+          <div className="metrics">
+            {[
+              {
+                label: 'Por cobrar',
+                value: outstanding,
+                hint: unpaidOrders.length
+                  ? `${unpaidOrders.length} pedido${unpaidOrders.length === 1 ? '' : 's'} con saldo`
+                  : 'Sin saldos pendientes',
+              },
+              {
+                label: 'En cuenta',
+                value: leftover,
+                hint: sharesReady
+                  ? 'Suma disponible de los socios'
+                  : 'Definí los % en Configuración',
+              },
+              {
+                label: 'Cashouts',
+                value: yearCashouts,
+                hint: `${year}`,
+              },
+            ].map(({ label, value, hint }) => (
+              <article className="metric" key={label}>
+                <p>{label}</p>
+                <strong className={value < 0 ? 'money-neg' : ''}>
+                  {money(value)}
+                </strong>
+                <span>{hint}</span>
+              </article>
+            ))}
+          </div>
+          <section className="panel account-sheet">
+            <div className="panel-heading">
+              <h2>Resultados</h2>
+              <CrmLink href={`/?vista=resultados&anio=${year}`}>
+                Ver todo <ArrowUpRight size={15} />
+              </CrmLink>
+            </div>
+            <div className="result-tools result-tools-bar">
+              {monthPick}
+              {yearPick}
+            </div>
+            {previewRow ? (
+              <div className="result-months result-preview">
+                <ResultMonth
+                  row={previewRow}
+                  money={money}
+                  busy={busy}
+                  onSave={
+                    monthIndex === ALL_MONTHS
+                      ? undefined
+                      : (kind, amount) =>
+                          saveMonth(previewRow.month, kind, amount)
+                  }
+                />
+              </div>
+            ) : null}
+          </section>
+          <section className="panel">
+            <div className="panel-heading">
+              <h2>Situación financiera</h2>
+            </div>
+            <p className="hint">
+              Inversión = movimientos pagados por cada socio (cada ingreso de
+              stock pagado genera su movimiento). En cada venta, un socio
+              recupera el costo del proveedor; la ganancia se reparte según el
+              %. Ejemplo: costo 200, venta 300 → quien recupera cobra 250 y el
+              otro 50.
+            </p>
+            {partners.length ? (
+              <>
+                <div className="desktop-table">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Socio</TableHead>
+                        <TableHead>Inversión</TableHead>
+                        <TableHead>Capital recuperado</TableHead>
+                        <TableHead>Pendiente</TableHead>
+                        <TableHead>Ganancia</TableHead>
+                        <TableHead>Liquidación</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {situation.map((row) => (
+                        <TableRow key={row.partner.id}>
+                          <TableCell>
+                            {row.partner.name}
+                            <small>{shareLabel(row.partner.share)}</small>
+                          </TableCell>
+                          <TableCell>{money(row.investment)}</TableCell>
+                          <TableCell>
+                            {row.recovered ? money(row.recovered) : '—'}
+                          </TableCell>
+                          <TableCell
+                            className={row.pending > 0 ? 'money-neg' : ''}
+                          >
+                            {money(row.pending)}
+                          </TableCell>
+                          <TableCell>{money(row.profit)}</TableCell>
+                          <TableCell>{money(row.settlement)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <div className="record-card-list partner-balance-cards">
                   {situation.map((row) => (
-                    <TableRow key={row.partner.id}>
-                      <TableCell>
-                        {row.partner.name}
-                        <small>{shareLabel(row.partner.share)}</small>
-                      </TableCell>
-                      <TableCell>{money(row.investment)}</TableCell>
-                      <TableCell>
-                        {row.recovered ? money(row.recovered) : '—'}
-                      </TableCell>
-                      <TableCell
-                        className={row.pending > 0 ? 'money-neg' : ''}
-                      >
-                        {money(row.pending)}
-                      </TableCell>
-                      <TableCell>{money(row.profit)}</TableCell>
-                      <TableCell>{money(row.settlement)}</TableCell>
-                    </TableRow>
+                    <article className="record-card" key={row.partner.id}>
+                      <div className="record-card-top">
+                        <b>
+                          {row.partner.name}
+                          {row.partner.share
+                            ? ` · ${shareLabel(row.partner.share)}`
+                            : ''}
+                        </b>
+                        <span className={row.pending > 0 ? 'money-neg' : ''}>
+                          {money(row.pending)}
+                        </span>
+                      </div>
+                      <dl className="record-card-facts">
+                        <div>
+                          <dt>Inversión</dt>
+                          <dd>{money(row.investment)}</dd>
+                        </div>
+                        <div>
+                          <dt>Recuperado</dt>
+                          <dd>{row.recovered ? money(row.recovered) : '—'}</dd>
+                        </div>
+                        <div>
+                          <dt>Ganancia</dt>
+                          <dd>{money(row.profit)}</dd>
+                        </div>
+                        <div>
+                          <dt>Liquidación</dt>
+                          <dd>{money(row.settlement)}</dd>
+                        </div>
+                      </dl>
+                    </article>
                   ))}
-                </TableBody>
-              </Table>
+                </div>
+              </>
+            ) : (
+              <p className="hint">
+                Agregá socios en Configuración para ver la situación financiera.
+              </p>
+            )}
+          </section>
+          <section className="panel">
+            <div className="panel-heading">
+              <h2>Caja de socios</h2>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  E('');
+                  setCashoutOpen(true);
+                }}
+              >
+                <Plus size={15} /> cashout
+              </button>
             </div>
-            <div className="record-card-list partner-balance-cards">
-              {situation.map((row) => (
-                <article className="record-card" key={row.partner.id}>
-                  <div className="record-card-top">
-                    <b>
-                      {row.partner.name}
-                      {row.partner.share
-                        ? ` · ${shareLabel(row.partner.share)}`
-                        : ''}
-                    </b>
-                    <span className={row.pending > 0 ? 'money-neg' : ''}>
-                      {money(row.pending)}
-                    </span>
-                  </div>
-                  <dl className="record-card-facts">
-                    <div>
-                      <dt>Inversión</dt>
-                      <dd>{money(row.investment)}</dd>
-                    </div>
-                    <div>
-                      <dt>Recuperado</dt>
-                      <dd>{row.recovered ? money(row.recovered) : '—'}</dd>
-                    </div>
-                    <div>
-                      <dt>Ganancia</dt>
-                      <dd>{money(row.profit)}</dd>
-                    </div>
-                    <div>
-                      <dt>Liquidación</dt>
-                      <dd>{money(row.settlement)}</dd>
-                    </div>
-                  </dl>
-                </article>
-              ))}
-            </div>
-          </>
-        ) : (
-          <p className="hint">
-            Agregá socios en Configuración para ver la situación financiera.
-          </p>
-        )}
-      </section>
-      <section className="panel">
-        <div className="panel-heading">
-          <h2>Caja de socios</h2>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => {
-              E('');
-              setCashoutOpen(true);
-            }}
-          >
-            <Plus size={15} /> cashout
-          </button>
-        </div>
-        {partners.length ? (
-          <>
-            <div className="desktop-table">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Socio</TableHead>
-                    <TableHead>%</TableHead>
-                    <TableHead>Ganancia</TableHead>
-                    <TableHead>Cashouts</TableHead>
-                    <TableHead>Disponible</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+            {partners.length ? (
+              <>
+                <div className="desktop-table">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Socio</TableHead>
+                        <TableHead>%</TableHead>
+                        <TableHead>Ganancia</TableHead>
+                        <TableHead>Cashouts</TableHead>
+                        <TableHead>Disponible</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {balances.map((row) => (
+                        <TableRow key={row.partner.id}>
+                          <TableCell>{row.partner.name}</TableCell>
+                          <TableCell>{shareLabel(row.partner.share)}</TableCell>
+                          <TableCell>{money(row.assigned)}</TableCell>
+                          <TableCell>
+                            {row.taken ? money(row.taken) : '—'}
+                          </TableCell>
+                          <TableCell
+                            className={row.available < 0 ? 'money-neg' : ''}
+                          >
+                            {money(row.available)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <div className="record-card-list partner-balance-cards">
                   {balances.map((row) => (
-                    <TableRow key={row.partner.id}>
-                      <TableCell>{row.partner.name}</TableCell>
-                      <TableCell>{shareLabel(row.partner.share)}</TableCell>
-                      <TableCell>{money(row.assigned)}</TableCell>
-                      <TableCell>
-                        {row.taken ? money(row.taken) : '—'}
-                      </TableCell>
-                      <TableCell
-                        className={row.available < 0 ? 'money-neg' : ''}
-                      >
-                        {money(row.available)}
-                      </TableCell>
-                    </TableRow>
+                    <article className="record-card" key={row.partner.id}>
+                      <div className="record-card-top">
+                        <b>
+                          {row.partner.name}
+                          {row.partner.share
+                            ? ` · ${shareLabel(row.partner.share)}`
+                            : ''}
+                        </b>
+                        <span className={row.available < 0 ? 'money-neg' : ''}>
+                          {money(row.available)}
+                        </span>
+                      </div>
+                      <dl className="record-card-facts">
+                        <div>
+                          <dt>Ganancia</dt>
+                          <dd>{money(row.assigned)}</dd>
+                        </div>
+                        <div>
+                          <dt>Cashouts</dt>
+                          <dd>{row.taken ? money(row.taken) : '—'}</dd>
+                        </div>
+                      </dl>
+                    </article>
                   ))}
-                </TableBody>
-              </Table>
+                </div>
+              </>
+            ) : (
+              <p className="hint">
+                Agregá un socio en Configuración para registrar cashouts a su
+                nombre.
+              </p>
+            )}
+          </section>
+          <section className="panel">
+            <div className="panel-heading">
+              <h2>Movimientos {year}</h2>
+              <div className="ledger-heading-actions">
+                <span
+                  className={`ledger-heading-saldo${yearEndBalance < 0 ? ' money-neg' : ''}`}
+                >
+                  Saldo {money(yearEndBalance)}
+                </span>
+                {newEntryButton}
+                <CrmLink
+                  className="secondary"
+                  href={`/?vista=movimientos&anio=${year}`}
+                >
+                  Ver movimientos <ArrowUpRight size={15} />
+                </CrmLink>
+              </div>
             </div>
-            <div className="record-card-list partner-balance-cards">
-              {balances.map((row) => (
-                <article className="record-card" key={row.partner.id}>
-                  <div className="record-card-top">
-                    <b>
-                      {row.partner.name}
-                      {row.partner.share
-                        ? ` · ${shareLabel(row.partner.share)}`
-                        : ''}
-                    </b>
-                    <span className={row.available < 0 ? 'money-neg' : ''}>
-                      {money(row.available)}
-                    </span>
-                  </div>
-                  <dl className="record-card-facts">
-                    <div>
-                      <dt>Ganancia</dt>
-                      <dd>{money(row.assigned)}</dd>
-                    </div>
-                    <div>
-                      <dt>Cashouts</dt>
-                      <dd>{row.taken ? money(row.taken) : '—'}</dd>
-                    </div>
-                  </dl>
-                </article>
-              ))}
-            </div>
-          </>
-        ) : (
-          <p className="hint">
-            Agregá un socio en Configuración para registrar cashouts a su
-            nombre.
-          </p>
-        )}
-      </section>
+            <p className="hint">
+              Cobros = lo que cobró cada socio de los pedidos; es ganancia a
+              repartir, no se descuenta de los egresos. Egresos = pagos a
+              proveedores, gastos y cashouts.
+            </p>
+            {summaryTable(yearSummary)}
+          </section>
+        </>
+      )}
       <Dialog
         open={cashoutOpen}
         onOpenChange={(open) => {

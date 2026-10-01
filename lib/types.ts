@@ -369,3 +369,7 @@ export const modules = [
   'pedidos',
   'tareas',
 ] as const;
+export type AccountView = 'board' | 'resultados' | 'movimientos';
+export function accountViewOf(vista: string | undefined): AccountView {
+  return vista === 'resultados' || vista === 'movimientos' ? vista : 'board';
+}
