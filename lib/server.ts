@@ -6,7 +6,7 @@ import {
   discounted,
   promoPrice,
   increaseByPercent,
-  arsFromUsd,
+  fxAmounts,
 } from './money';
 import {
   ORDER_STATUSES,
@@ -340,6 +340,12 @@ export async function ensureAccountTables() {
       entryNames,
       'amount_ars',
       'amount_ars integer NOT NULL DEFAULT 0',
+    ),
+    await addColumn(
+      'account_entries',
+      entryNames,
+      'amount_usd',
+      'amount_usd integer NOT NULL DEFAULT 0',
     ),
     await addColumn(
       'account_entries',
@@ -1041,6 +1047,10 @@ export async function allData() {
       receipt: typeof row.receipt === 'string' ? row.receipt : '',
       fx_rate: Number(row.fx_rate) || 0,
       amount_ars: Number(row.amount_ars) || 0,
+      amount_usd:
+        row.currency === 'USD'
+          ? Number(row.amount) || 0
+          : Number(row.amount_usd) || 0,
     })),
     payments: (payments.results as OrderPayment[]).map((row) => ({
       ...row,
@@ -2512,12 +2522,14 @@ export async function mutate(
       if (!amount) throw new Error('Monto: debe ser mayor a cero.');
       const currency = choice(b.currency, ['ARS', 'USD'], 'Moneda');
       const receipt = photo(b.receipt || '');
-      const fxRate =
-        currency === 'USD' ? integer(b.fx_rate, 'Tipo de cambio') : 0;
-      const amountArs =
-        currency === 'USD' ? arsFromUsd(amount, fxRate) : amount;
+      const fxRate = integer(b.fx_rate, 'Tipo de cambio');
+      const { ars: amountArs, usd: amountUsd } = fxAmounts(
+        currency,
+        amount,
+        fxRate,
+      );
       await stmt(
-        'INSERT INTO account_entries(id,concept,detail,partner_id,supplier_id,order_id,receipt,amount,currency,fx_rate,amount_ars,date,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO account_entries(id,concept,detail,partner_id,supplier_id,order_id,receipt,amount,currency,fx_rate,amount_ars,amount_usd,date,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         crypto.randomUUID(),
         concept,
         detail,
@@ -2529,6 +2541,7 @@ export async function mutate(
         currency,
         fxRate,
         amountArs,
+        amountUsd,
         date(b.date, true),
         new Date().toISOString(),
         actor.id,

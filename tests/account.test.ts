@@ -6,6 +6,7 @@ import {
   accountInflow,
   accountLedger,
   allocateShares,
+  amountIn,
   assertCashoutFits,
   assertSharesComplete,
   cashoutLimit,
@@ -519,4 +520,13 @@ test('cost is recovered only while the order is fully paid', () => {
   assert.equal(recovered(paid), 20_000);
   assert.equal(recovered(partial), 0);
   assert.equal(recovered(unpaid), 0);
+});
+
+test('converts account entries to the board currency with the stored equivalents', () => {
+  const ars = { amount: 30_000_000, currency: 'ARS', amount_ars: 30_000_000, amount_usd: 20_000 };
+  const usd = { amount: 20_000, currency: 'USD', amount_ars: 30_000_000, amount_usd: 20_000 };
+  assert.equal(amountIn(ars, 'USD'), 20_000);
+  assert.equal(amountIn(ars, 'ARS'), 30_000_000);
+  assert.equal(amountIn(usd, 'ARS'), 30_000_000);
+  assert.equal(amountIn({ amount: 5_000, currency: 'ARS' }, 'USD'), 0);
 });

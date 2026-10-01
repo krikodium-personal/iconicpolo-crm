@@ -15,6 +15,9 @@ import {
   percent,
   ratio,
   arsFromUsd,
+  usdFromArs,
+  fxAmounts,
+  previewFx,
 } from '../lib/money.ts';
 
 test('parses money and percentages into safe integer units', () => {
@@ -30,6 +33,16 @@ test('converts dollars to pesos with the taken exchange rate', () => {
   assert.equal(arsFromUsd(10_000, 148_050), 14_805_000);
   assert.equal(arsFromUsd(5_000, 100_000), 5_000_000);
   assert.throws(() => arsFromUsd(10_000, 0));
+});
+
+test('converts pesos to dollars with the taken exchange rate', () => {
+  assert.equal(usdFromArs(14_805_000, 148_050), 10_000);
+  assert.equal(usdFromArs(100_000, 150_000), 67);
+  assert.throws(() => usdFromArs(100_000, 0));
+  assert.deepEqual(fxAmounts('ARS', 30_000_000, 150_000), { ars: 30_000_000, usd: 20_000 });
+  assert.deepEqual(fxAmounts('USD', 20_000, 150_000), { ars: 30_000_000, usd: 20_000 });
+  assert.deepEqual(previewFx('ARS', '300000', '1500'), { currency: 'USD', amount: 20_000 });
+  assert.equal(previewFx('ARS', '300000', ''), null);
 });
 
 test('uses half-up rounding for basis-point calculations', () => {

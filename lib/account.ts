@@ -6,6 +6,7 @@ import type {
   Partner,
   PartnerCashout,
 } from './types';
+import { formatMoney, formatRate } from './money';
 
 export const SHARE_TOTAL = 10000;
 
@@ -55,9 +56,43 @@ export type LedgerEntry = {
   receipt?: string;
   fx_rate?: number;
   amount_ars?: number;
+  amount_usd?: number;
   order_id?: string;
   balance: number;
 };
+
+/** Monto del movimiento en `currency` usando el equivalente guardado; 0 si no hay. */
+export function amountIn(
+  entry: {
+    amount: number;
+    currency?: string;
+    amount_ars?: number;
+    amount_usd?: number;
+  },
+  currency?: string,
+) {
+  if (!currency || !entry.currency || entry.currency === currency)
+    return entry.amount;
+  if (currency === 'ARS') return entry.amount_ars || 0;
+  if (currency === 'USD') return entry.amount_usd || 0;
+  return 0;
+}
+
+/** `$ 120.000,00 · TC 1.200,00` con el equivalente en la otra moneda. */
+export function entryFxNote(entry: {
+  currency?: string;
+  fx_rate?: number;
+  amount_ars?: number;
+  amount_usd?: number;
+}) {
+  if (!entry.fx_rate)
+    return entry.currency === 'ARS' ? 'Sin tipo de cambio' : '';
+  const other =
+    entry.currency === 'USD'
+      ? formatMoney(entry.amount_ars || 0, 'ARS')
+      : formatMoney(entry.amount_usd || 0, 'USD');
+  return `${other} · TC ${formatRate(entry.fx_rate)}`;
+}
 
 export function monthKey(isoDate: string): MonthKey {
   return isoDate.slice(0, 7) as MonthKey;
@@ -144,12 +179,7 @@ export function entryTotal(
   entries: AccountEntry[],
   currency?: string,
 ) {
-  return entries.reduce((sum, row) => {
-    if (!currency || row.currency === currency) return sum + row.amount;
-    if (currency === 'ARS' && row.currency === 'USD')
-      return sum + (row.amount_ars || 0);
-    return sum;
-  }, 0);
+  return entries.reduce((sum, row) => sum + amountIn(row, currency), 0);
 }
 
 export function cashoutTotal(cashouts: PartnerCashout[]) {
@@ -480,6 +510,7 @@ export function accountLedger(
         receipt: entry.receipt || '',
         fx_rate: entry.fx_rate || 0,
         amount_ars: entry.amount_ars || 0,
+        amount_usd: entry.amount_usd || 0,
         order_id: entry.order_id || undefined,
       };
     }),
@@ -494,12 +525,18 @@ export function accountLedger(
   return raw.map((entry) => {
     const currency = entry.currency || boardCurrency;
     if (currency === boardCurrency) balance += entry.amount;
-    else if (
-      boardCurrency === 'ARS' &&
-      currency === 'USD' &&
-      entry.amount_ars
-    )
-      balance += entry.kind === 'movimiento' ? -entry.amount_ars : entry.amount_ars;
+    else {
+      const converted = amountIn(
+        {
+          amount: Math.abs(entry.amount),
+          currency,
+          amount_ars: entry.amount_ars,
+          amount_usd: entry.amount_usd,
+        },
+        boardCurrency,
+      );
+      balance += entry.amount < 0 ? -converted : converted;
+    }
     return { ...entry, balance };
   });
 }
@@ -601,11 +638,7 @@ export function financialSituation(
   }
   for (const entry of entries) {
     if (!entry.partner_id) continue;
-    let amount = 0;
-    if (!currency || entry.currency === currency) amount = entry.amount;
-    else if (currency === 'ARS' && entry.currency === 'USD')
-      amount = entry.amount_ars || 0;
-    add(investment, entry.partner_id, amount);
+    add(investment, entry.partner_id, amountIn(entry, currency));
   }
   for (const order of collectedOrders(orders)) {
     if (!order.cost_partner_id) continue;

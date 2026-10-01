@@ -34,18 +34,18 @@ import {
   parsePercent,
   percent,
   formatMoney,
-  formatRate,
   margin,
   markup,
   lineTotals,
   fixedLineTotals,
   promoPrice,
   friendsPrice,
-  arsFromUsd,
+  previewFx,
 } from '@/lib/money';
 import {
   SHARE_TOTAL,
   conceptLabel,
+  entryFxNote,
   parseShare,
   shareInput,
   shareLabel,
@@ -2042,15 +2042,6 @@ export function OrderDetail({
   );
 }
 
-function previewArsAmount(amount: string, rate: string) {
-  try {
-    if (!amount.trim() || !rate.trim()) return null;
-    return arsFromUsd(parseDecimal(amount), parseDecimal(rate));
-  } catch {
-    return null;
-  }
-}
-
 function OrderMovements({
   order,
   data,
@@ -2159,10 +2150,7 @@ function OrderMovements({
     fx_rate: '',
     date: today(),
   });
-  const arsPreview =
-    form.currency === 'USD'
-      ? previewArsAmount(form.amount, form.fx_rate)
-      : null;
+  const fxPreview = previewFx(form.currency, form.amount, form.fx_rate);
   function openForm() {
     setError('');
     setForm({
@@ -2319,9 +2307,7 @@ function OrderMovements({
                   {partnerName(entry.partner_id)
                     ? ` · Pagó ${partnerName(entry.partner_id)}`
                     : ''}
-                  {entry.currency === 'USD' && entry.amount_ars
-                    ? ` · ${formatMoney(entry.amount_ars, 'ARS')} · TC ${formatRate(entry.fx_rate || 0)}`
-                    : ''}
+                  {entryFxNote(entry) ? ` · ${entryFxNote(entry)}` : ''}
                   {entry.receipt ? ' · factura' : ''}
                 </small>
               </li>
@@ -2455,9 +2441,8 @@ function OrderMovements({
                 if (!form.partner_id)
                   throw new Error('Elegí quién pagó.');
                 const amount = parseDecimal(form.amount);
-                const fxRate =
-                  form.currency === 'USD' ? parseDecimal(form.fx_rate) : 0;
-                if (form.currency === 'USD' && !fxRate)
+                const fxRate = parseDecimal(form.fx_rate);
+                if (!fxRate)
                   throw new Error('Tipo de cambio: debe ser mayor a cero.');
                 setBusy(true);
                 setError('');
@@ -2533,11 +2518,7 @@ function OrderMovements({
                     label="Moneda"
                     value={form.currency}
                     onChange={(value) =>
-                      setForm({
-                        ...form,
-                        currency: value,
-                        fx_rate: value === 'USD' ? form.fx_rate : '',
-                      })
+                      setForm({ ...form, currency: value })
                     }
                     options={[
                       { value: 'ARS', label: 'Pesos' },
@@ -2554,26 +2535,22 @@ function OrderMovements({
                   />
                 </div>
               </Field>
-              {form.currency === 'USD' ? (
-                <>
-                  <Field label="Tipo de cambio *" wide>
-                    <input
-                      inputMode="decimal"
-                      required
-                      placeholder="Pesos por dólar"
-                      value={form.fx_rate}
-                      onChange={(e) =>
-                        setForm({ ...form, fx_rate: e.target.value })
-                      }
-                    />
-                  </Field>
-                  <p className="entry-fx-preview">
-                    {arsPreview != null
-                      ? `Equivale a ${formatMoney(arsPreview, 'ARS')}`
-                      : 'Ingresá el monto y el tipo de cambio para ver el equivalente en pesos.'}
-                  </p>
-                </>
-              ) : null}
+              <Field label="Tipo de cambio *" wide>
+                <input
+                  inputMode="decimal"
+                  required
+                  placeholder="Pesos por dólar"
+                  value={form.fx_rate}
+                  onChange={(e) =>
+                    setForm({ ...form, fx_rate: e.target.value })
+                  }
+                />
+              </Field>
+              <p className="entry-fx-preview">
+                {fxPreview
+                  ? `Equivale a ${formatMoney(fxPreview.amount, fxPreview.currency)}`
+                  : `Ingresá el monto y el tipo de cambio para ver el equivalente en ${form.currency === 'USD' ? 'pesos' : 'dólares'}.`}
+              </p>
               <Field label="Fecha *" wide>
                 <DateCalendar
                   label="Fecha"

@@ -253,6 +253,7 @@ export type AccountEntry = {
   currency: 'ARS' | 'USD';
   fx_rate?: number;
   amount_ars?: number;
+  amount_usd?: number;
   date: string;
   created_at: string;
   created_by?: string;

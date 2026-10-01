@@ -34,6 +34,41 @@ export function arsFromUsd(usdCents: number, fxRateCents: number): number {
     'Equivalente en pesos',
   );
 }
+export function usdFromArs(arsCents: number, fxRateCents: number): number {
+  integer(arsCents, 'Monto');
+  const rate = integer(fxRateCents, 'Tipo de cambio');
+  if (!rate) throw new Error('Tipo de cambio: debe ser mayor a cero.');
+  return integer(
+    Number((BigInt(arsCents) * 100n + BigInt(rate) / 2n) / BigInt(rate)),
+    'Equivalente en dólares',
+  );
+}
+/** Monto en ARS y USD de un movimiento cargado en `currency` con tipo de cambio. */
+export function fxAmounts(
+  currency: string,
+  amountCents: number,
+  fxRateCents: number,
+) {
+  return currency === 'USD'
+    ? { ars: arsFromUsd(amountCents, fxRateCents), usd: amountCents }
+    : { ars: amountCents, usd: usdFromArs(amountCents, fxRateCents) };
+}
+/** Equivalente en la otra moneda mientras se completa el formulario. */
+export function previewFx(currency: string, amount: string, rate: string) {
+  try {
+    if (!amount.trim() || !rate.trim()) return null;
+    const { ars, usd } = fxAmounts(
+      currency,
+      parseDecimal(amount),
+      parseDecimal(rate),
+    );
+    return currency === 'USD'
+      ? { currency: 'ARS', amount: ars }
+      : { currency: 'USD', amount: usd };
+  } catch {
+    return null;
+  }
+}
 export function formatRate(cents: number) {
   return new Intl.NumberFormat('es-AR', {
     minimumFractionDigits: 2,

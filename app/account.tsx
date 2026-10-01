@@ -32,10 +32,11 @@ import {
   sharesAreComplete,
   totalsOf,
   yearSheet,
+  entryFxNote,
   type LedgerEntry,
   type MonthlyResult,
 } from '@/lib/account';
-import { decimal, formatMoney, formatRate, parseDecimal, arsFromUsd } from '@/lib/money';
+import { decimal, formatMoney, parseDecimal, previewFx } from '@/lib/money';
 import { formatDate, orderIsLive, type Data, type Order } from '@/lib/types';
 
 const today = () =>
@@ -51,15 +52,6 @@ function currentMonthIndex() {
 }
 function sheetValue(cents: number, money: (n: number) => string) {
   return cents ? money(cents) : '—';
-}
-
-function previewArs(amount: string, rate: string) {
-  try {
-    if (!amount.trim() || !rate.trim()) return null;
-    return arsFromUsd(parseDecimal(amount), parseDecimal(rate));
-  } catch {
-    return null;
-  }
 }
 
 function MonthAmount({
@@ -343,10 +335,7 @@ export function AccountBoard({
     const order = ordersById.get(entry.order_id);
     if (order) onOpenOrder(order);
   }
-  const arsPreview =
-    entry.currency === 'USD'
-      ? previewArs(entry.amount, entry.fx_rate)
-      : null;
+  const fxPreview = previewFx(entry.currency, entry.amount, entry.fx_rate);
   async function run(body: Record<string, unknown>, after?: () => void) {
     B(true);
     E('');
@@ -578,10 +567,9 @@ export function AccountBoard({
                           entry.amount,
                           entry.currency || data.currency,
                         )}
-                        {entry.currency === 'USD' && entry.amount_ars ? (
+                        {entry.kind === 'movimiento' && entryFxNote(entry) ? (
                           <small className="entry-fx">
-                            {formatMoney(entry.amount_ars, 'ARS')} · TC{' '}
-                            {formatRate(entry.fx_rate || 0)}
+                            {entryFxNote(entry)}
                           </small>
                         ) : null}
                       </TableCell>
@@ -638,8 +626,8 @@ export function AccountBoard({
                   {entry.actor ? ` · Registrado por ${entry.actor}` : ''}
                   {entry.notes ? ` · ${entry.notes}` : ''}
                   {entry.receipt ? ' · factura' : ''}
-                  {entry.currency === 'USD' && entry.amount_ars
-                    ? ` · ${formatMoney(entry.amount_ars, 'ARS')} · TC ${formatRate(entry.fx_rate || 0)}`
+                  {entry.kind === 'movimiento' && entryFxNote(entry)
+                    ? ` · ${entryFxNote(entry)}`
                     : ''}
                 </small>
               </article>
@@ -955,11 +943,8 @@ export function AccountBoard({
                   throw new Error('Elegí el proveedor.');
                 }
                 const amount = parseDecimal(entry.amount);
-                const fxRate =
-                  entry.currency === 'USD'
-                    ? parseDecimal(entry.fx_rate)
-                    : 0;
-                if (entry.currency === 'USD' && !fxRate) {
+                const fxRate = parseDecimal(entry.fx_rate);
+                if (!fxRate) {
                   throw new Error('Tipo de cambio: debe ser mayor a cero.');
                 }
                 if (!partners.length) {
@@ -1120,11 +1105,7 @@ export function AccountBoard({
                     label="Moneda"
                     value={entry.currency}
                     onChange={(value) =>
-                      setEntry({
-                        ...entry,
-                        currency: value,
-                        fx_rate: value === 'USD' ? entry.fx_rate : '',
-                      })
+                      setEntry({ ...entry, currency: value })
                     }
                     options={[
                       { value: 'ARS', label: 'Pesos' },
@@ -1141,26 +1122,22 @@ export function AccountBoard({
                   />
                 </div>
               </Field>
-              {entry.currency === 'USD' ? (
-                <>
-                  <Field label="Tipo de cambio *" wide>
-                    <input
-                      inputMode="decimal"
-                      required
-                      placeholder="Pesos por dólar"
-                      value={entry.fx_rate}
-                      onChange={(e) =>
-                        setEntry({ ...entry, fx_rate: e.target.value })
-                      }
-                    />
-                  </Field>
-                  <p className="entry-fx-preview">
-                    {arsPreview != null
-                      ? `Equivale a ${formatMoney(arsPreview, 'ARS')}`
-                      : 'Ingresá el monto y el tipo de cambio para ver el equivalente en pesos.'}
-                  </p>
-                </>
-              ) : null}
+              <Field label="Tipo de cambio *" wide>
+                <input
+                  inputMode="decimal"
+                  required
+                  placeholder="Pesos por dólar"
+                  value={entry.fx_rate}
+                  onChange={(e) =>
+                    setEntry({ ...entry, fx_rate: e.target.value })
+                  }
+                />
+              </Field>
+              <p className="entry-fx-preview">
+                {fxPreview
+                  ? `Equivale a ${formatMoney(fxPreview.amount, fxPreview.currency)}`
+                  : `Ingresá el monto y el tipo de cambio para ver el equivalente en ${entry.currency === 'USD' ? 'pesos' : 'dólares'}.`}
+              </p>
               <Field label="Fecha *" wide>
                 <DateCalendar
                   label="Fecha"
