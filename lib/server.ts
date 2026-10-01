@@ -10,6 +10,8 @@ import {
 } from './money';
 import {
   ORDER_STATUSES,
+  PRODUCT_UNITS,
+  isProductUnit,
   orderIsDelivered,
   orderIsLocked,
   orderIsQuote,
@@ -966,7 +968,7 @@ export async function allData() {
       return {
         ...product,
         kind: product.kind === 'configured' ? 'configured' : 'sku',
-        unit: product.unit === 'par' ? 'par' : 'unidad',
+        unit: isProductUnit(product.unit) ? product.unit : 'unidad',
         pricing: parsePricing(product.pricing),
       };
     }),
@@ -1207,7 +1209,9 @@ export async function product(
     kind === 'configured' ? parsePricing(b.pricing) : {},
   );
   const unit =
-    b.unit === undefined ? null : choice(b.unit, ['unidad', 'par'], 'Unidad');
+    b.unit === undefined
+      ? null
+      : choice(b.unit, PRODUCT_UNITS.map((u) => u.id), 'Unidad');
   const values = [
     str(b.name, 'Nombre', true, 150),
     str(b.sku, 'SKU', true, 80).toUpperCase(),

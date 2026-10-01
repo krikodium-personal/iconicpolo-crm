@@ -13,6 +13,9 @@ import {
   formatDateTime,
   PRODUCT_UNITS,
   quantityLabel,
+  unitAgree,
+  unitInfo,
+  unitShort,
   unitWord,
   type OrderKind,
   type ProductUnit,
@@ -753,9 +756,9 @@ export function ProductForm({
             ))}
           </fieldset>
           <small className="hint">
-            {f.unit === 'par'
-              ? 'Stock, pedidos y fichas se cuentan en pares.'
-              : 'Stock, pedidos y fichas se cuentan por unidad.'}
+            {f.unit === 'unidad'
+              ? 'Stock, pedidos y fichas se cuentan por unidad.'
+              : `Stock, pedidos y fichas se cuentan en ${unitWord(f.unit)}.`}
           </small>
         </div>
       </div>
@@ -1096,7 +1099,7 @@ function unitsLabel(quantity: number, unit?: ProductUnit) {
   return quantityLabel(quantity, unit);
 }
 function lineQuantity(quantity: number, unit?: ProductUnit) {
-  if (unit === 'par') return ` × ${quantityLabel(quantity, unit)}`;
+  if (unit && unit !== 'unidad') return ` × ${quantityLabel(quantity, unit)}`;
   return quantity > 1 ? ` × ${quantity}` : '';
 }
 function aggregateStockReservations(
@@ -1348,7 +1351,7 @@ export function ProductDetail({
           disponible
           {available === 1 ? '' : 's'}
           {reserved
-            ? ` · ${quantityLabel(reserved, record.unit)} reservad${record.unit === 'par' ? 'o' : 'a'}${reserved === 1 ? '' : 's'}`
+            ? ` · ${quantityLabel(reserved, record.unit)} ${unitAgree('reservad', record.unit, reserved)}`
             : ''}
         </h3>
         {isConfiguredProduct(record) ? (
@@ -3358,7 +3361,7 @@ export function OrderForm({
                       <small>
                         {p
                           ? i.from_stock
-                            ? `${p.unit === 'par' ? 'Par' : 'Unidad'} de stock${
+                            ? `${unitInfo(p.unit).label} de stock${
                                 i.stock_qty != null
                                   ? ` · ${quantityLabel(i.stock_qty, p.unit)}`
                                   : ''
@@ -3378,8 +3381,8 @@ export function OrderForm({
                   <Field
                     label={
                       i.from_stock && (i.stock_qty || 1) > 1
-                        ? `${p?.unit === 'par' ? 'Pares' : 'Cantidad'} * · máx. ${i.stock_qty}`
-                        : `${p?.unit === 'par' ? 'Pares' : 'Cantidad'} *`
+                        ? `${unitInfo(p?.unit).field} * · máx. ${i.stock_qty}`
+                        : `${unitInfo(p?.unit).field} *`
                     }
                   >
                     {i.from_stock && (i.stock_qty || 1) > 1 ? (
@@ -4314,7 +4317,7 @@ export function StockItemDetail({
           data={data}
           onOpenOrder={onOpenOrder}
           unit={record.unit}
-          emptyHint={`Ningún pedido reserva estas ${unitWord(record.unit)}. Quedan todas disponibles para el próximo pedido.`}
+          emptyHint={`Ningún pedido reserva est${unitAgree('', record.unit)} ${unitWord(record.unit)}. Quedan tod${unitAgree('', record.unit)} disponibles para el próximo pedido.`}
         />
       </section>
     </div>
@@ -4381,9 +4384,8 @@ export function StockOverview({
           </strong>
           {reserved ? (
             <small className="stock-reserved-total">
-              {unitsLabel(reserved, record.unit)} reservad
-              {record.unit === 'par' ? 'o' : 'a'}
-              {reserved === 1 ? '' : 's'} · solo el resto
+              {unitsLabel(reserved, record.unit)}{' '}
+              {unitAgree('reservad', record.unit, reserved)} · solo el resto
               se puede asignar a un pedido nuevo
             </small>
           ) : null}
@@ -4466,8 +4468,8 @@ export function StockOverview({
                   {row.reservations.length ? (
                     <div className="stock-reserve-actions">
                       <span className="reserved-badge">
-                        {unitsLabel(row.reserved, record.unit)} reservad
-                        {record.unit === 'par' ? 'os' : 'as'} ·{' '}
+                        {unitsLabel(row.reserved, record.unit)}{' '}
+                        {unitAgree('reservad', record.unit)} ·{' '}
                         {unitsLabel(row.available, record.unit)} libres
                       </span>
                       {row.reservations.map((reservation) => {
@@ -4498,15 +4500,7 @@ export function StockOverview({
                 <div className="stock-item-amounts">
                   <strong>
                     {row.quantity}{' '}
-                    <small>
-                      {record.unit === 'par'
-                        ? row.quantity === 1
-                          ? 'par'
-                          : 'pares'
-                        : row.quantity === 1
-                          ? 'ud.'
-                          : 'uds.'}
-                    </small>
+                    <small>{unitShort(record.unit, row.quantity)}</small>
                   </strong>
                   <small
                     className={
@@ -4517,7 +4511,7 @@ export function StockOverview({
                     title={
                       rowCosts.get(row.key)?.pending
                         ? 'Hay costos sin definir en este producto.'
-                        : `Costo total de estas ${unitWord(record.unit)}`
+                        : `Costo total de est${unitAgree('', record.unit)} ${unitWord(record.unit)}`
                     }
                   >
                     {formatMoney(
@@ -4566,8 +4560,8 @@ export function StockOverview({
         })
       ) : (
         <p className="hint">
-          Todavía no hay {unitWord(record.unit)} cargad
-          {record.unit === 'par' ? 'os' : 'as'}.
+          Todavía no hay {unitWord(record.unit)}{' '}
+          {unitAgree('cargad', record.unit)}.
         </p>
       )}
     </div>
@@ -4782,7 +4776,7 @@ export function StockForm({
             />
           </Field>
         ) : null}
-        <Field label={record.unit === 'par' ? 'Pares *' : 'Cantidad *'}>
+        <Field label={`${unitInfo(record.unit).field} *`}>
           <input
             type="number"
             min="1"

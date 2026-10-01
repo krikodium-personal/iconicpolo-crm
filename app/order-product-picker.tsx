@@ -21,6 +21,7 @@ import {
 import { formatMoney, friendsPrice } from '@/lib/money';
 import {
   quantityLabel,
+  unitAgree,
   unitWord,
   type Data,
   type Product,
@@ -95,8 +96,10 @@ function OrderStockPicker({
         </div>
       </div>
       <p className="hint">
-        Elegí {unitWord(product.unit)} disponibles. Las asignadas a un pedido
-        abierto o cerrado quedan reservadas; solo se puede tomar el remanente
+        Elegí {unitWord(product.unit)} disponibles. L
+        {unitAgree('', product.unit)} {unitAgree('asignad', product.unit)} a un
+        pedido abierto o cerrado quedan {unitAgree('reservad', product.unit)};
+        solo se puede tomar el remanente
         sin asignar.
       </p>
       {rows.length ? (
@@ -123,7 +126,7 @@ function OrderStockPicker({
                       ? `${quantityLabel(row.available, product.unit)} disponible${row.available === 1 ? '' : 's'}`
                       : 'Sin disponible',
                     row.reserved
-                      ? `${quantityLabel(row.reserved, product.unit)} reservad${product.unit === 'par' ? 'o' : 'a'}${row.reserved === 1 ? '' : 's'}`
+                      ? `${quantityLabel(row.reserved, product.unit)} ${unitAgree('reservad', product.unit, row.reserved)}`
                       : '',
                   ]
                     .filter(Boolean)
@@ -193,8 +196,8 @@ function OrderStockPicker({
         </div>
       ) : (
         <p className="hint">
-          Todavía no hay {unitWord(product.unit)} cargad
-          {product.unit === 'par' ? 'os' : 'as'}.
+          Todavía no hay {unitWord(product.unit)}{' '}
+          {unitAgree('cargad', product.unit)}.
         </p>
       )}
     </div>

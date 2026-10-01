@@ -27,20 +27,74 @@ export type Option = {
   cost: number;
   photo: string;
 };
-export type ProductUnit = 'unidad' | 'par';
-export const PRODUCT_UNITS: { id: ProductUnit; label: string }[] = [
-  { id: 'unidad', label: 'Unidad' },
-  { id: 'par', label: 'Par' },
-];
-/** `3 uds.` / `1 par` / `3 pares` según cómo se cuenta el producto. */
-export function quantityLabel(quantity: number, unit?: ProductUnit) {
-  if (unit === 'par') return quantity === 1 ? '1 par' : `${quantity} pares`;
-  return quantity === 1 ? '1 ud.' : `${quantity} uds.`;
+export type ProductUnit = 'unidad' | 'par' | 'juego';
+const UNITS: Record<
+  ProductUnit,
+  {
+    label: string;
+    one: string;
+    many: string;
+    shortOne: string;
+    shortMany: string;
+    field: string;
+    /** Terminación de género: `reservadas` / `reservados`. */
+    ending: 'a' | 'o';
+  }
+> = {
+  unidad: {
+    label: 'Unidad',
+    one: 'unidad',
+    many: 'unidades',
+    shortOne: 'ud.',
+    shortMany: 'uds.',
+    field: 'Cantidad',
+    ending: 'a',
+  },
+  par: {
+    label: 'Par',
+    one: 'par',
+    many: 'pares',
+    shortOne: 'par',
+    shortMany: 'pares',
+    field: 'Pares',
+    ending: 'o',
+  },
+  juego: {
+    label: 'Juego',
+    one: 'juego',
+    many: 'juegos',
+    shortOne: 'juego',
+    shortMany: 'juegos',
+    field: 'Juegos',
+    ending: 'o',
+  },
+};
+export const PRODUCT_UNITS = (Object.keys(UNITS) as ProductUnit[]).map(
+  (id) => ({ id, label: UNITS[id].label }),
+);
+export function isProductUnit(value: unknown): value is ProductUnit {
+  return typeof value === 'string' && value in UNITS;
 }
-/** `unidades` / `pares`. */
+export function unitInfo(unit?: ProductUnit) {
+  return UNITS[unit && unit in UNITS ? unit : 'unidad'];
+}
+/** `3 uds.` / `1 par` / `3 juegos` según cómo se cuenta el producto. */
+export function quantityLabel(quantity: number, unit?: ProductUnit) {
+  return `${quantity} ${unitShort(unit, quantity)}`;
+}
+/** `ud.` / `uds.` / `par` / `pares` / `juego` / `juegos`. */
+export function unitShort(unit?: ProductUnit, quantity = 2) {
+  const info = unitInfo(unit);
+  return quantity === 1 ? info.shortOne : info.shortMany;
+}
+/** `unidades` / `pares` / `juegos`. */
 export function unitWord(unit?: ProductUnit, quantity = 2) {
-  if (unit === 'par') return quantity === 1 ? 'par' : 'pares';
-  return quantity === 1 ? 'unidad' : 'unidades';
+  const info = unitInfo(unit);
+  return quantity === 1 ? info.one : info.many;
+}
+/** Concuerda un participio con la unidad: `reservad` → `reservadas` / `reservados`. */
+export function unitAgree(stem: string, unit?: ProductUnit, quantity = 2) {
+  return `${stem}${unitInfo(unit).ending}${quantity === 1 ? '' : 's'}`;
 }
 export type Product = {
   id: string;
