@@ -6,6 +6,7 @@ import type {
   Partner,
   PartnerCashout,
 } from './types';
+import { newestFirst } from './types';
 import { formatMoney, formatRate } from './money';
 
 export const SHARE_TOTAL = 10000;
@@ -46,6 +47,7 @@ export type MonthlyResult = {
 
 export type LedgerEntry = {
   date: string;
+  created_at?: string;
   label: string;
   kind: 'ganancia' | 'cobro' | 'cashout' | 'movimiento';
   amount: number;
@@ -460,6 +462,7 @@ export function accountLedger(
     return rows.map((payment) => ({
       ...base,
       date: payment.date,
+      created_at: payment.created_at,
       amount: payment.amount,
       partner: names.get(payment.partner_id) || undefined,
       actor: names.get(payment.created_by || '') || undefined,
@@ -482,6 +485,7 @@ export function accountLedger(
     ...sponsors,
     ...cashouts.map((cashout) => ({
       date: cashout.date,
+      created_at: cashout.created_at,
       label: 'Cashout',
       kind: 'cashout' as const,
       amount: -cashout.amount,
@@ -496,6 +500,7 @@ export function accountLedger(
         : '';
       return {
         date: entry.date,
+        created_at: entry.created_at,
         label: conceptLabel(
           entry.concept,
           entry.detail,
@@ -520,11 +525,10 @@ export function accountLedger(
     }),
   ];
   const kindRank = { cobro: 0, ganancia: 1, movimiento: 2, cashout: 3 };
-  raw.sort((a, b) => {
-    const byDate = a.date.localeCompare(b.date);
-    if (byDate) return byDate;
-    return kindRank[a.kind] - kindRank[b.kind];
-  });
+  raw.sort(
+    (a, b) =>
+      newestFirst(b, a) || kindRank[a.kind] - kindRank[b.kind],
+  );
   let balance = 0;
   return raw.map((entry) => {
     balance += ledgerAmountIn(entry, boardCurrency);

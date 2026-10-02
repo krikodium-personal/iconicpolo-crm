@@ -27,6 +27,7 @@ import {
   type Item,
   type Movement,
   type Partner,
+  newestFirst,
 } from '@/lib/types';
 import {
   decimal,
@@ -2067,9 +2068,9 @@ function OrderMovements({
       !suppliersFromOrder.length || suppliersFromOrder.includes(supplier.id),
   );
   const supplierChoices = suppliers.length ? suppliers : allSuppliers;
-  const entries = (data.entries || [])
-    .filter((entry) => entry.order_id === order.id)
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const entries = (data.entries || []).filter(
+    (entry) => entry.order_id === order.id,
+  );
   const sponsor = orderIsSponsor(order);
   const due = Math.max(0, order.total - order.paid);
   const partnerName = (id?: string) =>
@@ -2198,8 +2199,13 @@ function OrderMovements({
       ) : null}
       {(!sponsor && order.paid > 0) || (sponsor && order.cost > 0) || entries.length ? (
         <ul className="order-supplier-payments">
-          {!sponsor && order.paid > 0 && !payments.length ? (
-            <li>
+          {[
+            ...(!sponsor && order.paid > 0 && !payments.length
+              ? [
+                  {
+                    date: order.date,
+                    node: (
+            <li key="legacy-paid">
               <div className="order-supplier-payment-top">
                 <b>Cobro al cliente</b>
                 <span>{formatMoney(order.paid, data.currency)}</span>
@@ -2210,9 +2216,15 @@ function OrderMovements({
                   : 'Sin socio'}
               </small>
             </li>
-          ) : null}
-          {!sponsor
-            ? payments.map((payment) => (
+                    ),
+                  },
+                ]
+              : []),
+            ...(!sponsor
+            ? payments.map((payment) => ({
+                date: payment.date,
+                created_at: payment.created_at,
+                node: (
                 <li key={payment.id}>
                   <div className="order-supplier-payment-top">
                     <b>Cobro al cliente</b>
@@ -2266,10 +2278,15 @@ function OrderMovements({
                       .join(' · ')}
                   </small>
                 </li>
-              ))
-            : null}
-          {sponsor && order.cost > 0 ? (
-            <li>
+                ),
+              }))
+            : []),
+            ...(sponsor && order.cost > 0
+              ? [
+                  {
+                    date: order.date,
+                    node: (
+            <li key="sponsor-cost">
               <div className="order-supplier-payment-top">
                 <b>Inversión en sponsoreo</b>
                 <span className="money-neg">
@@ -2287,12 +2304,18 @@ function OrderMovements({
                   .join(' · ')}
               </small>
             </li>
-          ) : null}
-          {entries.map((entry) => {
+                    ),
+                  },
+                ]
+              : []),
+            ...entries.map((entry) => {
             const supplier = data.contacts.find(
               (contact) => contact.id === entry.supplier_id,
             );
-            return (
+            return {
+              date: entry.date,
+              created_at: entry.created_at,
+              node: (
               <li key={entry.id}>
                 <div className="order-supplier-payment-top">
                   <b>
@@ -2311,8 +2334,12 @@ function OrderMovements({
                   {entry.receipt ? ' · factura' : ''}
                 </small>
               </li>
-            );
-          })}
+              ),
+            };
+          }),
+          ]
+            .sort(newestFirst)
+            .map((item) => item.node)}
         </ul>
       ) : null}
       {removeError ? <p className="pending-text">{removeError}</p> : null}

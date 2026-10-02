@@ -370,6 +370,16 @@ export const modules = [
   'tareas',
 ] as const;
 export type AccountView = 'board' | 'resultados' | 'movimientos';
+/** Más nuevo primero: por fecha y, dentro del mismo día, por hora de carga. */
+export function newestFirst(
+  a: { date: string; created_at?: string },
+  b: { date: string; created_at?: string },
+) {
+  return (
+    b.date.localeCompare(a.date) ||
+    (b.created_at || '').localeCompare(a.created_at || '')
+  );
+}
 export function accountViewOf(vista: string | undefined): AccountView {
   return vista === 'resultados' || vista === 'movimientos' ? vista : 'board';
 }

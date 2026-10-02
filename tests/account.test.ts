@@ -187,6 +187,28 @@ test('ledger lists each customer payment with its own date and partner', () => {
   assert.equal(ledger.at(-1)?.balance, 100_000);
 });
 
+test('ledger orders same-day movements by load time', () => {
+  const entry = (id: string, created_at: string) => ({
+    id,
+    concept: 'pago_proveedor' as const,
+    detail: id,
+    partner_id: 'ivan',
+    amount: 1_000,
+    currency: 'USD' as const,
+    date: '2026-10-02',
+    created_at,
+  });
+  const ledger = accountLedger([], [], partners, [
+    entry('tarde', '2026-10-02T18:00:00.000Z'),
+    entry('temprano', '2026-10-02T12:00:00.000Z'),
+    { ...entry('ayer', '2026-10-01T23:00:00.000Z'), date: '2026-10-01' },
+  ]);
+  assert.deepEqual(
+    [...ledger].reverse().map((row) => row.label.split(' · ').at(-1)),
+    ['tarde', 'temprano', 'ayer'],
+  );
+});
+
 test('ledger credits order cobros and debits partner cashouts', () => {
   const paidOrder = order('o1', '2026-01-05', 100_000, 40_000);
   const results = monthlyResults([paidOrder], []);
