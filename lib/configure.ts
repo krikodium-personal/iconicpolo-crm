@@ -2676,6 +2676,7 @@ export type StockReservation = {
   orderId: string;
   orderNumber: string;
   quantity: number;
+  loadId?: string;
 };
 
 export type StockHold = {
@@ -2685,6 +2686,8 @@ export type StockHold = {
   configKey: string;
   location: string;
   quantity: number;
+  /** Carga elegida en el pedido; sin carga se reserva de la más vieja. */
+  loadId?: string;
 };
 
 export type StockAvailabilityRow = {
@@ -2707,6 +2710,7 @@ export function itemStockHold(
       from_stock?: boolean;
       config?: Record<string, unknown>;
       location?: string;
+      stock_load_id?: string;
     };
   },
   kind: ConfiguredKind | null,
@@ -2751,6 +2755,9 @@ export function itemStockHold(
     configKey,
     location: item.selections.location || '',
     quantity: item.quantity,
+    ...(item.selections.stock_load_id
+      ? { loadId: item.selections.stock_load_id }
+      : {}),
   };
 }
 
@@ -2768,6 +2775,7 @@ export function reservedHolds(
         from_stock?: boolean;
         config?: Record<string, unknown>;
         location?: string;
+        stock_load_id?: string;
       };
     }[];
   }[],
@@ -2826,7 +2834,9 @@ export function stockAvailability(
       row.reserved += quantity;
       row.available = Math.max(0, row.quantity - row.reserved);
       const existing = row.reservations.find(
-        (reservation) => reservation.orderId === hold.orderId,
+        (reservation) =>
+          reservation.orderId === hold.orderId &&
+          reservation.loadId === hold.loadId,
       );
       if (existing) existing.quantity += quantity;
       else
@@ -2834,6 +2844,7 @@ export function stockAvailability(
           orderId: hold.orderId,
           orderNumber: hold.orderNumber,
           quantity,
+          ...(hold.loadId ? { loadId: hold.loadId } : {}),
         });
     };
     for (const row of matches) {
@@ -2850,48 +2861,100 @@ export function stockAvailability(
 
 export type StockLoadRow = StockAvailabilityRow & { movement_id: string };
 
+type LoadMovement = Parameters<typeof stockByConfig>[0][number] & {
+  id: string;
+  order_id?: string | null;
+  created_at?: string;
+  source_movement_id?: string;
+};
+
+/** An inbound load: positive movement not created by an order. */
+export function isStockLoad(movement: {
+  quantity: number;
+  order_id?: string | null;
+}) {
+  return movement.quantity > 0 && !movement.order_id;
+}
+
+function oldestFirst(a: LoadMovement, b: LoadMovement) {
+  return (a.created_at || '').localeCompare(b.created_at || '');
+}
+
 /**
- * Splits each stock line into the inbound loads that compose it. Units used by
- * orders are taken from the oldest loads first; reservations fill the
- * remaining units in the same order.
+ * Units left in each inbound load. Movements linked to a load
+ * (`source_movement_id`) count against it; unlinked order movements are taken
+ * from the oldest loads of the same line first.
+ */
+export function stockLoadBalances(
+  movements: LoadMovement[],
+  productId: string,
+): Map<string, number> {
+  const lines = new Map<string, LoadMovement[]>();
+  for (const movement of movements) {
+    if (movement.product_id !== productId) continue;
+    const key = `${movement.config_key || ''}\t${movement.location || ''}`;
+    lines.set(key, [...(lines.get(key) || []), movement]);
+  }
+  const balances = new Map<string, number>();
+  for (const line of lines.values()) {
+    const loads = line.filter(isStockLoad).sort(oldestFirst);
+    if (!loads.length) continue;
+    const left = new Map(loads.map((load) => [load.id, load.quantity]));
+    let unlinked = 0;
+    for (const movement of line) {
+      if (isStockLoad(movement)) continue;
+      const source = movement.source_movement_id || '';
+      if (left.has(source))
+        left.set(source, left.get(source)! + movement.quantity);
+      else unlinked += movement.quantity;
+    }
+    let used = Math.max(0, -unlinked);
+    for (const load of loads) {
+      const take = Math.min(Math.max(0, left.get(load.id)!), used);
+      used -= take;
+      left.set(load.id, left.get(load.id)! - take);
+    }
+    if (unlinked > 0) {
+      const last = loads[loads.length - 1]!.id;
+      left.set(last, left.get(last)! + unlinked);
+    }
+    for (const [id, quantity] of left) balances.set(id, quantity);
+  }
+  return balances;
+}
+
+/**
+ * Splits each stock line into the inbound loads that compose it (see
+ * `stockLoadBalances`). Reservations pinned to a load stay on it; the rest
+ * fill the oldest loads first.
  */
 export function stockLoadRows(
-  movements: (Parameters<typeof stockByConfig>[0][number] & {
-    id: string;
-    order_id?: string | null;
-    created_at?: string;
-  })[],
+  movements: LoadMovement[],
   holds: StockHold[],
   productId: string,
 ): StockLoadRow[] {
   const result: StockLoadRow[] = [];
+  const balances = stockLoadBalances(movements, productId);
   for (const row of stockAvailability(movements, holds, productId)) {
     const loads = movements
       .filter(
         (movement) =>
           movement.product_id === productId &&
-          movement.quantity > 0 &&
-          !movement.order_id &&
+          isStockLoad(movement) &&
           (movement.config_key || '') === row.config_key &&
           (movement.location || '') === row.location,
       )
-      .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+      .sort(oldestFirst);
     if (!loads.length) {
       result.push({ ...row, movement_id: '' });
       continue;
     }
-    let used = Math.max(
-      0,
-      loads.reduce((sum, load) => sum + load.quantity, 0) - row.quantity,
-    );
     const parts = loads.map((load) => {
-      const take = Math.min(load.quantity, used);
-      used -= take;
       return {
         ...row,
         key: `${row.key}\t${load.id}`,
         movement_id: load.id,
-        quantity: load.quantity - take,
+        quantity: balances.get(load.id) ?? load.quantity,
         supplier_id: load.supplier_id || row.supplier_id,
         config:
           load.config && Object.keys(load.config).length
@@ -2906,7 +2969,17 @@ export function stockLoadRows(
       row.quantity - parts.reduce((sum, part) => sum + part.quantity, 0);
     if (extra > 0) parts[parts.length - 1]!.quantity += extra;
     const live = parts.filter((part) => part.quantity > 0);
-    for (const reservation of row.reservations) {
+    const pinned = (reservation: StockReservation) =>
+      live.find((part) => part.movement_id === reservation.loadId);
+    for (const reservation of [...row.reservations].sort(
+      (a, b) => Number(!!pinned(b)) - Number(!!pinned(a)),
+    )) {
+      const target = pinned(reservation);
+      if (target) {
+        target.reserved += reservation.quantity;
+        target.reservations.push(reservation);
+        continue;
+      }
       let remaining = reservation.quantity;
       for (const part of live) {
         if (remaining <= 0) break;

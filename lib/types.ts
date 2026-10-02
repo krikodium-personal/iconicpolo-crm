@@ -134,6 +134,8 @@ export type Item = {
     from_stock?: boolean;
     stock_qty?: number;
     location?: string;
+    /** Carga de stock elegida de la que sale el ítem al entregar. */
+    stock_load_id?: string;
     /** percent = descuento en bp; fixed = unit_price es el precio de venta. */
     sale_mode?: 'percent' | 'fixed';
     /** Precio de lista unitario (sin dto. ni precio especial) al momento de la venta. */
@@ -214,6 +216,8 @@ export type Movement = {
   created_by?: string;
   /** Costo unitario especial de la carga; 0 = costo de lista. */
   unit_cost?: number;
+  /** Carga (ingreso) de la que salen/vuelven estas unidades; vacío en las cargas. */
+  source_movement_id?: string;
 };
 export type Partner = {
   id: string;

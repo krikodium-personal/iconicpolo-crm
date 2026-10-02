@@ -18,6 +18,7 @@ import {
   selectedReferenceIds,
   reservedHolds,
   stockAvailability,
+  stockLoadBalances,
   stockLoadRows,
   findStockLoad,
   stockByConfig,
@@ -461,6 +462,37 @@ test('stock lines split into loads, orders use the oldest load first', () => {
     [['a', 2, 'gabriel', 2], ['b', 1, 'martin', 1]],
   );
   assert.equal(findStockLoad(returned, `${key}\tivan\tb`)?.available, 0);
+});
+
+test('deliveries linked to a load are subtracted from that load', () => {
+  const base = { product_id: 'e1', config_key: '', location: 'kriko', config: {} };
+  const moves = [
+    { ...base, id: 'martin', quantity: 6, supplier_id: 'martin', created_at: '2026-09-11T10:00' },
+    { ...base, id: 'gabriel', quantity: 10, supplier_id: 'gabriel', created_at: '2026-10-01T10:00' },
+    { ...base, id: 'entrega', quantity: -4, order_id: 'o1', source_movement_id: 'gabriel', created_at: '2026-10-02T10:00' },
+    { ...base, id: 'vieja', quantity: -1, order_id: 'o0', created_at: '2026-09-20T10:00' },
+  ];
+  const balances = stockLoadBalances(moves, 'e1');
+  assert.equal(balances.get('gabriel'), 6);
+  assert.equal(balances.get('martin'), 5);
+  const reopened = stockLoadBalances(
+    [...moves, { ...base, id: 'vuelta', quantity: 4, order_id: 'o1', source_movement_id: 'gabriel', created_at: '2026-10-03T10:00' }],
+    'e1',
+  );
+  assert.equal(reopened.get('gabriel'), 10);
+  const rows = stockLoadRows(
+    moves,
+    [
+      { orderId: 'o2', orderNumber: 'IC-2', productId: 'e1', configKey: '', location: 'kriko', quantity: 2, loadId: 'gabriel' },
+      { orderId: 'o3', orderNumber: 'IC-3', productId: 'e1', configKey: '', location: 'kriko', quantity: 1 },
+    ],
+    'e1',
+  );
+  assert.deepEqual(
+    rows.map((row) => [row.movement_id, row.quantity, row.reserved, row.available]),
+    [['martin', 5, 1, 4], ['gabriel', 6, 2, 4]],
+  );
+  assert.equal(stockLoadBalances([...moves].map((m) => ({ ...m, quantity: m.id === 'gabriel' ? 0 : m.quantity })), 'e1').get('gabriel'), undefined);
 });
 
 test('a single reserved unit cannot be assigned to another order', () => {

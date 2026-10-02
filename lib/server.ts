@@ -56,7 +56,9 @@ import {
   parseConfig,
   parsePricing,
   rewriteMonturaGamuzaText,
+  isStockLoad,
   stockAvailability,
+  stockLoadBalances,
   stockKey,
   stockPlaceLabel,
   TEMPLATE_IDS,
@@ -546,6 +548,12 @@ export async function ensureActorColumns() {
       'unit_cost integer NOT NULL DEFAULT 0',
     ),
     await addColumn(
+      'stock_movements',
+      movementNames,
+      'source_movement_id',
+      "source_movement_id text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
       'partner_cashouts',
       cashoutNames,
       'created_by',
@@ -775,33 +783,57 @@ async function assertFromStockAvailable(orderId: string, items: Item[]) {
     productsByIds(productIds),
     reservedHoldsForProducts(productIds, orderId),
     stmt(
-      `SELECT product_id, config_key, quantity, location, supplier_id, config
+      `SELECT id, product_id, order_id, created_at, config_key, quantity, location, supplier_id, config, source_movement_id
        FROM stock_movements
        WHERE product_id IN (${productIds.map(() => '?').join(',')})`,
       ...productIds,
     ).all<{
+      id: string;
       product_id: string;
+      order_id: string | null;
+      created_at: string;
       config_key: string | null;
       quantity: number;
       location: string | null;
       supplier_id: string | null;
       config: unknown;
+      source_movement_id: string | null;
     }>(),
   ]);
   const movements = movementRows.results.map((row) => ({
+    id: row.id,
     product_id: row.product_id,
+    order_id: row.order_id,
+    created_at: row.created_at,
     config_key: row.config_key || '',
     quantity: row.quantity,
     location: row.location || '',
     supplier_id: row.supplier_id || '',
     config: movementConfig(row.config),
+    source_movement_id: row.source_movement_id || '',
   }));
   const used = new Map<string, number>();
+  const usedFromLoad = new Map<string, number>();
   for (const item of items) {
     const product = products.get(item.product_id);
     const kind = product ? configuredKindOf(product) : null;
     const hold = itemStockHold(item, kind, { id: orderId, number: '' });
     if (!hold) continue;
+    if (hold.loadId) {
+      const left =
+        (stockLoadBalances(movements, item.product_id).get(hold.loadId) ?? 0) -
+        holds
+          .filter((other) => other.loadId === hold.loadId)
+          .reduce((sum, other) => sum + other.quantity, 0) -
+        (usedFromLoad.get(hold.loadId) || 0);
+      if (item.quantity > left)
+        throw new Error(
+          left > 0
+            ? `La carga elegida para ${item.name} tiene ${left} disponible${left === 1 ? '' : 's'}.`
+            : `La carga elegida para ${item.name} no tiene unidades disponibles.`,
+        );
+      usedFromLoad.set(hold.loadId, (usedFromLoad.get(hold.loadId) || 0) + item.quantity);
+    }
     const rows = stockAvailability(movements, holds, item.product_id);
     const onHand = rows.reduce((sum, row) => sum + row.quantity, 0);
     // SKUs without warehouse stock can still be sold as backorder.
@@ -823,6 +855,65 @@ async function assertFromStockAvailable(orderId: string, items: Item[]) {
   }
 }
 
+type LoadSource = {
+  id: string;
+  product_id: string;
+  quantity: number;
+  order_id: string | null;
+  config_key: string;
+  location: string;
+  supplier_id: string;
+};
+
+async function stockLoad(id: string) {
+  if (!id) return null;
+  const load = await stmt(
+    "SELECT id, product_id, quantity, order_id, COALESCE(config_key,'') config_key, COALESCE(location,'') location, COALESCE(supplier_id,'') supplier_id FROM stock_movements WHERE id=?",
+    id,
+  ).first<LoadSource>();
+  return load && isStockLoad(load) ? load : null;
+}
+
+/** Applies the stock load picked for an order item (location + supplier follow the load). */
+async function withStockLoad(
+  productId: string,
+  selections: Item['selections'],
+  rawLoadId: unknown,
+): Promise<Item['selections']> {
+  const { stock_load_id: _previous, ...rest } = selections;
+  const loadId =
+    typeof rawLoadId === 'string'
+      ? str(rawLoadId, 'Stock de origen', false, 64)
+      : '';
+  if (!loadId) return rest;
+  const load = await stockLoad(loadId);
+  if (!load || load.product_id !== productId)
+    throw new Error('La carga de stock elegida no corresponde al producto.');
+  return {
+    ...rest,
+    stock_load_id: load.id,
+    location: load.location || undefined,
+    supplier_id: load.supplier_id || rest.supplier_id,
+  };
+}
+
+async function productLoadMovements(productId: string) {
+  const rows = await stmt(
+    "SELECT id, product_id, quantity, order_id, created_at, COALESCE(config_key,'') config_key, COALESCE(location,'') location, COALESCE(source_movement_id,'') source_movement_id FROM stock_movements WHERE product_id=?",
+    productId,
+  ).all<{
+    id: string;
+    product_id: string;
+    quantity: number;
+    order_id: string | null;
+    created_at: string;
+    config_key: string;
+    location: string;
+    source_movement_id: string;
+  }>();
+  return rows.results;
+}
+
 async function orderWarehouseMoves(
   order: { id: string; number: string },
   items: Item[],
@@ -833,7 +924,7 @@ async function orderWarehouseMoves(
   const now = new Date().toISOString();
   if (direction === 'reopen') {
     const closes = await stmt(
-      "SELECT product_id, SUM(quantity) quantity, MAX(config) config, COALESCE(config_key,'') config_key, COALESCE(location,'') location, MAX(supplier_id) supplier_id FROM stock_movements WHERE order_id=? GROUP BY product_id, COALESCE(config_key,''), COALESCE(location,'') HAVING SUM(quantity) < 0",
+      "SELECT product_id, SUM(quantity) quantity, MAX(config) config, COALESCE(config_key,'') config_key, COALESCE(location,'') location, MAX(supplier_id) supplier_id, COALESCE(source_movement_id,'') source_movement_id FROM stock_movements WHERE order_id=? GROUP BY product_id, COALESCE(config_key,''), COALESCE(location,''), COALESCE(source_movement_id,'') HAVING SUM(quantity) < 0",
       order.id,
     ).all<{
       product_id: string;
@@ -842,10 +933,11 @@ async function orderWarehouseMoves(
       config_key: string | null;
       location: string | null;
       supplier_id: string | null;
+      source_movement_id: string;
     }>();
     return closes.results.map((row) =>
       stmt(
-        'INSERT INTO stock_movements (id,product_id,order_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO stock_movements (id,product_id,order_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos,created_by,source_movement_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
         crypto.randomUUID(),
         row.product_id,
         order.id,
@@ -860,6 +952,7 @@ async function orderWarehouseMoves(
         row.supplier_id || '',
         '[]',
         actor.id,
+        row.source_movement_id,
       ),
     );
   }
@@ -870,36 +963,48 @@ async function orderWarehouseMoves(
   if ((already?.qty || 0) < 0) return [];
   const products = await productsByIds(items.map((item) => item.product_id));
   const statements = [];
+  const taken = new Map<string, number>();
   for (const item of items) {
     const product = products.get(item.product_id);
     if (!usesWarehouseStock(item, product)) continue;
     const { key, configJson } = warehouseConfig(item, product);
-    const preferred = item.selections.location || '';
-    const have = await stmt(
-      preferred
-        ? "SELECT COALESCE(SUM(quantity),0) qty FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? AND COALESCE(location,'')=?"
-        : "SELECT COALESCE(SUM(quantity),0) qty FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=?",
-      item.product_id,
-      key,
-      ...(preferred ? [preferred] : []),
-    ).first<{ qty: number }>();
-    if ((have?.qty || 0) < item.quantity)
+    const loadId =
+      item.selections.stock_load_id ||
+      (
+        await stmt(
+          "SELECT source_movement_id FROM stock_movements WHERE order_id=? AND product_id=? AND COALESCE(config_key,'')=? AND quantity<0 AND COALESCE(source_movement_id,'')<>'' ORDER BY created_at DESC LIMIT 1",
+          order.id,
+          item.product_id,
+          key,
+        ).first<{ source_movement_id: string }>()
+      )?.source_movement_id ||
+      '';
+    const load = await stockLoad(loadId);
+    if (!loadId)
       throw new Error(
-        `Stock insuficiente para ${item.name}. Registrá un ingreso de esa combinación antes de cerrar.`,
+        `Elegí de qué stock sale ${item.name} antes de entregar el pedido.`,
       );
-    let location = preferred;
-    if (!location) {
-      const place = await stmt(
-        "SELECT location FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? GROUP BY location HAVING SUM(quantity) >= ? LIMIT 1",
-        item.product_id,
-        key,
-        item.quantity,
-      ).first<{ location: string }>();
-      location = place?.location || '';
-    }
+    if (!load || load.product_id !== item.product_id)
+      throw new Error(
+        `La carga de stock elegida para ${item.name} ya no existe. Elegí otra.`,
+      );
+    if (load.config_key !== key)
+      throw new Error(
+        `La carga elegida para ${item.name} no coincide con la combinación del pedido. Elegí otra.`,
+      );
+    const left =
+      (stockLoadBalances(await productLoadMovements(item.product_id), item.product_id).get(load.id) ?? 0) -
+      (taken.get(load.id) || 0);
+    if (left < item.quantity)
+      throw new Error(
+        left > 0
+          ? `La carga elegida para ${item.name} tiene ${left}. Elegí otra carga o ajustá la cantidad.`
+          : `La carga elegida para ${item.name} ya no tiene unidades. Elegí otra.`,
+      );
+    taken.set(load.id, (taken.get(load.id) || 0) + item.quantity);
     statements.push(
       stmt(
-        'INSERT INTO stock_movements (id,product_id,order_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO stock_movements (id,product_id,order_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos,created_by,source_movement_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
         crypto.randomUUID(),
         item.product_id,
         order.id,
@@ -908,10 +1013,11 @@ async function orderWarehouseMoves(
         now,
         configJson,
         key,
-        location,
-        item.selections.supplier_id || '',
+        load.location,
+        load.supplier_id || item.selections.supplier_id || '',
         '[]',
         actor.id,
+        load.id,
       ),
     );
   }
@@ -1082,6 +1188,10 @@ export async function allData() {
         paid_partner_id:
           typeof row.paid_partner_id === 'string' ? row.paid_partner_id : '',
         unit_cost: Number(row.unit_cost) || 0,
+        source_movement_id:
+          typeof row.source_movement_id === 'string'
+            ? row.source_movement_id
+            : '',
       };
     }),
     categories: cat.results.map((r) => decode<Category>(r, ['fields'])),
@@ -1591,6 +1701,14 @@ export async function saveOrder(
         };
       }
     }
+    snapshot = {
+      ...snapshot,
+      selections: await withStockLoad(
+        snapshot.product_id,
+        snapshot.selections,
+        input.stock_load_id,
+      ),
+    };
     const itemId = old?.id || crypto.randomUUID();
     if (used.has(itemId)) throw new Error('Ítem duplicado.');
     used.add(itemId);
@@ -2218,6 +2336,23 @@ export async function mutate(
       ).first<{ qty: number }>();
       if ((have?.qty || 0) + q < 0)
         throw new Error('El cambio dejaría el stock en negativo.');
+      const linked = await stmt(
+        'SELECT COUNT(*) n, COALESCE(SUM(quantity),0) qty FROM stock_movements WHERE source_movement_id=?',
+        movementId,
+      ).first<{ n: number; qty: number }>();
+      if (linked?.n) {
+        if (
+          location !== (current.location || '') ||
+          key !== (current.config_key || '')
+        )
+          throw new Error(
+            'De esta carga ya salieron pedidos: no se puede cambiar la ubicación ni la combinación.',
+          );
+        if (q + (linked.qty || 0) < 0)
+          throw new Error(
+            `De esta carga ya salieron ${-(linked.qty || 0)}; la cantidad no puede ser menor.`,
+          );
+      }
       if (q < 0) {
         const atPlace = await stmt(
           "SELECT COALESCE(SUM(quantity),0) qty FROM stock_movements WHERE product_id=? AND COALESCE(config_key,'')=? AND COALESCE(location,'')=? AND id!=?",
@@ -2819,6 +2954,22 @@ export async function mutate(
       if (!movement) throw new Error('Registro de stock no disponible.');
       if (movement.quantity <= 0 || movement.order_id)
         throw new Error('Solo se pueden borrar ingresos de stock.');
+      const linked = await stmt(
+        'SELECT COUNT(*) n FROM stock_movements WHERE source_movement_id=?',
+        movement.id,
+      ).first<{ n: number }>();
+      if (linked?.n)
+        throw new Error(
+          'No se puede borrar: de esta carga ya salieron pedidos.',
+        );
+      if (
+        (await reservedHoldsForProducts([movement.product_id], '')).some(
+          (hold) => hold.loadId === movement.id,
+        )
+      )
+        throw new Error(
+          'No se puede borrar: hay pedidos que eligieron esta carga.',
+        );
       const key = movement.config_key || '';
       const location = movement.location || '';
       const stock = await stmt(

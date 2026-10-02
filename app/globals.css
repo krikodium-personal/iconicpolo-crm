@@ -2088,6 +2088,23 @@ button.dialog-kicker:hover {
   border-radius: 8px;
   border-bottom-color: #f0e0d0;
 }
+.history-line.is-nested {
+  margin-left: 28px;
+  padding: 9px 0 9px 14px;
+  border-left: 2px solid #dfe6da;
+  font-size: 13px;
+}
+.stock-load-group > .history-line:not(:last-child) {
+  border-bottom-style: dashed;
+}
+.history-line strong .load-left {
+  display: block;
+  color: #6e8064;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-align: right;
+}
 .history-line strong.reserved {
   color: #b34700;
   font-weight: 700;

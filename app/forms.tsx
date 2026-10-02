@@ -6,6 +6,7 @@ import {
   ORDER_STATUSES,
   actorName,
   ORDER_KINDS,
+  orderIsDelivered,
   orderIsLocked,
   orderIsQuote,
   orderIsSponsor,
@@ -66,6 +67,7 @@ import {
   itemStockHold,
   reservedHolds,
   stockAvailability,
+  stockLoadBalances,
   stockLoadRows,
   findStockLoad,
   type StockLoadRow,
@@ -92,7 +94,7 @@ import {
   type CabezadaConfig,
 } from '@/lib/cabezada';
 import { Configurator } from './configure-form';
-import { OrderProductPicker } from './order-product-picker';
+import { loadDate, OrderProductPicker } from './order-product-picker';
 import {
   Field,
   Pick,
@@ -1154,6 +1156,15 @@ export function ProductDetail({
         : 'Sin promoción';
   const listProfit = record.price - record.cost;
   const movements = data.movements.filter((m) => m.product_id === record.id);
+  const balances = stockLoadBalances(data.movements, record.id);
+  const childrenOf = new Map<string, Movement[]>();
+  for (const m of movements) {
+    if (!m.source_movement_id || !balances.has(m.source_movement_id)) continue;
+    childrenOf.set(m.source_movement_id, [
+      ...(childrenOf.get(m.source_movement_id) || []),
+      m,
+    ]);
+  }
   const stockRows = stockAvailability(
     data.movements,
     reservedHolds(data.orders, data.products),
@@ -1402,7 +1413,27 @@ export function ProductDetail({
             </div>
           );
         })}
-        {movements.map((m) => {
+        {movements
+          .filter((m) => !childrenOf.has(m.source_movement_id || ''))
+          .map((m) => {
+            const children = childrenOf.get(m.id) || [];
+            const left = balances.get(m.id);
+            return children.length || left !== undefined ? (
+              <div key={m.id} className="stock-load-group">
+                {movementRow(m, left)}
+                {children.map((child) => movementRow(child, undefined, true))}
+              </div>
+            ) : (
+              movementRow(m)
+            );
+          })}
+        {!movements.length && !reservations.length ? (
+          <p className="hint">Sin movimientos registrados.</p>
+        ) : null}
+      </section>
+    </div>
+  );
+  function movementRow(m: Movement, left?: number, nested = false) {
           const kind = configuredKindOf(record);
           const cabezada = isCabezadaProduct(record)
             ? tryParseCabezadaConfig(m.config)
@@ -1414,8 +1445,12 @@ export function ProductDetail({
                 ? cabezadaRiendasLabel(cabezada)
                 : '';
           const itemKey = `${m.config_key || ''}\t${m.location || ''}\t${m.id}`;
-          const canOpen =
-            !!onOpenStock && m.quantity > 0 && !m.order_id;
+          const order = m.order_id
+            ? data.orders.find((entry) => entry.id === m.order_id)
+            : undefined;
+          const canOpen = order
+            ? !!onOpenOrder
+            : !!onOpenStock && m.quantity > 0 && !m.order_id;
           const paidLabel =
             m.quantity > 0 && !m.order_id
               ? m.cost_paid
@@ -1427,16 +1462,20 @@ export function ProductDetail({
           return (
             <div
               key={m.id}
-              className={`history-line${canOpen ? ' clickable-row' : ''}`}
+              className={`history-line${canOpen ? ' clickable-row' : ''}${nested ? ' is-nested' : ''}`}
             >
               {canOpen ? (
                 <button
                   type="button"
                   className="row-hit"
-                  aria-label={`Ver detalle de stock ${
-                    m.reason || 'ingreso'
-                  }`}
-                  onClick={() => onOpenStock?.(itemKey, m)}
+                  aria-label={
+                    order
+                      ? `Ver pedido ${order.number}`
+                      : `Ver detalle de stock ${m.reason || 'ingreso'}`
+                  }
+                  onClick={() =>
+                    order ? onOpenOrder?.(order) : onOpenStock?.(itemKey, m)
+                  }
                 />
               ) : null}
               {m.photos?.[0] ? (
@@ -1444,7 +1483,7 @@ export function ProductDetail({
               ) : null}
               <div>
                 {m.reason || (m.quantity > 0 ? 'Stock' : 'Devolución')}
-                {m.location || m.supplier_id || paidLabel ? (
+                {!nested && (m.location || m.supplier_id || paidLabel) ? (
                   <small>
                     {metaLine([
                       m.location ? stockPlaceLabel(m.location) : '',
@@ -1461,16 +1500,13 @@ export function ProductDetail({
               <strong className={m.quantity > 0 ? 'positive' : 'negative'}>
                 {m.quantity > 0 ? '+' : ''}
                 {m.quantity}
+                {left !== undefined && left !== m.quantity ? (
+                  <small className="load-left">quedan {left}</small>
+                ) : null}
               </strong>
             </div>
           );
-        })}
-        {!movements.length && !reservations.length ? (
-          <p className="hint">Sin movimientos registrados.</p>
-        ) : null}
-      </section>
-    </div>
-  );
+  }
 }
 type DraftItem = {
   key: string;
@@ -1489,6 +1525,7 @@ type DraftItem = {
   from_stock?: boolean;
   stock_qty?: number;
   location?: string;
+  stock_load_id?: string;
   snapshot?: Item;
 };
 function productFieldValues(
@@ -1957,6 +1994,44 @@ export function OrderDetail({
                         .filter(Boolean)
                         .join(' · ')}
                     </small>
+                    {(() => {
+                      const delivered = data.movements.find(
+                        (m) =>
+                          m.order_id === record.id &&
+                          m.product_id === item.product_id &&
+                          m.quantity < 0 &&
+                          m.source_movement_id,
+                      );
+                      const loadId =
+                        delivered?.source_movement_id ||
+                        item.selections.stock_load_id;
+                      const load = data.movements.find((m) => m.id === loadId);
+                      const kind = product ? configuredKindOf(product) : null;
+                      const usesStock = !kind || !!item.selections.from_stock;
+                      if (load)
+                        return (
+                          <small>
+                            {delivered ? 'Salió de' : 'Sale de'}{' '}
+                            {[
+                              stockPlaceLabel(load.location),
+                              data.contacts.find(
+                                (c) => c.id === load.supplier_id,
+                              )?.name,
+                              loadDate(data, load.id),
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </small>
+                        );
+                      return usesStock &&
+                        !orderIsDelivered(record.status) &&
+                        !orderIsQuote(record.status) &&
+                        !orderIsSponsor(record) ? (
+                        <small className="pending-text">
+                          Falta elegir de qué stock sale
+                        </small>
+                      ) : null;
+                    })()}
                     <button
                       type="button"
                       className="ghost ficha-open"
@@ -2674,6 +2749,7 @@ export function OrderForm({
         from_stock: !!i.selections.from_stock,
         stock_qty: i.selections.stock_qty,
         location: i.selections.location,
+        stock_load_id: i.selections.stock_load_id,
         snapshot: i,
       };
     }) || [],
@@ -2712,6 +2788,7 @@ export function OrderForm({
             from_stock: item.from_stock,
             config: item.config,
             location: item.location,
+            stock_load_id: item.stock_load_id,
           },
         },
         product ? configuredKindOf(product) : null,
@@ -2720,6 +2797,29 @@ export function OrderForm({
       if (hold) holds.push(hold);
     }
     return holds;
+  }
+  /** Cargas de las que puede salir el ítem; null si no usa stock del depósito. */
+  function loadChoices(item: DraftItem, product?: Product) {
+    if (!product) return null;
+    const kind = configuredKindOf(product);
+    if (kind && !item.from_stock) return null;
+    let key = '';
+    try {
+      if (kind && item.config)
+        key = stockKey(kind, parseConfig(kind, item.config));
+      else if (isCabezadaProduct(product) && item.config)
+        key = cabezadaStockKey(parseCabezadaConfig(item.config));
+    } catch {
+      key = '';
+    }
+    return stockLoadRows(
+      data.movements,
+      [
+        ...reservedHolds(data.orders, data.products, record?.id),
+        ...draftHolds(item.key),
+      ],
+      product.id,
+    ).filter((row) => row.movement_id && row.config_key === key);
   }
   function supplierName(item: DraftItem, product?: Product) {
     if (item.supplier_id === NEW_SUPPLIER)
@@ -2739,6 +2839,7 @@ export function OrderForm({
     fromStock = false,
     stockQty?: number,
     location?: string,
+    loadId?: string,
   ) {
     const fields =
       data.categories.find((c) => c.id === product.category)?.fields || [];
@@ -2765,6 +2866,7 @@ export function OrderForm({
       from_stock: fromStock,
       stock_qty: available,
       location: fromStock ? location || '' : undefined,
+      stock_load_id: loadId,
       ...(fromStock ? { quantity: '1' } : {}),
     };
     if (key && items.some((i) => i.key === key)) {
@@ -3049,6 +3151,7 @@ export function OrderForm({
                   from_stock: i.from_stock,
                   stock_qty: i.stock_qty,
                   location: i.location,
+                  stock_load_id: i.stock_load_id,
                 };
               }
               return {
@@ -3066,6 +3169,7 @@ export function OrderForm({
                 from_stock: i.from_stock,
                 stock_qty: i.stock_qty,
                 location: i.location,
+                stock_load_id: i.stock_load_id,
               };
             }),
           });
@@ -3263,6 +3367,7 @@ export function OrderForm({
               p && isCabezadaProduct(p)
                 ? tryParseCabezadaConfig(i.config)
                 : null;
+            const choices = selecting ? null : loadChoices(i, p);
             return (
               <div className="order-line" key={i.key}>
                 <div className="section-heading">
@@ -3290,6 +3395,7 @@ export function OrderForm({
                       fromStock,
                       stockQty,
                       location,
+                      loadId,
                     ) =>
                       applyProduct(
                         product,
@@ -3299,6 +3405,7 @@ export function OrderForm({
                         fromStock,
                         stockQty,
                         location,
+                        loadId,
                       )
                     }
                     onCancel={() => {
@@ -3537,7 +3644,7 @@ export function OrderForm({
                         <Pick
                           label="Proveedor"
                           value={i.supplier_id || ''}
-                          disabled={!!i.from_stock}
+                          disabled={!!i.from_stock || !!i.stock_load_id}
                           onChange={(v) =>
                             update(i.key, {
                               supplier_id: v,
@@ -3572,6 +3679,71 @@ export function OrderForm({
                       </div>
                     </Field>
                   )}
+                  {choices ? (
+                    <Field
+                      label="Sale del stock"
+                      wide
+                      pending={!i.stock_load_id && !sponsor}
+                    >
+                      <Pick
+                        label="Sale del stock"
+                        value={i.stock_load_id || ''}
+                        onChange={(v) => {
+                          const row = choices.find(
+                            (choice) => choice.movement_id === v,
+                          );
+                          update(i.key, {
+                            stock_load_id: v || undefined,
+                            ...(row
+                              ? {
+                                  location: row.location,
+                                  supplier_id:
+                                    row.supplier_id || i.supplier_id,
+                                  new_supplier: undefined,
+                                }
+                              : {}),
+                          });
+                        }}
+                        options={[
+                          {
+                            value: '',
+                            label: choices.length
+                              ? 'Elegí de qué carga sale (obligatorio para entregar)'
+                              : 'No hay stock cargado de este producto',
+                          },
+                          ...choices.map((row) => ({
+                            value: row.movement_id,
+                            label: [
+                              stockPlaceLabel(row.location),
+                              data.contacts.find(
+                                (c) => c.id === row.supplier_id,
+                              )?.name,
+                              loadDate(data, row.movement_id),
+                              `${quantityLabel(row.available, p?.unit)} disp.`,
+                            ]
+                              .filter(Boolean)
+                              .join(' · '),
+                          })),
+                          ...(i.stock_load_id &&
+                          !choices.some(
+                            (row) => row.movement_id === i.stock_load_id,
+                          )
+                            ? [
+                                {
+                                  value: i.stock_load_id,
+                                  label: `${[
+                                    stockPlaceLabel(i.location || ''),
+                                    loadDate(data, i.stock_load_id),
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ')} · sin unidades libres`,
+                                },
+                              ]
+                            : []),
+                        ]}
+                      />
+                    </Field>
+                  ) : null}
                   {!i.snapshot &&
                   p &&
                   isCabezadaProduct(p) &&
@@ -3802,6 +3974,7 @@ export function OrderForm({
                 fromStock,
                 stockQty,
                 location,
+                loadId,
               ) =>
                 applyProduct(
                   product,
@@ -3811,6 +3984,7 @@ export function OrderForm({
                   fromStock,
                   stockQty,
                   location,
+                  loadId,
                 )
               }
               onCancel={() => setPicking(null)}

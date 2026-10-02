@@ -7,6 +7,7 @@ import {
   parseConfig,
   reservedHolds,
   stockAvailability,
+  stockLoadRows,
   stockPlaceLabel,
   summarizeConfig,
   type ProductConfig,
@@ -20,6 +21,7 @@ import {
 } from '@/lib/cabezada';
 import { formatMoney, friendsPrice } from '@/lib/money';
 import {
+  formatDateTime,
   quantityLabel,
   unitAgree,
   unitWord,
@@ -52,6 +54,11 @@ function stockLabel(product: Product, config: Record<string, unknown>) {
   }
 }
 
+export function loadDate(data: Data, movementId: string) {
+  const load = data.movements.find((movement) => movement.id === movementId);
+  return load ? `cargado ${formatDateTime(load.created_at).slice(0, 10)}` : '';
+}
+
 function OrderStockPicker({
   product,
   data,
@@ -72,12 +79,13 @@ function OrderStockPicker({
     fromStock?: boolean,
     stockQty?: number,
     location?: string,
+    loadId?: string,
   ) => void;
   onBack: () => void;
   onCancel: () => void;
 }) {
   const kind = configuredKindOf(product);
-  const rows = stockAvailability(
+  const rows = stockLoadRows(
     data.movements,
     [...reservedHolds(data.orders, data.products, exceptOrderId), ...held],
     product.id,
@@ -122,6 +130,7 @@ function OrderStockPicker({
                   {[
                     stockPlaceLabel(row.location),
                     data.contacts.find((c) => c.id === row.supplier_id)?.name,
+                    loadDate(data, row.movement_id),
                     row.available > 0
                       ? `${quantityLabel(row.available, product.unit)} disponible${row.available === 1 ? '' : 's'}`
                       : 'Sin disponible',
@@ -187,6 +196,7 @@ function OrderStockPicker({
                     true,
                     row.available,
                     row.location,
+                    row.movement_id || undefined,
                   )
                 }
               >
@@ -229,6 +239,7 @@ export function OrderProductPicker({
     fromStock?: boolean,
     stockQty?: number,
     location?: string,
+    loadId?: string,
   ) => void;
   onCancel: () => void;
 }) {
