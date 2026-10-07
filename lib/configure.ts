@@ -587,34 +587,59 @@ export const RODILLERA_PLACES = [
   { id: 'centro', label: 'Centro' },
 ] as const;
 
+/**
+ * Los ids vienen de cuando había modelos "standard" y "polo argentino": se
+ * mantienen porque están guardados en pedidos y stock.
+ */
 export const BOTA_MODELOS = [
-  { id: 'standard_doble_cuero', label: 'Standard doble cuero' },
-  { id: 'standard_triple_cuero', label: 'Standard triple cuero' },
-  {
-    id: 'polo_argentino_doble_cuero',
-    label: 'Polo argentino doble cuero premium',
-  },
-  {
-    id: 'polo_argentino_triple_cuero',
-    label: 'Polo argentino triple cuero premium',
-  },
+  { id: 'standard_doble_cuero', label: 'Clásica doble cuero' },
+  { id: 'standard_triple_cuero', label: 'Clásica triple cuero' },
+  { id: 'polo_argentino_doble_cuero', label: 'Premium doble cuero' },
+  { id: 'polo_argentino_triple_cuero', label: 'Premium triple cuero' },
   { id: 'texanas', label: 'Texanas' },
 ] as const;
 
+export type BotaModelo = (typeof BOTA_MODELOS)[number]['id'];
+
 export const BOTA_BASE_MODELO = BOTA_MODELOS[0].id;
 
-export function botaModeloPriceId(
-  modelo: (typeof BOTA_MODELOS)[number]['id'],
-) {
+export const BOTA_CALIDADES = [
+  { id: 'clasica', label: 'Clásica' },
+  { id: 'premium', label: 'Premium' },
+  { id: 'texanas', label: 'Texanas' },
+] as const;
+
+export const BOTA_CUEROS = [
+  { id: 'doble', label: 'Doble cuero' },
+  { id: 'triple', label: 'Triple cuero' },
+] as const;
+
+export type BotaCalidad = (typeof BOTA_CALIDADES)[number]['id'];
+export type BotaCuero = (typeof BOTA_CUEROS)[number]['id'];
+
+export function botaCalidadOf(modelo: BotaModelo): BotaCalidad {
+  if (modelo === 'texanas') return 'texanas';
+  return modelo.startsWith('polo_argentino') ? 'premium' : 'clasica';
+}
+
+export function botaCueroOf(modelo: BotaModelo): BotaCuero {
+  return modelo.endsWith('triple_cuero') ? 'triple' : 'doble';
+}
+
+export function botaModeloOf(
+  calidad: BotaCalidad,
+  cuero: BotaCuero,
+): BotaModelo {
+  if (calidad === 'texanas') return 'texanas';
+  return `${calidad === 'premium' ? 'polo_argentino' : 'standard'}_${cuero}_cuero`;
+}
+
+export function botaModeloPriceId(modelo: BotaModelo) {
   return `modelo_${modelo}`;
 }
 
-/** Talle genérico price key: difference from that model's custom-fit price. */
-export function botaTallePriceId(
-  modelo: (typeof BOTA_MODELOS)[number]['id'],
-) {
-  return `talle_${modelo}`;
-}
+/** Recargo por hacerla a medida: los precios de cada modelo son por talle estándar. */
+export const BOTA_A_MEDIDA_PRICE_ID = 'a_medida';
 
 export const BOTA_MATERIALS = [
   { id: 'cuero_vaca', label: 'Cuero vaca' },
@@ -838,14 +863,6 @@ export const PRICED_GROUPS: Record<ConfiguredKind, PricedGroup[]> = {
       })),
     },
     {
-      id: 'talle',
-      label: 'Talle genérico',
-      options: BOTA_MODELOS.map((modelo) => ({
-        id: botaTallePriceId(modelo.id),
-        label: 'Talle genérico',
-      })),
-    },
-    {
       id: 'material',
       label: 'Material',
       options: BOTA_MATERIALS.map((material) => ({
@@ -857,6 +874,7 @@ export const PRICED_GROUPS: Record<ConfiguredKind, PricedGroup[]> = {
       id: 'extras',
       label: 'Adicionales',
       options: [
+        { id: BOTA_A_MEDIDA_PRICE_ID, label: 'A medida' },
         { id: 'parche', label: 'Parche' },
         { id: 'pasadorRodillera', label: 'Pasador rodillera' },
         { id: 'topeEspuelas', label: 'Tope espuelas' },
@@ -970,8 +988,8 @@ export function selectedPriceKeys(
       ...(config.modelo !== BOTA_BASE_MODELO
         ? [botaModeloPriceId(config.modelo)]
         : []),
-      ...((config.medidasMode || 'personalizadas') === 'talle'
-        ? [botaTallePriceId(config.modelo)]
+      ...((config.medidasMode || 'personalizadas') === 'personalizadas'
+        ? [BOTA_A_MEDIDA_PRICE_ID]
         : []),
       `material_${config.material}`,
       ...(config.parche ? ['parche'] : []),
@@ -1176,7 +1194,7 @@ export type RodilleraConfig = {
 };
 
 export type BotaConfig = {
-  modelo: (typeof BOTA_MODELOS)[number]['id'];
+  modelo: BotaModelo;
   material: 'cuero_vaca' | 'cuero_bufalo';
   color: LeatherProductColor;
   acabado: 'brillante' | 'matte';
@@ -1337,9 +1355,9 @@ export function defaultBota(): BotaConfig {
     material: 'cuero_vaca',
     color: 'negro',
     acabado: 'brillante',
-    medidasMode: 'personalizadas',
+    medidasMode: 'talle',
     medidas: emptyBotaMeasures(),
-    talle: '',
+    talle: '40',
     iniciales: false,
     inicialesTexto: '',
     inicialesColor: DEFAULT_INITIAL_COLOR_ID,
@@ -2234,10 +2252,10 @@ export function configLabels(
   if (kind === 'bota') {
     const c = raw as BotaConfig;
     const modeloEn: Record<string, string> = {
-      standard_doble_cuero: 'Standard double leather',
-      standard_triple_cuero: 'Standard triple leather',
-      polo_argentino_doble_cuero: 'Argentine polo double leather premium',
-      polo_argentino_triple_cuero: 'Argentine polo triple leather premium',
+      standard_doble_cuero: 'Classic double leather',
+      standard_triple_cuero: 'Classic triple leather',
+      polo_argentino_doble_cuero: 'Premium double leather',
+      polo_argentino_triple_cuero: 'Premium triple leather',
       texanas: 'Western boots',
     };
     const materialEn: Record<string, string> = {
@@ -2289,6 +2307,7 @@ export function configLabels(
     if ((c.medidasMode || 'personalizadas') === 'talle') {
       labels[key('Talle', 'Size')] = c.talle || '—';
     } else {
+      labels[key('A medida', 'Made to measure')] = yes;
       for (const measure of BOTA_MEASURES) {
         const measureKey =
           lang === 'en'

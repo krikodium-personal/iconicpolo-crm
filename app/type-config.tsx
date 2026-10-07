@@ -8,7 +8,6 @@ import {
   PRICED_GROUPS,
   REFERENCE_PHOTO_GROUPS,
   botaModeloPriceId,
-  botaTallePriceId,
   configuredKindOf,
   configuredProductOf,
   referencePhotoIds,
@@ -37,12 +36,6 @@ function splitModelo(kind: ConfiguredKind | null) {
       extraIds: BOTA_MODELOS.filter((modelo) => modelo.id !== BOTA_BASE_MODELO).map(
         (modelo) => botaModeloPriceId(modelo.id),
       ),
-      talleIds: Object.fromEntries(
-        BOTA_MODELOS.map((modelo) => [
-          botaModeloPriceId(modelo.id),
-          botaTallePriceId(modelo.id),
-        ]),
-      ) as Record<string, string>,
     };
   }
   return null;
@@ -105,10 +98,10 @@ export function TypeCards({
           (modelo) => modelo.id !== BOTA_BASE_MODELO,
         ).map((modelo) => extras[botaModeloPriceId(modelo.id)]);
         const botaShort = {
-          standard_doble_cuero: 'Standard DC',
-          standard_triple_cuero: 'Standard TC',
-          polo_argentino_doble_cuero: 'Polo DC',
-          polo_argentino_triple_cuero: 'Polo TC',
+          standard_doble_cuero: 'Clásica DC',
+          standard_triple_cuero: 'Clásica TC',
+          polo_argentino_doble_cuero: 'Premium DC',
+          polo_argentino_triple_cuero: 'Premium TC',
           texanas: 'Texanas',
         } as const;
         const copy = (
@@ -208,21 +201,6 @@ export function TypeConfigForm({
 }) {
   const kind = configuredKindOf(record);
   const split = splitModelo(kind);
-  const talleIds: Record<string, string> =
-    (split && 'talleIds' in split && split.talleIds) || {};
-  const talleOf = Object.fromEntries(
-    Object.entries(talleIds).map(([modeloId, talleId]) => [talleId, modeloId]),
-  );
-  const medidaPoint = (modeloId: string) => {
-    if (modeloId === split?.baseId)
-      return { cost: record.cost, price: record.price, set: true };
-    const extra = record.pricing?.extras[modeloId];
-    return {
-      cost: record.cost + (extra?.cost || 0),
-      price: record.price + (extra?.price || 0),
-      set: Boolean(extra),
-    };
-  };
   const photoIds = kind ? referencePhotoIds(kind) : new Set<string>();
   const [f, set] = useState({
     cost: record.cost ? decimal(record.cost) : '',
@@ -249,18 +227,6 @@ export function TypeConfigForm({
               {
                 cost: extra ? decimal(record.cost + extra.cost) : '',
                 price: extra ? decimal(record.price + extra.price) : '',
-              },
-            ];
-          }
-          if (talleOf[option.id]) {
-            const medida = medidaPoint(talleOf[option.id]);
-            const extra = record.pricing?.extras[option.id];
-            const known = Boolean(extra) || (medida.set && medida.price > 0);
-            return [
-              option.id,
-              {
-                cost: known ? decimal(medida.cost + (extra?.cost || 0)) : '',
-                price: known ? decimal(medida.price + (extra?.price || 0)) : '',
               },
             ];
           }
@@ -359,17 +325,6 @@ export function TypeConfigForm({
                 ),
               };
             }
-            for (const [modeloId, talleId] of Object.entries(talleIds)) {
-              const medida = extras[modeloId] || { cost: 0, price: 0 };
-              extras[talleId] = {
-                cost:
-                  moneyField(f.extras[talleId]?.cost) - baseCost - medida.cost,
-                price:
-                  moneyField(f.extras[talleId]?.price) -
-                  basePrice -
-                  medida.price,
-              };
-            }
           }
           const pricing: ConfiguredPricing = { extras, photos: f.photos };
           await save({
@@ -411,7 +366,7 @@ export function TypeConfigForm({
           : kind === 'casco'
             ? 'H1 homologado y Standard sin homologar tienen su propio costo y precio de lista. El resto de las variantes se suma a ese valor.'
             : kind === 'bota'
-              ? 'Cada modelo de bota tiene su costo y precio de lista a medida (7 medidas personalizadas) y en talle genérico. El resto de las variantes se suma a ese valor.'
+              ? 'Cada modelo de bota tiene su costo y precio de lista por talle estándar. Hacerla a medida y el resto de los adicionales se suman a ese valor.'
               : 'Estos precios se usan en cada pedido. Las variantes se suman al precio base; dejá 0 si esa opción no cambia el valor.'}
       </p>
       <section className="form-section">
@@ -426,28 +381,8 @@ export function TypeConfigForm({
                   className={`price-variant-row${photoIds.has(option.id) ? ' has-photo' : ''}`}
                 >
                   <span>{option.label}</span>
-                  {talleIds[option.id] ? (
-                    <>
-                      {priceInput(option.id, 'cost', 'A medida · Costo *')}
-                      {priceInput(option.id, 'price', 'A medida · Precio lista *')}
-                      {priceInput(
-                        talleIds[option.id],
-                        'cost',
-                        'Talle genérico · Costo *',
-                        'talle-price',
-                      )}
-                      {priceInput(
-                        talleIds[option.id],
-                        'price',
-                        'Talle genérico · Precio lista *',
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {priceInput(option.id, 'cost', 'Costo *')}
-                      {priceInput(option.id, 'price', 'Precio lista *')}
-                    </>
-                  )}
+                  {priceInput(option.id, 'cost', 'Costo *')}
+                  {priceInput(option.id, 'price', 'Precio lista *')}
                   {photoField(option.id)}
                 </div>
               ))}

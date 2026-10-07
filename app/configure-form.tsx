@@ -1,15 +1,22 @@
 'use client';
 import { useState, type CSSProperties } from 'react';
 import {
+  BOTA_A_MEDIDA_PRICE_ID,
   BOTA_ACABADOS,
   BOTA_BASE_MODELO,
+  BOTA_CALIDADES,
   BOTA_COLORS,
+  BOTA_CUEROS,
   BOTA_MATERIALS,
   BOTA_MEASURES,
-  BOTA_MODELOS,
   BOTA_PLACES,
   BOTA_TALLES,
+  botaCalidadOf,
+  botaCueroOf,
+  botaModeloOf,
   botaModeloPriceId,
+  type BotaCalidad,
+  type BotaCuero,
   emptyBotaMeasures,
   CASCO_DISENO_MAX,
   CASCO_ESTAMPADOS,
@@ -1440,14 +1447,18 @@ export function Configurator({
       <div className="configurator">
         <ReferenceShots kind="bota" value={c} pricing={pricing} />
         <div className="form-grid">
-          <Field label="Modelo *">
+          <Field label="Calidad *">
             <Pick
-              label="Modelo"
-              value={c.modelo}
-              onChange={(v) => set({ modelo: v as BotaConfig['modelo'] })}
-              options={BOTA_MODELOS.map((modelo) => ({
-                value: modelo.id,
-                label: modelo.label,
+              label="Calidad"
+              value={botaCalidadOf(c.modelo)}
+              onChange={(v) =>
+                set({
+                  modelo: botaModeloOf(v as BotaCalidad, botaCueroOf(c.modelo)),
+                })
+              }
+              options={BOTA_CALIDADES.map((calidad) => ({
+                value: calidad.id,
+                label: calidad.label,
               }))}
             />
             {c.modelo !== BOTA_BASE_MODELO ? (
@@ -1457,6 +1468,26 @@ export function Configurator({
               />
             ) : null}
           </Field>
+          {c.modelo !== 'texanas' ? (
+            <Field label="Cuero *">
+              <Pick
+                label="Cuero"
+                value={botaCueroOf(c.modelo)}
+                onChange={(v) =>
+                  set({
+                    modelo: botaModeloOf(
+                      botaCalidadOf(c.modelo),
+                      v as BotaCuero,
+                    ),
+                  })
+                }
+                options={BOTA_CUEROS.map((cuero) => ({
+                  value: cuero.id,
+                  label: cuero.label,
+                }))}
+              />
+            </Field>
+          ) : null}
           <Field label="Material *">
             <Pick
               label="Material"
@@ -1515,13 +1546,19 @@ export function Configurator({
                 }
               }}
               options={[
+                { value: 'talle', label: 'Talle estándar' },
                 {
                   value: 'personalizadas',
-                  label: '7 medidas personalizadas',
+                  label: 'A medida (7 medidas) · costo extra',
                 },
-                { value: 'talle', label: 'Talle genérico' },
               ]}
             />
+            {(c.medidasMode || 'personalizadas') === 'personalizadas' ? (
+              <ExtraNote
+                extra={pricePoint(pricing, BOTA_A_MEDIDA_PRICE_ID)}
+                currency={currency}
+              />
+            ) : null}
           </Field>
           {(c.medidasMode || 'personalizadas') === 'talle' ? (
             <Field label="Talle *">
@@ -2163,6 +2200,7 @@ const EXTRA_LABEL: Record<string, string> = {
   logoIcColor: 'Color logo IC',
   logoPersonalizado: 'Logo personalizado',
   bordado: 'Bordado',
+  a_medida: 'A medida',
   parche: 'Parche',
   pasadorRodillera: 'Pasador rodillera',
   topeEspuelas: 'Tope espuelas',
@@ -2183,7 +2221,6 @@ function extraForLabel(
     if (charge.id.startsWith('asiento_') && label === 'Material asiento')
       return true;
     if (charge.id.startsWith('modelo_') && label === 'Modelo') return true;
-    if (charge.id.startsWith('talle_') && label === 'Talle') return true;
     if (charge.id.startsWith('material_') && label === 'Material externo')
       return true;
     return false;

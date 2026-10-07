@@ -33,6 +33,10 @@ import {
   firstCascoColor,
   isNewCascoConfig,
   BOTA_COLORS,
+  BOTA_MODELOS,
+  botaCalidadOf,
+  botaCueroOf,
+  botaModeloOf,
   CASCO_DISENO_MAX,
   CASCO_PALETTE_IDS,
   CASCO_SLOT_FULL_MESSAGE,
@@ -950,20 +954,37 @@ const botaMeasures = {
   contornoEmpeine: '26.5',
 };
 
-test('bota defaults reject empty measures and extras start off', () => {
-  assert.throws(() => parseBota(defaultBota()), /número/i);
-  const config = parseBota({
-    ...defaultBota(),
-    medidas: botaMeasures,
-  });
+const customBota = () => ({
+  ...defaultBota(),
+  medidasMode: 'personalizadas' as const,
+  talle: '' as const,
+});
+
+test('bota defaults to standard size and extras start off', () => {
+  const config = parseBota(defaultBota());
   assert.equal(config.modelo, 'standard_doble_cuero');
   assert.equal(config.material, 'cuero_vaca');
   assert.equal(config.color, 'negro');
   assert.equal(config.acabado, 'brillante');
-  assert.equal(config.medidasMode, 'personalizadas');
-  assert.equal(config.talle, '');
+  assert.equal(config.medidasMode, 'talle');
+  assert.equal(config.talle, '40');
   assert.equal(config.parche, false);
   assert.equal(config.iniciales, false);
+  assert.throws(() => parseBota(customBota()), /número/i);
+});
+
+test('bota calidad and cuero map to the stored modelo', () => {
+  assert.equal(botaModeloOf('clasica', 'doble'), 'standard_doble_cuero');
+  assert.equal(botaModeloOf('clasica', 'triple'), 'standard_triple_cuero');
+  assert.equal(botaModeloOf('premium', 'doble'), 'polo_argentino_doble_cuero');
+  assert.equal(botaModeloOf('premium', 'triple'), 'polo_argentino_triple_cuero');
+  assert.equal(botaModeloOf('texanas', 'triple'), 'texanas');
+  for (const modelo of BOTA_MODELOS.map((item) => item.id)) {
+    assert.equal(
+      botaModeloOf(botaCalidadOf(modelo), botaCueroOf(modelo)),
+      modelo,
+    );
+  }
 });
 
 test('bota can use generic size instead of custom measures', () => {
@@ -996,7 +1017,7 @@ test('bota measures must be numbers and initials require text', () => {
   assert.throws(
     () =>
       parseBota({
-        ...defaultBota(),
+        ...customBota(),
         medidas: { ...botaMeasures, altoCana: 'alto' },
       }),
     /solo números/i,
@@ -1004,7 +1025,7 @@ test('bota measures must be numbers and initials require text', () => {
   assert.throws(
     () =>
       parseBota({
-        ...defaultBota(),
+        ...customBota(),
         medidas: botaMeasures,
         iniciales: true,
         inicialesTexto: '',
@@ -1015,11 +1036,11 @@ test('bota measures must be numbers and initials require text', () => {
 
 test('bota initials do not change the stock key and flags do', () => {
   const base = parseBota({
-    ...defaultBota(),
+    ...customBota(),
     medidas: botaMeasures,
   });
   const withInitials = parseBota({
-    ...defaultBota(),
+    ...customBota(),
     medidas: botaMeasures,
     iniciales: true,
     inicialesTexto: 'IC',
@@ -1028,7 +1049,7 @@ test('bota initials do not change the stock key and flags do', () => {
     inicialesUbicacion: 'derecha',
   });
   const withPatch = parseBota({
-    ...defaultBota(),
+    ...customBota(),
     medidas: botaMeasures,
     parche: true,
   });
@@ -1043,16 +1064,16 @@ test('bota initials do not change the stock key and flags do', () => {
 
 test('bota modelo extras add their price over standard doble cuero', () => {
   const standard = parseBota({
-    ...defaultBota(),
+    ...customBota(),
     medidas: botaMeasures,
   });
   const polo = parseBota({
-    ...defaultBota(),
+    ...customBota(),
     modelo: 'polo_argentino_doble_cuero',
     medidas: botaMeasures,
   });
   const texanas = parseBota({
-    ...defaultBota(),
+    ...customBota(),
     modelo: 'texanas',
     medidas: botaMeasures,
   });
@@ -1067,37 +1088,36 @@ test('bota modelo extras add their price over standard doble cuero', () => {
   assert.equal(extraTotals('bota', texanas, pricing).price, 3000);
 });
 
-test('bota talle genérico uses its own price per model', () => {
+test('bota a medida adds the same surcharge to any model', () => {
   const pricing = parsePricing({
     extras: {
-      modelo_polo_argentino_doble_cuero: { cost: 2000, price: 4000 },
-      talle_standard_doble_cuero: { cost: -1000, price: -5000 },
-      talle_polo_argentino_doble_cuero: { cost: 500, price: -2000 },
+      modelo_polo_argentino_doble_cuero: { cost: 21000, price: 15000 },
+      a_medida: { cost: 0, price: 5000 },
       material_cuero_vaca: { cost: 0, price: 0 },
     },
   });
-  const talle = (modelo: string) =>
-    parseBota({ ...defaultBota(), modelo, medidasMode: 'talle', talle: '41' });
-  const medida = parseBota({
+  const talle = parseBota({
     ...defaultBota(),
+    modelo: 'polo_argentino_doble_cuero',
+    talle: '41',
+  });
+  const medida = parseBota({
+    ...customBota(),
     modelo: 'polo_argentino_doble_cuero',
     medidas: botaMeasures,
   });
+  assert.deepEqual(extraTotals('bota', talle, pricing), {
+    price: 15000,
+    cost: 21000,
+    pending: false,
+  });
   assert.deepEqual(extraTotals('bota', medida, pricing), {
-    price: 4000,
-    cost: 2000,
+    price: 20000,
+    cost: 21000,
     pending: false,
   });
-  assert.deepEqual(extraTotals('bota', talle('standard_doble_cuero'), pricing), {
-    price: -5000,
-    cost: -1000,
-    pending: false,
-  });
-  assert.deepEqual(
-    extraTotals('bota', talle('polo_argentino_doble_cuero'), pricing),
-    { price: 2000, cost: 2500, pending: false },
-  );
-  assert.equal(extraTotals('bota', talle('texanas'), pricing).pending, true);
+  assert.equal(configLabels('bota', medida)['A medida'], 'Sí');
+  assert.equal(configLabels('bota', talle)['A medida'], undefined);
   assert.throws(() =>
     parsePricing({ extras: { modelo_texanas: { cost: -1, price: 0 } } }),
   );
@@ -1107,13 +1127,13 @@ test('bota labels list the selected options and measures', () => {
   const labels = configLabels(
     'bota',
     parseBota({
-      ...defaultBota(),
+      ...customBota(),
       medidas: botaMeasures,
       parche: true,
       engrasado: true,
     }),
   );
-  assert.equal(labels.Modelo, 'Standard doble cuero');
+  assert.equal(labels.Modelo, 'Clásica doble cuero');
   assert.equal(labels.Material, 'Cuero vaca');
   assert.equal(labels.Color, 'Negro');
   assert.equal(labels.Acabado, 'Brillante');
@@ -1332,7 +1352,7 @@ test('blanco is available in every selectable color palette', () => {
   assert.equal(parseMontura({ ...defaultMontura(), color: 'blanco' }).color, 'blanco');
   assert.equal(parseRodillera({ ...defaultRodillera(), color: 'blanco' }).color, 'blanco');
   assert.equal(
-    parseBota({ ...defaultBota(), color: 'blanco', medidas: botaMeasures }).color,
+    parseBota({ ...customBota(), color: 'blanco', medidas: botaMeasures }).color,
     'blanco',
   );
 });
