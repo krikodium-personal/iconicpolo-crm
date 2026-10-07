@@ -1634,6 +1634,54 @@ export function Configurator({
               />
             </>
           ) : null}
+          <Field label="Bordado">
+            <Pick
+              label="Bordado"
+              value={c.bordado ? 'si' : 'no'}
+              onChange={(v) => set({ bordado: v === 'si' })}
+              options={[
+                { value: 'no', label: 'No' },
+                { value: 'si', label: 'Sí · costo extra' },
+              ]}
+            />
+          </Field>
+          {c.bordado ? (
+            <>
+              <Field label="Ubicación del bordado *">
+                <Pick
+                  label="Ubicación de bordado"
+                  value={c.bordadoUbicacion}
+                  onChange={(v) =>
+                    set({
+                      bordadoUbicacion: v as BotaConfig['bordadoUbicacion'],
+                    })
+                  }
+                  options={BOTA_PLACES.map((place) => ({
+                    value: place.id,
+                    label: place.label,
+                  }))}
+                />
+              </Field>
+              <ColorPicker
+                label="Color de hilo *"
+                value={c.bordadoColor}
+                onChange={(id) => set({ bordadoColor: id })}
+              />
+              <Field label="Imagen del bordado *" wide>
+                <Photos
+                  value={c.bordadoImagen ? [c.bordadoImagen] : []}
+                  max={1}
+                  onChange={(urls) => set({ bordadoImagen: urls[0] || '' })}
+                  onError={onError || (() => undefined)}
+                  onBusy={onBusy || (() => undefined)}
+                />
+              </Field>
+              <ExtraNote
+                extra={pricePoint(pricing, 'bordado')}
+                currency={currency}
+              />
+            </>
+          ) : null}
           <Field label="Parche">
             <Pick
               label="Parche"

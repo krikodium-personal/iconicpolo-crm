@@ -862,6 +862,7 @@ export const PRICED_GROUPS: Record<ConfiguredKind, PricedGroup[]> = {
         { id: 'topeEspuelas', label: 'Tope espuelas' },
         { id: 'engrasado', label: 'Engrasado' },
         { id: 'iniciales', label: 'Iniciales' },
+        { id: 'bordado', label: 'Bordado' },
       ],
     },
   ],
@@ -978,6 +979,7 @@ export function selectedPriceKeys(
       ...(config.topeEspuelas ? ['topeEspuelas'] : []),
       ...(config.engrasado ? ['engrasado'] : []),
       ...(config.iniciales ? ['iniciales'] : []),
+      ...(config.bordado ? ['bordado'] : []),
     ];
   }
   const config = raw as CascoConfig;
@@ -1186,6 +1188,10 @@ export type BotaConfig = {
   inicialesColor: string;
   inicialesTipografia: string;
   inicialesUbicacion: 'izquierda' | 'derecha';
+  bordado: boolean;
+  bordadoImagen: string;
+  bordadoUbicacion: 'izquierda' | 'derecha';
+  bordadoColor: string;
   parche: boolean;
   pasadorRodillera: boolean;
   topeEspuelas: boolean;
@@ -1339,6 +1345,10 @@ export function defaultBota(): BotaConfig {
     inicialesColor: DEFAULT_INITIAL_COLOR_ID,
     inicialesTipografia: 'trajan',
     inicialesUbicacion: 'izquierda',
+    bordado: false,
+    bordadoImagen: '',
+    bordadoUbicacion: 'izquierda',
+    bordadoColor: DEFAULT_INITIAL_COLOR_ID,
     parche: false,
     pasadorRodillera: false,
     topeEspuelas: false,
@@ -1953,12 +1963,24 @@ export function parseBota(raw: unknown): BotaConfig {
       BOTA_PLACES.map((place) => place.id),
       'Ubicación de iniciales',
     ),
+    bordado: flag(b.bordado),
+    bordadoImagen: text(b.bordadoImagen).trim(),
+    bordadoUbicacion: oneOf(
+      b.bordadoUbicacion || 'izquierda',
+      BOTA_PLACES.map((place) => place.id),
+      'Ubicación de bordado',
+    ),
+    bordadoColor: text(b.bordadoColor, DEFAULT_INITIAL_COLOR_ID),
     parche: flag(b.parche),
     pasadorRodillera: flag(b.pasadorRodillera),
     topeEspuelas: flag(b.topeEspuelas),
     engrasado: flag(b.engrasado),
   };
   requireInitials(config);
+  if (config.bordado) {
+    requireImage(config.bordadoImagen, 'bordado');
+    colorId(config.bordadoColor, 'Color de hilo del bordado');
+  }
   return config;
 }
 
@@ -2295,6 +2317,17 @@ export function configLabels(
           ? placeEn[c.inicialesUbicacion] || c.inicialesUbicacion
           : BOTA_PLACES.find((place) => place.id === c.inicialesUbicacion)
               ?.label || c.inicialesUbicacion;
+    }
+    if (c.bordado) {
+      labels[key('Bordado', 'Embroidery')] =
+        lang === 'en'
+          ? placeEn[c.bordadoUbicacion] || c.bordadoUbicacion
+          : BOTA_PLACES.find((place) => place.id === c.bordadoUbicacion)
+              ?.label || c.bordadoUbicacion;
+      labels[key('Color bordado', 'Embroidery color')] = colorName(
+        c.bordadoColor,
+        lang,
+      );
     }
     return labels;
   }

@@ -280,6 +280,18 @@ function configuredVisuals(
             ?.label || c.inicialesUbicacion,
       };
     }
+    if (c.bordado && c.bordadoImagen) {
+      const color = chartSwatch(L('Color bordado', 'Embroidery color'), c.bordadoColor);
+      if (color) swatches.push(color);
+      const place =
+        BOTA_PLACES.find((item) => item.id === c.bordadoUbicacion)?.label ||
+        c.bordadoUbicacion;
+      artwork.push({
+        kind: 'bordado',
+        url: c.bordadoImagen,
+        caption: `${L('Bordado', 'Embroidery')} · ${place} · ${colorSwatch(c.bordadoColor)?.name || c.bordadoColor}`,
+      });
+    }
     return { swatches, initials, artwork };
   }
 
