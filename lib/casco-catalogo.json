@@ -533,7 +533,7 @@
    },
    {
     "position": 36,
-    "hex": null,
+    "hex": "#fcce30",
     "nombre": "Amarillo Girasol",
     "nombreEn": "Sunflower Yellow"
    },
@@ -898,7 +898,7 @@
   },
   {
    "position": 21,
-   "hex": "#ffd700",
+   "hex": "#fcce30",
    "nombre": "Amarillo Girasol",
    "nombreEn": "Sunflower Yellow"
   },
@@ -1134,7 +1134,7 @@
   },
   {
    "position": 29,
-   "hex": "#ffc72c",
+   "hex": "#fcce30",
    "nombre": "Amarillo Girasol",
    "nombreEn": "Sunflower Yellow"
   },

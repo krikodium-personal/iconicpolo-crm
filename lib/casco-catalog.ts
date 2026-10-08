@@ -54,9 +54,6 @@ type CatalogFile = {
 
 const catalog = rawCatalog as CatalogFile;
 
-/** Amarillo Girasol has no hex in the source catalog; nearby sunflower yellow. */
-const SUNFLOWER_YELLOW = '#e8c547';
-
 function normalizePalette(colors: RawColor[]): CatalogColor[] {
   const used = new Set<number>();
   const next: CatalogColor[] = [];
@@ -67,12 +64,12 @@ function normalizePalette(colors: RawColor[]): CatalogColor[] {
       while (used.has(position)) position += 1;
     }
     used.add(position);
+    // El catálogo ya trae el hex de todos los colores; el gris es la red por si
+    // se agrega uno sin hex.
     const hex =
       typeof color.hex === 'string' && /^#[0-9a-fA-F]{6}$/.test(color.hex)
         ? color.hex
-        : color.nombre === 'Amarillo Girasol'
-          ? SUNFLOWER_YELLOW
-          : '#cccccc';
+        : '#cccccc';
     next.push({
       position,
       hex,
@@ -272,4 +269,5 @@ export const CASCO_FABRIC_PARTS = [
   { id: 'peak', field: 'peak', label: 'Visera' },
   { id: 'peak_band', field: 'peakBand', label: 'Banda de visera' },
   { id: 'under_peak', field: 'underPeak', label: 'Bajo visera' },
+  { id: 'peak_strip', field: 'peakStrip', label: 'Tira de visera' },
 ] as const;

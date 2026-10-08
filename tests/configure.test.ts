@@ -1173,6 +1173,7 @@ test('print mode hides fabric colors, keeps strap and airholes and needs an imag
   assert.equal(printed.colores.peak, undefined);
   assert.equal(printed.colores.peakBand, undefined);
   assert.equal(printed.colores.underPeak, undefined);
+  assert.equal(printed.colores.peakStrip, undefined);
   assert.deepEqual(printed.colores.strap, softshell.colores.strap);
   assert.equal(printed.colores.airholes.palette, CASCO_PALETTE_IDS.ojales);
   assert.throws(
@@ -1215,6 +1216,16 @@ test('print from the catalog needs no upload and shows its name and image', () =
   const back = changeCascoMaterial(parsed, 'cloth');
   assert.equal(back.printCatalogoId, undefined);
   assert.equal(cascoPrintUrl(back), '');
+});
+
+test('casco without peak strip keeps the stock key it had before the zone existed', () => {
+  const withStrip = validCasco() as CascoConfigV2;
+  const { peakStrip, ...rest } = withStrip.colores;
+  assert.ok(peakStrip);
+  const before = { ...withStrip, colores: rest };
+  assert.ok(!stockKey('casco', before).includes('peakStrip'));
+  assert.ok(stockKey('casco', withStrip).includes('peakStrip'));
+  assert.notEqual(stockKey('casco', before), stockKey('casco', withStrip));
 });
 
 test('casco stock groups catalog prints by id and keeps old keys', () => {

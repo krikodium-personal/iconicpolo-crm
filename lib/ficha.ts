@@ -313,6 +313,7 @@ function configuredVisuals(
     if (c.visera === 'argentine')
       pushChosen(L('Banda de visera', 'Peak band'), c.colores.peakBand);
     pushChosen(L('Bajo visera', 'Under peak'), c.colores.underPeak);
+    pushChosen(L('Tira de visera', 'Peak strip'), c.colores.peakStrip);
     pushChosen(L('Correaje', 'Harness'), c.colores.strap);
     pushChosen(L('Tapones', 'Airholes'), c.colores.airholes);
     pushChosen(L('Logo Iconic', 'Iconic logo'), c.logoIconic);

@@ -1100,6 +1100,7 @@ export type CascoColores = {
   peak?: ColorElegido;
   peakBand?: ColorElegido;
   underPeak?: ColorElegido;
+  peakStrip?: ColorElegido;
   strap?: ColorElegido;
   airholes: ColorElegido;
 };
@@ -1265,6 +1266,7 @@ function defaultCascoFabric(material: Exclude<CascoMaterialTipo, 'prints'>) {
     peak: color,
     peakBand: color,
     underPeak: color,
+    peakStrip: color,
   };
 }
 
@@ -1651,6 +1653,15 @@ function parseCascoV2(raw: unknown): CascoConfigV2 {
       material,
       'Bajo visera',
     );
+    // Opcional a propósito: los cascos guardados antes de que existiera esta
+    // zona no la traen, y rechazarlos rompería su ficha y su edición. Sin el
+    // dato la zona no se muestra, que es la verdad: nadie la eligió.
+    if (coloresRaw.peakStrip)
+      colores.peakStrip = parseChosenColor(
+        coloresRaw.peakStrip,
+        material,
+        'Tira de visera',
+      );
     if (visera === 'argentine') {
       colores.peakBand = parseChosenColor(
         coloresRaw.peakBand,
@@ -2138,6 +2149,11 @@ export function stockKey(kind: ConfiguredKind, raw: ProductConfig) {
           ? colorRef(c.colores.peakBand)
           : '',
       underPeak: colorRef(c.colores.underPeak),
+      // Sólo si tiene color: el stock cargado antes de esta zona no la trae, y
+      // un campo vacío de más cambiaría su clave.
+      ...(c.colores.peakStrip
+        ? { peakStrip: colorRef(c.colores.peakStrip) }
+        : {}),
       strap: colorRef(c.colores.strap),
       airholes: colorRef(c.colores.airholes),
     });
@@ -2451,6 +2467,11 @@ export function configLabels(
     if (c.colores.underPeak)
       labels[key('Bajo visera', 'Under peak')] = cascoChosenColorName(
         c.colores.underPeak,
+        lang,
+      );
+    if (c.colores.peakStrip)
+      labels[key('Tira de visera', 'Peak strip')] = cascoChosenColorName(
+        c.colores.peakStrip,
         lang,
       );
     labels[key('Correaje', 'Chin strap')] = c.colores.strap
