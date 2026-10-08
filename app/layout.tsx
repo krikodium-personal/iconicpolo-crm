@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   title: 'Iconic CRM · Gestión ecuestre',
   description: 'Clientes, productos, proveedores y pedidos de Iconic.',
   applicationName: 'Iconic CRM',
+  // App privada: que Google no la indexe. Va como <meta robots>, no como
+  // Disallow en robots.txt: si se bloquea el rastreo, Google no llega a leer el noindex.
+  robots: { index: false, follow: false },
   manifest: '/manifest.webmanifest',
   icons: {
     icon: [
