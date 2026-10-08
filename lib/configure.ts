@@ -30,6 +30,7 @@ import {
   cabezadaStockKey,
   parseCabezadaConfig,
 } from './cabezada.ts';
+import { PRINTS_CATALOGO, urlPrint } from './print-catalogo.ts';
 
 export {
   CASCO_ESTAMPADOS,
@@ -1113,6 +1114,18 @@ export type CascoConfigV2 = {
   modelo: 'h1' | 'standard';
   visera: CascoVisera;
   material: CascoMaterialTipo;
+  /**
+   * Material Print: la imagen del cliente (ruta de R2) que se sublima sobre la
+   * tela del casquete y, por separado, de toda la visera.
+   */
+  printImagen?: string;
+  /** Print del catálogo (mismos ids que el sitio). Excluyente con `printImagen`. */
+  printCatalogoId?: string;
+  /**
+   * Print de antes, cuando se elegía un estampado del catálogo viejo. Sólo lo
+   * traen los pedidos guardados entonces; los nuevos llevan `printCatalogoId`
+   * o `printImagen`.
+   */
   estampado?: CascoEstampado;
   colores: CascoColores;
   logoIconic: ColorElegido;
@@ -1273,6 +1286,29 @@ export function defaultCasco(): CascoConfigV2 {
   };
 }
 
+export function findPrintCatalogo(id: string | undefined) {
+  return id ? PRINTS_CATALOGO.find((print) => print.id === id) : undefined;
+}
+
+/** La imagen del Print: la del catálogo o la que subió el cliente. */
+export function cascoPrintUrl(c: CascoConfigV2): string {
+  if (c.material !== 'prints') return '';
+  const catalogo = findPrintCatalogo(c.printCatalogoId);
+  return catalogo ? urlPrint(catalogo.id) : c.printImagen || '';
+}
+
+export function cascoPrintNombre(
+  c: CascoConfigV2,
+  lang: ConfigLang = 'es',
+): string {
+  if (c.material !== 'prints') return '';
+  const catalogo = findPrintCatalogo(c.printCatalogoId);
+  if (catalogo) return lang === 'en' ? catalogo.en : catalogo.es;
+  if (c.printImagen)
+    return lang === 'en' ? 'Customer image' : 'Imagen del cliente';
+  return c.estampado ? estampadoLabel(c.estampado, lang) : '';
+}
+
 export function changeCascoMaterial(
   config: CascoConfigV2,
   material: CascoMaterialTipo,
@@ -1281,7 +1317,8 @@ export function changeCascoMaterial(
     return {
       ...config,
       material,
-      estampado: config.estampado || 'topographic',
+      printImagen: config.printImagen || '',
+      printCatalogoId: config.printCatalogoId,
       colores: {
         strap: config.colores.strap,
         airholes: config.colores.airholes,
@@ -1292,6 +1329,8 @@ export function changeCascoMaterial(
   return {
     ...config,
     material,
+    printImagen: undefined,
+    printCatalogoId: undefined,
     estampado: undefined,
     colores: {
       ...fabric,
@@ -1580,13 +1619,30 @@ function parseCascoV2(raw: unknown): CascoConfigV2 {
       CASCO_PALETTE_IDS.barbijo,
       'Correaje',
     );
+  let printImagen: string | undefined;
+  let printCatalogoId: string | undefined;
   let estampado: CascoEstampado | undefined;
   if (material === 'prints') {
-    estampado = oneOf(
-      b.estampado,
-      CASCO_ESTAMPADOS.map((item) => item.id),
-      'Estampado',
-    );
+    // Una sola fuente: dibujo del catálogo, imagen propia o, en los pedidos
+    // viejos, el estampado de antes, que se sigue pudiendo abrir y guardar.
+    const catalogoId = text(b.printCatalogoId).trim();
+    const imagen = text(b.printImagen).trim();
+    if (catalogoId) {
+      if (!findPrintCatalogo(catalogoId))
+        throw new Error('Print: ese dibujo no está en el catálogo.');
+      printCatalogoId = catalogoId;
+    } else if (imagen) {
+      requireImage(imagen, 'Print');
+      printImagen = imagen;
+    } else if (b.estampado) {
+      estampado = oneOf(
+        b.estampado,
+        CASCO_ESTAMPADOS.map((item) => item.id),
+        'Estampado',
+      );
+    } else {
+      throw new Error('Elegí un print o subí una imagen.');
+    }
   } else {
     colores.top = parseChosenColor(coloresRaw.top, material, 'Casquete');
     colores.peak = parseChosenColor(coloresRaw.peak, material, 'Visera');
@@ -1608,7 +1664,9 @@ function parseCascoV2(raw: unknown): CascoConfigV2 {
     modelo: oneOf(b.modelo, ['h1', 'standard'], 'Modelo'),
     visera,
     material,
-    estampado,
+    ...(printCatalogoId ? { printCatalogoId } : {}),
+    ...(printImagen ? { printImagen } : {}),
+    ...(estampado ? { estampado } : {}),
     colores,
     logoIconic: parseChosenColor(
       b.logoIconic,
@@ -2064,6 +2122,15 @@ export function stockKey(kind: ConfiguredKind, raw: ProductConfig) {
       material: c.material,
       talle: c.talle && typeof c.talle === 'object' ? c.talle.cm : '',
       estampado: c.material === 'prints' ? c.estampado || '' : '',
+      // Sin print no se agrega la clave, para no cambiar la del stock que ya
+      // existe. El del catálogo agrupa por id: el mismo dibujo es el mismo casco.
+      ...(c.material === 'prints'
+        ? c.printCatalogoId
+          ? { print: `catalogo:${c.printCatalogoId}` }
+          : c.printImagen
+            ? { print: c.printImagen }
+            : {}
+        : {}),
       top: colorRef(c.colores.top),
       peak: colorRef(c.colores.peak),
       peakBand:
@@ -2362,7 +2429,9 @@ export function configLabels(
           : 'Standard sin homologar';
     labels[key('Estilo', 'Style')] = viseraLabel(c.visera, lang);
     labels[key('Material', 'Material')] = materialLabel(c.material, lang);
-    if (c.material === 'prints' && c.estampado)
+    if (c.material === 'prints' && (c.printCatalogoId || c.printImagen))
+      labels[key('Print', 'Print')] = cascoPrintNombre(c, lang);
+    else if (c.material === 'prints' && c.estampado)
       labels[key('Estampado', 'Print')] = estampadoLabel(c.estampado, lang);
     if (c.colores.top)
       labels[key('Casquete', 'Shell')] = cascoChosenColorName(

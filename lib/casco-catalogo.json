@@ -34,7 +34,7 @@
   },
   {
    "id": "prints",
-   "nombre": "Estampado",
+   "nombre": "Print",
    "default": false,
    "sinColor": true
   }
@@ -444,8 +444,8 @@
    {
     "position": 21,
     "hex": "#ff6720",
-    "nombre": "Naranja Casablanca",
-    "nombreEn": "Casablanca Orange"
+    "nombre": "Naranja",
+    "nombreEn": "Orange"
    },
    {
     "position": 22,
@@ -532,10 +532,10 @@
     "nombreEn": "Walnut Brown"
    },
    {
-    "position": null,
+    "position": 36,
     "hex": null,
     "nombre": "Amarillo Girasol",
-    "nombreEn": "S Sunflower Yellow"
+    "nombreEn": "Sunflower Yellow"
    },
    {
     "position": 37,
@@ -669,8 +669,8 @@
   {
    "position": 21,
    "hex": "#fe5000",
-   "nombre": "Naranja Casablanca",
-   "nombreEn": "Casablanca Orange"
+   "nombre": "Naranja",
+   "nombreEn": "Orange"
   },
   {
    "position": 22,
@@ -1058,7 +1058,7 @@
    "position": 16,
    "hex": "#c5b4e3",
    "nombre": "Lila",
-   "nombreEn": "Liliac"
+   "nombreEn": "Lilac"
   },
   {
    "position": 17,
@@ -1106,13 +1106,13 @@
    "position": 24,
    "hex": "#cb333b",
    "nombre": "Cabernet",
-   "nombreEn": "Cabarnet"
+   "nombreEn": "Cabernet"
   },
   {
    "position": 25,
    "hex": "#fe5000",
-   "nombre": "Naranja Casablanca",
-   "nombreEn": "Casablanca Orange"
+   "nombre": "Naranja",
+   "nombreEn": "Orange"
   },
   {
    "position": 26,

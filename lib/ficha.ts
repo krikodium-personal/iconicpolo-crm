@@ -8,6 +8,8 @@ import {
   RODILLERA_COLORS,
   RODILLERA_PLACES,
   RODILLERA_SIZES,
+  cascoPrintNombre,
+  cascoPrintUrl,
   configLabels,
   configuredKindOf,
   configDesignPhoto,
@@ -60,7 +62,7 @@ export type FichaInitials = {
 };
 
 export type FichaArtwork = {
-  kind: 'logo' | 'bordado' | 'diseno';
+  kind: 'logo' | 'bordado' | 'diseno' | 'print';
   url: string;
   caption: string;
 };
@@ -72,6 +74,7 @@ export function fichaArtworkTitle(
   if (kind === 'logo')
     return lang === 'en' ? 'Custom logo' : 'Logo personalizado';
   if (kind === 'bordado') return lang === 'en' ? 'Embroidery' : 'Bordado';
+  if (kind === 'print') return 'Print';
   return lang === 'en' ? 'Extra design' : 'Diseño adicional';
 }
 
@@ -313,6 +316,24 @@ function configuredVisuals(
     pushChosen(L('Correaje', 'Harness'), c.colores.strap);
     pushChosen(L('Tapones', 'Airholes'), c.colores.airholes);
     pushChosen(L('Logo Iconic', 'Iconic logo'), c.logoIconic);
+    const printUrl = cascoPrintUrl(c);
+    if (printUrl) {
+      const zonas =
+        c.visera === 'argentine'
+          ? L(
+              'sublimado continuo en el casquete y, aparte, en visera, banda de visera, bajo visera y tira de visera',
+              'continuous sublimation on the shell and, separately, on peak, peak band, under peak and peak strip',
+            )
+          : L(
+              'sublimado continuo en el casquete y, aparte, en visera, bajo visera y tira de visera',
+              'continuous sublimation on the shell and, separately, on peak, under peak and peak strip',
+            );
+      artwork.push({
+        kind: 'print',
+        url: printUrl,
+        caption: `${cascoPrintNombre(c, lang)} · ${zonas}`,
+      });
+    }
     if (c.iniciales) {
       pushChosen(L('Color de hilo', 'Thread color'), c.iniciales.colorHilo);
       initials = {

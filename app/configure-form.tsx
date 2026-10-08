@@ -19,7 +19,6 @@ import {
   type BotaCuero,
   emptyBotaMeasures,
   CASCO_DISENO_MAX,
-  CASCO_ESTAMPADOS,
   CASCO_FABRIC_PARTS,
   CASCO_MATERIAL_PRICE_KEY,
   CASCO_MATERIALES,
@@ -50,7 +49,9 @@ import {
   cascoPalette,
   changeCascoMaterial,
   changeCascoVisera,
+  cascoPrintNombre,
   emptyPricing,
+  estampadoLabel,
   findCascoTalle,
   firstCascoColor,
   posicionLabel,
@@ -81,6 +82,7 @@ import {
   configDesignPhotos,
 } from '@/lib/configure';
 import { formatMoney } from '@/lib/money';
+import { PRINTS_CATALOGO, urlMiniaturaPrint } from '@/lib/print-catalogo';
 import type { Movement } from '@/lib/types';
 import { Field, Pick, Photos, ProductPhoto } from './ui';
 
@@ -526,7 +528,7 @@ function CascoConfiguratorNew({
               onChange(changeCascoMaterial(value, next));
               setColorResetHint(
                 next === 'prints'
-                  ? 'Los colores de tela se ocultan: elegí un estampado.'
+                  ? 'Con Print no se eligen colores de tela: los pone la imagen.'
                   : 'Los colores de tela se reiniciaron al cambiar el material.',
               );
             }}
@@ -543,19 +545,63 @@ function CascoConfiguratorNew({
       </div>
       {colorResetHint ? <p className="hint">{colorResetHint}</p> : null}
       {value.material === 'prints' ? (
-        <Field label="Estampado *">
-          <Pick
-            label="Estampado"
-            value={value.estampado || 'topographic'}
-            onChange={(v) =>
-              set({ estampado: v as NonNullable<CascoConfigV2['estampado']> })
+        <div className="field wide print-picker-field">
+          <span className="color-picker-heading">
+            <span>Print *</span>
+            {value.printCatalogoId || value.printImagen ? (
+              <strong className="color-picker-selection">
+                {cascoPrintNombre(value)}
+              </strong>
+            ) : null}
+          </span>
+          <div className="print-swatches">
+            {PRINTS_CATALOGO.map((print) => (
+              <button
+                key={print.id}
+                type="button"
+                aria-label={print.es}
+                aria-pressed={value.printCatalogoId === print.id}
+                className={`print-swatch${value.printCatalogoId === print.id ? ' selected' : ''}`}
+                title={print.es}
+                onClick={() =>
+                  set({
+                    printCatalogoId: print.id,
+                    printImagen: '',
+                    estampado: undefined,
+                  })
+                }
+              >
+                <img src={urlMiniaturaPrint(print.id)} alt="" loading="lazy" />
+              </button>
+            ))}
+          </div>
+          <span className="print-picker-own">O subir una imagen propia</span>
+          <Photos
+            value={value.printImagen ? [value.printImagen] : []}
+            max={1}
+            onChange={(urls) =>
+              set({
+                printImagen: urls[0] || '',
+                printCatalogoId: urls[0] ? undefined : value.printCatalogoId,
+                estampado: undefined,
+              })
             }
-            options={CASCO_ESTAMPADOS.map((item) => ({
-              value: item.id,
-              label: item.nombre,
-            }))}
+            onError={onError || (() => undefined)}
+            onBusy={onBusy || (() => undefined)}
           />
-        </Field>
+          <small>
+            Se sublima continua por todo el casquete y, aparte, por la visera
+            {value.visera === 'argentine' ? ', la banda de visera' : ''}, el
+            bajo visera y la tira de visera.
+          </small>
+          {!value.printCatalogoId && !value.printImagen && value.estampado ? (
+            <small>
+              Pedido anterior al catálogo de Print: lleva el estampado «
+              {estampadoLabel(value.estampado)}». Elegí un print o subí una
+              imagen para reemplazarlo.
+            </small>
+          ) : null}
+        </div>
       ) : (
         <>
           {CASCO_FABRIC_PARTS.filter(

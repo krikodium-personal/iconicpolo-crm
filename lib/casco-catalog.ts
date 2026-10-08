@@ -85,6 +85,10 @@ function normalizePalette(colors: RawColor[]): CatalogColor[] {
 
 export const CASCO_VISERAS = catalog.estilosVisera;
 export const CASCO_MATERIALES = catalog.tiposMaterial;
+/**
+ * Estampados del catálogo viejo. El Print ahora es una imagen que sube el
+ * cliente; esta lista sólo queda para leer los pedidos guardados antes.
+ */
 export const CASCO_ESTAMPADOS = catalog.estampados;
 export const CASCO_POSICIONES = catalog.posiciones;
 export const CASCO_TAMANOS_INICIALES = catalog.tamanosIniciales;
@@ -249,11 +253,11 @@ export function cascoChosenColorName(
   lang: 'es' | 'en' = 'es',
 ) {
   if (!color) return '';
-  if (lang === 'en') {
-    const found = cascoColor(color.palette, color.position);
-    return found?.nombreEn || color.nombre;
-  }
-  return color.nombre;
+  // El nombre sale del catálogo y no del guardado, para que un color renombrado
+  // se vea igual en los pedidos viejos.
+  const found = cascoColor(color.palette, color.position);
+  if (lang === 'en') return found?.nombreEn || found?.nombre || color.nombre;
+  return found?.nombre || color.nombre;
 }
 
 export const CASCO_MATERIAL_PRICE_KEY: Record<CascoMaterialTipo, string> = {

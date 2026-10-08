@@ -27,6 +27,7 @@ import {
   configDesignPhoto,
   configDesignPhotos,
   changeCascoMaterial,
+  cascoPrintUrl,
   cascoCanEnableKind,
   cascoFreeSlots,
   cascoKindAtSlot,
@@ -45,6 +46,7 @@ import {
   LEATHER_HEX,
   MONTURA_COLORS,
   RODILLERA_COLORS,
+  type CascoConfigV2,
 } from '../lib/configure.ts';
 import {
   CASCO_PALETA_BARBIJO,
@@ -1161,22 +1163,92 @@ test('changing casco material resets fabric colors to the new palette', () => {
   );
 });
 
-test('prints mode hides fabric colors and keeps strap and airholes', () => {
+test('print mode hides fabric colors, keeps strap and airholes and needs an image', () => {
   const softshell = validCasco();
   const printed = changeCascoMaterial(softshell, 'prints');
   assert.equal(printed.material, 'prints');
-  assert.equal(printed.estampado, 'topographic');
+  assert.equal(printed.printImagen, '');
+  assert.equal(printed.estampado, undefined);
   assert.equal(printed.colores.top, undefined);
   assert.equal(printed.colores.peak, undefined);
   assert.equal(printed.colores.peakBand, undefined);
   assert.equal(printed.colores.underPeak, undefined);
   assert.deepEqual(printed.colores.strap, softshell.colores.strap);
   assert.equal(printed.colores.airholes.palette, CASCO_PALETTE_IDS.ojales);
-  const parsed = parseCasco({ ...printed, talle: talle57() });
-  assert.equal(isNewCascoConfig(parsed) && parsed.estampado, 'topographic');
+  assert.throws(
+    () => parseCasco({ ...printed, talle: talle57() }),
+    /Elegí un print o subí una imagen/,
+  );
+  const image = '/api/images/print-1';
+  const parsed = parseCasco({ ...printed, printImagen: image, talle: talle57() });
+  assert.equal(isNewCascoConfig(parsed) && parsed.printImagen, image);
   const labels = configLabels('casco', parsed);
-  assert.equal(labels.Estampado, 'Topográfico');
+  assert.equal(labels.Material, 'Print');
+  assert.equal(labels.Print, 'Imagen del cliente');
   assert.equal(labels.Casquete, undefined);
+  assert.notEqual(
+    stockKey('casco', parsed),
+    stockKey('casco', { ...parsed, printImagen: '/api/images/print-2' }),
+  );
+  const back = changeCascoMaterial(parsed as CascoConfigV2, 'cloth');
+  assert.equal(back.printImagen, undefined);
+  assert.ok(back.colores.top);
+});
+
+test('print from the catalog needs no upload and shows its name and image', () => {
+  const printed = changeCascoMaterial(validCasco(), 'prints');
+  const parsed = parseCasco({
+    ...printed,
+    printCatalogoId: 'camo-azul',
+    talle: talle57(),
+  }) as CascoConfigV2;
+  assert.equal(parsed.printCatalogoId, 'camo-azul');
+  assert.equal(parsed.printImagen, undefined);
+  assert.equal(cascoPrintUrl(parsed), '/prints/camo-azul.webp');
+  assert.equal(configLabels('casco', parsed).Print, 'Camuflaje azul');
+  assert.equal(configLabels('casco', parsed, 'en').Print, 'Blue camo');
+  assert.throws(
+    () =>
+      parseCasco({ ...printed, printCatalogoId: 'inventado', talle: talle57() }),
+    /catálogo/,
+  );
+  const back = changeCascoMaterial(parsed, 'cloth');
+  assert.equal(back.printCatalogoId, undefined);
+  assert.equal(cascoPrintUrl(back), '');
+});
+
+test('casco stock groups catalog prints by id and keeps old keys', () => {
+  const printed = changeCascoMaterial(validCasco(), 'prints');
+  const camo = { ...printed, printCatalogoId: 'camo-azul', printImagen: '' };
+  // El mismo dibujo en un pedido y en un movimiento de stock es el mismo casco.
+  assert.equal(stockKey('casco', camo), stockKey('casco', { ...camo }));
+  assert.ok(stockKey('casco', camo).includes('catalogo:camo-azul'));
+  assert.notEqual(
+    stockKey('casco', camo),
+    stockKey('casco', { ...camo, printCatalogoId: 'tribal-azul' }),
+  );
+  assert.notEqual(
+    stockKey('casco', camo),
+    stockKey('casco', { ...printed, printImagen: '/api/images/print-1' }),
+  );
+  // Sin print la clave no gana campos: el stock ya guardado sigue coincidiendo.
+  assert.ok(!stockKey('casco', printed).includes('"print"'));
+  assert.ok(!stockKey('casco', validCasco()).includes('"print"'));
+});
+
+test('legacy print orders with a catalog estampado stay readable', () => {
+  const printed = changeCascoMaterial(validCasco(), 'prints');
+  const legacy = { ...printed, printImagen: undefined, estampado: 'topographic' };
+  const parsed = parseCasco({ ...legacy, talle: talle57() });
+  assert.equal(isNewCascoConfig(parsed) && parsed.estampado, 'topographic');
+  assert.equal(configLabels('casco', parsed).Estampado, 'Topográfico');
+  // Al subir la imagen, la imagen reemplaza al estampado.
+  const withImage = parseCasco({
+    ...legacy,
+    printImagen: '/api/images/print-1',
+    talle: talle57(),
+  });
+  assert.equal(isNewCascoConfig(withImage) && withImage.estampado, undefined);
 });
 
 test('legacy casco configs still parse and keep their labels', () => {

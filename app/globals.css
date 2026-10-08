@@ -3350,6 +3350,42 @@ button.color-swatch.selected,
   outline: 2px solid #86ab36;
   outline-offset: 2px;
 }
+.print-swatches {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 560px;
+}
+@media (max-width: 640px) {
+  .print-swatches {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+button.print-swatch {
+  aspect-ratio: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgb(0 0 0 / 0.16);
+  border-radius: 6px;
+  background: #f1f1ee;
+}
+button.print-swatch img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+button.print-swatch.selected {
+  outline: 3px solid #86ab36;
+  outline-offset: 2px;
+}
+.print-picker-own {
+  margin-top: 6px;
+  font-weight: 500;
+  color: #4e6657;
+}
 .country-search {
   display: grid;
   gap: 8px;
