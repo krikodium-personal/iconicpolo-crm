@@ -38,3 +38,12 @@ next-env.d.ts
 /outputs/
 /work/
 /undefined
+
+# Secretos de desarrollo local: nunca al repo (es público).
+.dev.vars
+.dev.vars.*
+
+# Artefactos locales
+output/
+tsconfig.tsbuildinfo
+.cursor/

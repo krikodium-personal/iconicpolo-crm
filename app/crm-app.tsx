@@ -14,6 +14,7 @@ export default function CrmApp(props: CrmRoute) {
           initialFilter={route.initialFilter}
           accountView={route.accountView}
           accountYear={route.accountYear}
+          solicitud={route.solicitud}
         />
       )}
     </CrmNavProvider>

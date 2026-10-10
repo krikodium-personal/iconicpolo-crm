@@ -40,6 +40,26 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="es">
+      <head>
+        {/*
+          Las once tipografías de bordado del sitio que no son de sistema. Van
+          por hoja de estilo y no por next/font porque la ficha las dibuja en un
+          canvas con `ctx.font`, que necesita el nombre real de la familia y no
+          una variable CSS. Es la misma lista que carga el personalizador de
+          iconicpolo.com.
+        */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        {/* oxlint-disable-next-line next/no-page-custom-font -- La regla es del Pages Router; acá el layout raíz lo carga para toda la app. */}
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Alegreya:wght@700&family=Alfa+Slab+One&family=Arimo:wght@700&family=Cinzel:wght@700&family=Coda:wght@800&family=Fjalla+One&family=Fugaz+One&family=Oswald:wght@700&family=Playfair+Display:wght@700&family=Rubik+Mono+One&family=Syncopate:wght@700&display=swap"
+        />
+      </head>
       <body className={`${sans.variable} ${mono.variable}`}>
         <WebApp />
         {children}

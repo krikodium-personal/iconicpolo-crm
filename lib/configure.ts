@@ -416,7 +416,48 @@ export function colorSwatch(id: string) {
   );
 }
 
+/**
+ * Tipografías de bordado. Son las del personalizador del sitio, que es el que
+ * ve el cliente: manda su catálogo, así que lo que elige en iconicpolo.com
+ * entra al CRM tal cual, sin traducción.
+ *
+ * Las marcadas `webfont` se bajan de Google Fonts (ver `app/layout.tsx`). Sin
+ * la descarga, cada familia cae en su alternativa local y la vista previa se
+ * ve parecida pero no igual.
+ */
 export const FONTS = [
+  // Serif
+  { id: 'serif', label: 'Serif clásica' },
+  { id: 'georgia', label: 'Georgia' },
+  { id: 'playfair', label: 'Playfair Display' },
+  { id: 'alegreya', label: 'Alegreya' },
+  { id: 'cinzel', label: 'Cinzel (romana)' },
+  // Sans
+  { id: 'sans', label: 'Sans moderna' },
+  { id: 'arimo', label: 'Arimo' },
+  { id: 'verdana', label: 'Verdana' },
+  { id: 'trebuchet', label: 'Trebuchet' },
+  { id: 'oswald', label: 'Oswald (angosta)' },
+  { id: 'fjalla', label: 'Fjalla One' },
+  { id: 'syncopate', label: 'Syncopate' },
+  { id: 'coda', label: 'Coda' },
+  // Display y slab
+  { id: 'alfa', label: 'Alfa Slab One' },
+  { id: 'fugaz', label: 'Fugaz One' },
+  // Monoespaciadas
+  { id: 'mono', label: 'Monoespaciada' },
+  { id: 'rubikmono', label: 'Rubik Mono One' },
+] as const;
+
+/** La tipografía con la que arranca un bordado nuevo, igual que en el sitio. */
+export const FONT_DEFAULT = 'serif';
+
+/**
+ * Las tipografías que ofrecía el CRM antes de adoptar las del sitio. No se
+ * ofrecen más, pero se siguen aceptando: hay pedidos guardados con estos ids y
+ * cambiar el catálogo no puede romper su ficha ni su historial.
+ */
+export const LEGACY_FONTS = [
   { id: 'trajan', label: 'Trajan' },
   { id: 'didot', label: 'Didot' },
   { id: 'bodoni', label: 'Bodoni' },
@@ -429,7 +470,32 @@ export const FONTS = [
   { id: 'baskerville', label: 'Baskerville' },
 ] as const;
 
+/** Todo lo que se acepta al leer una configuración guardada. */
+export const FONT_IDS = [
+  ...FONTS.map((font) => font.id),
+  ...LEGACY_FONTS.map((font) => font.id),
+] as readonly string[];
+
 export const FONT_STACKS: Record<string, string> = {
+  // Las del sitio, con las mismas alternativas.
+  serif: '"Times New Roman", Times, serif',
+  georgia: 'Georgia, "Times New Roman", serif',
+  playfair: '"Playfair Display", Georgia, serif',
+  alegreya: 'Alegreya, Georgia, serif',
+  cinzel: 'Cinzel, Georgia, serif',
+  sans: 'Helvetica, Arial, sans-serif',
+  arimo: 'Arimo, Arial, sans-serif',
+  verdana: 'Verdana, Geneva, sans-serif',
+  trebuchet: '"Trebuchet MS", Tahoma, sans-serif',
+  oswald: 'Oswald, Impact, sans-serif',
+  fjalla: '"Fjalla One", Impact, sans-serif',
+  syncopate: 'Syncopate, "Trebuchet MS", sans-serif',
+  coda: 'Coda, Verdana, sans-serif',
+  alfa: '"Alfa Slab One", Georgia, serif',
+  fugaz: '"Fugaz One", Impact, sans-serif',
+  mono: '"Courier New", Courier, monospace',
+  rubikmono: '"Rubik Mono One", "Courier New", monospace',
+  // Las de antes, para los pedidos ya guardados.
   trajan: '"Trajan Pro", "Trajan Pro 3", Cinzel, "Times New Roman", serif',
   didot: 'Didot, "Didot LT STD", "Hoefler Text", "Playfair Display", serif',
   bodoni: '"Bodoni 72", "Bodoni 72 Book", "Bodoni MT", "Bodoni Moda", Didot, serif',
@@ -443,6 +509,22 @@ export const FONT_STACKS: Record<string, string> = {
   baskerville:
     'Baskerville, "Baskerville Old Face", "Libre Baskerville", "Times New Roman", serif',
 };
+
+/**
+ * Grosor con el que se dibuja cada tipografía, igual que en el sitio. Las
+ * display vienen en un solo grosor: ponerlas en negrita las engorda de más.
+ */
+export const FONT_WEIGHTS: Record<string, number> = {
+  alfa: 400,
+  fugaz: 400,
+  fjalla: 400,
+  rubikmono: 400,
+  coda: 800,
+};
+
+export function fontWeight(id: string) {
+  return FONT_WEIGHTS[id] || 700;
+}
 
 export function fontStack(id: string) {
   return FONT_STACKS[id] || 'serif';
@@ -1248,7 +1330,7 @@ export function defaultMontura(): MonturaConfig {
     iniciales: false,
     inicialesTexto: '',
     inicialesColor: DEFAULT_INITIAL_COLOR_ID,
-    inicialesTipografia: 'trajan',
+    inicialesTipografia: FONT_DEFAULT,
     logoPersonalizado: false,
     logoPersonalizadoImagen: '',
     logoPersonalizadoColor: DEFAULT_INITIAL_COLOR_ID,
@@ -1373,7 +1455,7 @@ export function defaultRodillera(): RodilleraConfig {
     iniciales: false,
     inicialesTexto: '',
     inicialesColor: DEFAULT_INITIAL_COLOR_ID,
-    inicialesTipografia: 'trajan',
+    inicialesTipografia: FONT_DEFAULT,
     inicialesUbicacion: 'centro',
     inicialesTamano: 'mediano',
     bordado: false,
@@ -1402,7 +1484,7 @@ export function defaultBota(): BotaConfig {
     iniciales: false,
     inicialesTexto: '',
     inicialesColor: DEFAULT_INITIAL_COLOR_ID,
-    inicialesTipografia: 'trajan',
+    inicialesTipografia: FONT_DEFAULT,
     inicialesUbicacion: 'izquierda',
     bordado: false,
     bordadoImagen: '',
@@ -1493,6 +1575,7 @@ export function parseMontura(raw: unknown): MonturaConfig {
     iniciales: flag(b.iniciales),
     inicialesTexto: text(b.inicialesTexto).trim(),
     inicialesColor: text(b.inicialesColor, DEFAULT_INITIAL_COLOR_ID),
+    // 'trajan' y no FONT_DEFAULT: es lo que mostraba un registro viejo sin el campo.
     inicialesTipografia: text(b.inicialesTipografia, 'trajan'),
     logoPersonalizado: flag(b.logoPersonalizado),
     logoPersonalizadoImagen: text(b.logoPersonalizadoImagen).trim(),
@@ -1524,7 +1607,7 @@ export function parseMontura(raw: unknown): MonturaConfig {
     colorId(config.inicialesColor, 'Color de iniciales');
     oneOf(
       config.inicialesTipografia,
-      FONTS.map((font) => font.id),
+      FONT_IDS,
       'Tipografía',
     );
   }
@@ -1711,8 +1794,8 @@ function parseCascoV2(raw: unknown): CascoConfigV2 {
         'Color de hilo',
       ),
       tipografia: oneOf(
-        rawIniciales.tipografia || 'trajan',
-        FONTS.map((font) => font.id),
+        rawIniciales.tipografia || FONT_DEFAULT,
+        FONT_IDS,
         'Tipografía',
       ),
     };
@@ -1777,6 +1860,7 @@ function parseCascoLegacy(raw: unknown): CascoConfigLegacy {
     iniciales: flag(b.iniciales),
     inicialesTexto: text(b.inicialesTexto).trim(),
     inicialesColor: text(b.inicialesColor, DEFAULT_INITIAL_COLOR_ID),
+    // 'trajan' y no FONT_DEFAULT: es lo que mostraba un registro viejo sin el campo.
     inicialesTipografia: text(b.inicialesTipografia, 'trajan'),
     inicialesUbicacion: oneOf(
       b.inicialesUbicacion || 'derecha',
@@ -1827,7 +1911,7 @@ function parseCascoLegacy(raw: unknown): CascoConfigLegacy {
     colorId(config.inicialesColor, 'Color de iniciales');
     oneOf(
       config.inicialesTipografia,
-      FONTS.map((font) => font.id),
+      FONT_IDS,
       'Tipografía',
     );
   }
@@ -1859,7 +1943,7 @@ function requireInitials(config: {
   colorId(config.inicialesColor, 'Color de iniciales');
   oneOf(
     config.inicialesTipografia,
-    FONTS.map((font) => font.id),
+    FONT_IDS,
     'Tipografía',
   );
 }
@@ -1970,6 +2054,7 @@ export function parseRodillera(raw: unknown): RodilleraConfig {
     iniciales: flag(b.iniciales),
     inicialesTexto: text(b.inicialesTexto).trim(),
     inicialesColor: text(b.inicialesColor, DEFAULT_INITIAL_COLOR_ID),
+    // 'trajan' y no FONT_DEFAULT: es lo que mostraba un registro viejo sin el campo.
     inicialesTipografia: text(b.inicialesTipografia, 'trajan'),
     inicialesUbicacion: oneOf(
       b.inicialesUbicacion || 'centro',
@@ -2044,6 +2129,7 @@ export function parseBota(raw: unknown): BotaConfig {
     iniciales: flag(b.iniciales),
     inicialesTexto: text(b.inicialesTexto).trim(),
     inicialesColor: text(b.inicialesColor, DEFAULT_INITIAL_COLOR_ID),
+    // 'trajan' y no FONT_DEFAULT: es lo que mostraba un registro viejo sin el campo.
     inicialesTipografia: text(b.inicialesTipografia, 'trajan'),
     inicialesUbicacion: oneOf(
       b.inicialesUbicacion || 'izquierda',
@@ -2181,7 +2267,11 @@ function colorName(id: string, lang: ConfigLang = 'es') {
 }
 
 function fontName(id: string) {
-  return FONTS.find((font) => font.id === id)?.label || id;
+  return (
+    FONTS.find((font) => font.id === id)?.label ||
+    LEGACY_FONTS.find((font) => font.id === id)?.label ||
+    id
+  );
 }
 
 export function configLabels(

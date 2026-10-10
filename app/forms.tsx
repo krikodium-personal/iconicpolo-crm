@@ -124,6 +124,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { buildFicha, buildFichaProductDetail } from '@/lib/ficha';
+import type { OrderPrefill } from '@/lib/solicitud';
 import { FichaView, CotizacionFichaView, buildCotizacionData } from './ficha';
 import { whatsapp, whatsappGroup } from '@/lib/whatsapp';
 export type Save = (body: Record<string, unknown>) => Promise<void>;
@@ -2671,22 +2672,66 @@ function OrderMovements({
   );
 }
 
+/**
+ * Las piezas de una solicitud del sitio, como líneas del pedido nuevo.
+ *
+ * Se descarta la pieza cuya plantilla no esté en el catálogo (el CRM las crea
+ * en el primer guardado): mejor una línea de menos y un aviso que una línea
+ * roto que no se puede arreglar desde el formulario.
+ */
+function prefillDraftItems(
+  prefill: OrderPrefill | undefined,
+  data: Data,
+): DraftItem[] {
+  if (!prefill) return [];
+  const lines: DraftItem[] = [];
+  for (const item of prefill.items) {
+    const product = data.products.find((p) => p.id === item.product_id);
+    if (!product) continue;
+    const fields =
+      data.categories.find((c) => c.id === product.category)?.fields || [];
+    lines.push({
+      key: crypto.randomUUID(),
+      product_id: product.id,
+      quantity: '1',
+      discount_mode: 'percent',
+      discount: '0.00',
+      price_mode: 'list',
+      manual_price: '0.00',
+      option_ids: [],
+      attributes: productFieldValues(product, fields),
+      config: item.config,
+      supplier_id: product.supplier_id || '',
+    });
+  }
+  return lines;
+}
+
 export function OrderForm({
   record,
   data,
   save,
   onCancel,
   onConfigDirtyChange,
+  prefill,
 }: {
   record?: Order;
   data: Data;
   save: Save;
   onCancel?: () => void;
   onConfigDirtyChange?: (dirty: boolean) => void;
+  /**
+   * Borrador traído de una solicitud del sitio. Sólo al crear: carga el
+   * cliente, las notas y la configuración del casco, y nada más. Los precios,
+   * la cantidad y lo que no se pudo traducir los completa el taller.
+   */
+  prefill?: OrderPrefill;
 }) {
   const [f, set] = useState({
     kind: (record?.kind || 'venta') as OrderKind,
-    customer_id: record?.customer_id || '',
+    customer_id:
+      record?.customer_id ||
+      (prefill ? prefill.customer_id || NEW_CUSTOMER : ''),
     date: record?.date || today(),
     delivery: record?.delivery || '',
     status: record?.status || 'nuevo',
@@ -2700,17 +2745,21 @@ export function OrderForm({
       data.partners.find((partner) => !partner.archived)?.id ||
       '',
     invoice: !!record?.invoice,
-    notes: record?.notes || '',
+    notes: record?.notes || prefill?.notes || '',
     shipping_carrier: record?.shipping_carrier || '',
     shipping_amount: decimal(record?.shipping_amount || 0),
   });
   const activePartners = data.partners.filter((partner) => !partner.archived);
-  const [newCustomer, setNewCustomer] = useState({
-    name: '',
-    phone: '',
-    email: '',
-    address: '',
-  });
+  /**
+   * `notes` no tiene campo en el formulario: viene de la solicitud del sitio
+   * (club y país) y queda en la ficha del cliente nuevo. Desde Clientes se
+   * edita como cualquier otra nota.
+   */
+  const [newCustomer, setNewCustomer] = useState(
+    prefill && !prefill.customer_id
+      ? { ...prefill.customer }
+      : { name: '', phone: '', email: '', address: '', notes: '' },
+  );
   const [items, I] = useState<DraftItem[]>(
     record?.items.map((i) => {
       const product = data.products.find((p) => p.id === i.product_id);
@@ -2752,7 +2801,7 @@ export function OrderForm({
         stock_load_id: i.selections.stock_load_id,
         snapshot: i,
       };
-    }) || [],
+    }) || prefillDraftItems(prefill, data),
   );
   const [busy, B] = useState(false);
   const [error, E] = useState('');
@@ -3216,6 +3265,30 @@ export function OrderForm({
           </button>
         </div>
       )}
+      {prefill && !record ? (
+        <div className="solicitud-aviso">
+          <strong>Pedido armado desde una solicitud del sitio.</strong>
+          <p>
+            Están cargados el cliente y la configuración. Faltan el precio, la
+            cantidad y lo que figure acá abajo. No se guarda nada hasta que
+            confirmes.
+          </p>
+          {prefill.avisos.length ? (
+            <ul>
+              {prefill.avisos.map((aviso) => (
+                <li key={aviso}>{aviso}</li>
+              ))}
+            </ul>
+          ) : null}
+          {prefill.items.length > items.length ? (
+            <p className="pending-text">
+              {prefill.items.length - items.length === 1
+                ? 'Una pieza de la solicitud no se pudo cargar porque falta su plantilla en el catálogo. Agregala a mano.'
+                : `${prefill.items.length - items.length} piezas de la solicitud no se pudieron cargar porque faltan sus plantillas en el catálogo. Agregalas a mano.`}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <fieldset disabled={closed || busy}>
         <div className="order-kind">
           <fieldset className="seg">

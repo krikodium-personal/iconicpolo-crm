@@ -1,6 +1,12 @@
 'use client';
 import Image from 'next/image';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import useEmblaCarousel from 'embla-carousel-react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -89,6 +95,7 @@ import {
   whatsappGroup,
 } from './forms';
 import { BUILD } from '@/lib/build';
+import type { OrderPrefill } from '@/lib/solicitud';
 import { AccountBoard } from './account';
 import { AuthScreen } from './login';
 import {
@@ -170,7 +177,14 @@ const nav: { id: string; title: string; short: string; icon: LucideIcon }[] = [
 type Panel =
   | { type: 'supplier' | 'customer'; record?: Contact }
   | { type: 'product'; record?: Product; editing?: boolean }
-  | { type: 'order'; record?: Order; editing?: boolean; quote?: boolean }
+  | {
+      type: 'order';
+      record?: Order;
+      editing?: boolean;
+      quote?: boolean;
+      /** Borrador traído de una solicitud del sitio. */
+      prefill?: OrderPrefill;
+    }
   | {
       type: 'stock';
       record: Product;
@@ -195,7 +209,7 @@ function panelIdentity(panel: Panel | null) {
     return `inventory:${panel.record.id}:${panel.itemKey || 'list'}:${panel.movementId || ''}`;
   }
   if (panel.type === 'order') {
-    return `order:${panel.record?.id || 'new'}:${panel.editing ? 'edit' : panel.quote ? 'quote' : 'view'}`;
+    return `order:${panel.record?.id || panel.prefill?.solicitud_id || 'new'}:${panel.editing ? 'edit' : panel.quote ? 'quote' : 'view'}`;
   }
   return panel.type;
 }
@@ -792,11 +806,13 @@ export default function CRM({
   initialFilter = 'all',
   accountView = 'board',
   accountYear,
+  solicitud,
 }: {
   module: string;
   initialFilter?: string;
   accountView?: AccountView;
   accountYear?: number;
+  solicitud?: string;
 }) {
   const viewModule = module === 'tablero' ? 'dashboard' : module;
   const [data, D] = useState<Data | null>(null),
@@ -890,6 +906,28 @@ export default function CRM({
     C(null);
     setRemove(null);
   }, [module, initialFilter]);
+  // El botón "Crear el pedido" del mail al taller llega con ?solicitud=<id>.
+  // Se trae una sola vez, cuando ya hay sesión y datos, y abre el formulario
+  // de pedido nuevo cargado. No guarda nada: lo confirma Christian.
+  const solicitudPedida = useRef('');
+  useEffect(() => {
+    if (!solicitud || authMode !== 'ready' || !data) return;
+    if (solicitudPedida.current === solicitud) return;
+    solicitudPedida.current = solicitud;
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/solicitud?id=${encodeURIComponent(solicitud)}`,
+          { cache: 'no-store' },
+        );
+        const body = (await response.json()) as OrderPrefill & { error?: string };
+        if (!response.ok) throw new Error(body.error || 'No se pudo leer la solicitud.');
+        P({ type: 'order', prefill: body });
+      } catch (e) {
+        E(e instanceof Error ? e.message : 'No se pudo leer la solicitud.');
+      }
+    })();
+  }, [solicitud, authMode, data]);
   useEffect(() => {
     const context = (
       document as Document & {
@@ -2636,7 +2674,8 @@ export default function CRM({
                   />
                 ) : (
                   <OrderForm
-                    key={panel.record?.id || 'new'}
+                    key={panel.record?.id || panel.prefill?.solicitud_id || 'new'}
+                    prefill={panel.prefill}
                     record={
                       panel.record
                         ? (data.orders.find((o) => o.id === panel.record?.id) ??

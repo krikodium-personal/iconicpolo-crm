@@ -1,6 +1,7 @@
 import {
   BOTA_PLACES,
   FONTS,
+  LEGACY_FONTS,
   colorSwatch,
   KIND_TITLES,
   LEATHER_HEX,
@@ -16,6 +17,7 @@ import {
   configDesignPhotos,
   describeConfigured,
   fontStack,
+  fontWeight,
   isNewCascoConfig,
   parseConfig,
   posicionLabel,
@@ -52,6 +54,8 @@ export type FichaInitials = {
   fontId: string;
   fontName: string;
   fontFamily: string;
+  /** Grosor con el que se dibuja esa tipografía, igual que en el sitio. */
+  fontWeight: number;
   colorName: string;
   hex: string;
   surfaceId?: string;
@@ -126,7 +130,11 @@ function initialColor(id: string) {
 }
 
 function fontLabel(id: string) {
-  return FONTS.find((font) => font.id === id)?.label || id;
+  return (
+    FONTS.find((font) => font.id === id)?.label ||
+    LEGACY_FONTS.find((font) => font.id === id)?.label ||
+    id
+  );
 }
 
 function leatherName(id: string) {
@@ -163,6 +171,7 @@ function initialsBase(
     fontId,
     fontName: fontLabel(fontId),
     fontFamily: fontStack(fontId),
+    fontWeight: fontWeight(fontId),
     colorName: color?.name || colorId,
     hex: color?.hex || '#111111',
     surfaceId,

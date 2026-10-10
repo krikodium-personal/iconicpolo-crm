@@ -4287,3 +4287,33 @@ button.order-stock-pick strong,
     padding: 0 16px 20px;
   }
 }
+/* Aviso del pedido armado desde una solicitud del sitio. */
+.solicitud-aviso {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  background: var(--secondary);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+.solicitud-aviso strong {
+  display: block;
+  color: var(--secondary-foreground);
+  font-size: 14px;
+}
+.solicitud-aviso p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+.solicitud-aviso ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+.solicitud-aviso li + li {
+  margin-top: 4px;
+}

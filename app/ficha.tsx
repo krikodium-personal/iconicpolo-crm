@@ -121,6 +121,24 @@ function canvasToBlob(
   });
 }
 
+/**
+ * Espera la tipografía antes de dibujarla en el canvas.
+ *
+ * Las tipografías de bordado son las del sitio y once de ellas se bajan de
+ * Google Fonts. Si el canvas dibuja antes de que lleguen, las iniciales salen
+ * con la alternativa local y la ficha impresa no muestra la tipografía que
+ * eligió el cliente. Si falla, se dibuja igual: una ficha con otra tipografía
+ * es mejor que ninguna.
+ */
+async function esperarTipografia(weight: number, family: string) {
+  if (typeof document === 'undefined' || !document.fonts) return;
+  try {
+    await document.fonts.load(`${weight} 52px ${family}`);
+  } catch {
+    /* se dibuja con la alternativa */
+  }
+}
+
 async function renderFichaCanvas(ficha: FichaData) {
   const pageW = 794;
   const pad = 36;
@@ -258,6 +276,7 @@ async function renderFichaCanvas(ficha: FichaData) {
   }
 
   if (ficha.initials) {
+    await esperarTipografia(ficha.initials.fontWeight, ficha.initials.fontFamily);
     heading('Iniciales');
     const boxH = 150;
     ctx.fillStyle = ficha.initials.surfaceHex || '#1c1612';
@@ -272,7 +291,7 @@ async function renderFichaCanvas(ficha: FichaData) {
     ctx.fillStyle = 'rgba(0,0,0,0.18)';
     ctx.fillRect(pad, y, contentW, boxH);
     ctx.fillStyle = ficha.initials.hex;
-    ctx.font = `500 52px ${ficha.initials.fontFamily}`;
+    ctx.font = `${ficha.initials.fontWeight} 52px ${ficha.initials.fontFamily}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(ficha.initials.text, pad + contentW / 2, y + boxH / 2);
@@ -451,7 +470,11 @@ function FichaDetailSections({
             ) : null}
             <span
               className="ficha-initials-mark"
-              style={{ fontFamily: initials.fontFamily, color: initials.hex }}
+              style={{
+                fontFamily: initials.fontFamily,
+                fontWeight: initials.fontWeight,
+                color: initials.hex,
+              }}
             >
               {initials.text}
             </span>
@@ -1205,6 +1228,10 @@ async function renderCotizacionCanvas(
     }
 
     if (detail.initials) {
+      await esperarTipografia(
+        detail.initials.fontWeight,
+        detail.initials.fontFamily,
+      );
       heading(copy.initials);
       const boxH = 150;
       ctx.fillStyle = detail.initials.surfaceHex || '#1c1612';
@@ -1220,7 +1247,7 @@ async function renderCotizacionCanvas(
       ctx.fillStyle = 'rgba(0,0,0,0.18)';
       ctx.fillRect(pad, y, contentW, boxH);
       ctx.fillStyle = detail.initials.hex;
-      ctx.font = `500 52px ${detail.initials.fontFamily}`;
+      ctx.font = `${detail.initials.fontWeight} 52px ${detail.initials.fontFamily}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(detail.initials.text, pad + contentW / 2, y + boxH / 2);

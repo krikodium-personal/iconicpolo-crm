@@ -22,6 +22,8 @@ export type CrmRoute = {
   initialFilter: string;
   accountView: AccountView;
   accountYear?: number;
+  /** Solicitud del sitio a precargar, del botón del mail al taller. */
+  solicitud?: string;
 };
 
 type CrmNav = CrmRoute & {
@@ -38,6 +40,7 @@ export function parseCrmHref(href: string): CrmRoute {
   const estado = url.searchParams.get('estado') || undefined;
   const vista = url.searchParams.get('vista') || undefined;
   const anio = url.searchParams.get('anio') || undefined;
+  const solicitud = url.searchParams.get('solicitud') || undefined;
   const year = Number(anio);
   return {
     module: modules.includes(mod as (typeof modules)[number]) ? mod : 'dashboard',
@@ -51,6 +54,7 @@ export function parseCrmHref(href: string): CrmRoute {
         ? accountViewOf(vista)
         : 'board',
     accountYear: Number.isFinite(year) ? year : undefined,
+    solicitud: mod === 'pedidos' ? solicitud : undefined,
   };
 }
 
@@ -110,6 +114,7 @@ export function CrmNavProvider({
   initialFilter = 'all',
   accountView = 'board',
   accountYear,
+  solicitud,
   children,
 }: CrmRoute & { children: (route: CrmRoute) => ReactNode }) {
   const [route, setRoute] = useState<CrmRoute>({
@@ -117,6 +122,7 @@ export function CrmNavProvider({
     initialFilter,
     accountView,
     accountYear,
+    solicitud,
   });
 
   const navigate = useCallback((href: string) => {

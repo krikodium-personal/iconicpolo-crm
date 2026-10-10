@@ -30,6 +30,7 @@ import {
   CASCO_VISERAS,
   COUNTRIES,
   FONTS,
+  FONT_DEFAULT,
   HELMET_MATERIALS,
   HELMET_SIZES,
   INITIAL_COLORS,
@@ -76,6 +77,7 @@ import {
   extraTotals,
   selectedReferenceIds,
   fontStack,
+  fontWeight,
   isNewCascoConfig,
   stockKey,
   stockForConfig,
@@ -401,7 +403,11 @@ function InitialsPreview({
       >
         <span
           className={`initials-preview-mark${shown ? '' : ' placeholder'}`}
-          style={{ fontFamily: fontStack(fontId), color: ink }}
+          style={{
+            fontFamily: fontStack(fontId),
+            fontWeight: fontWeight(fontId),
+            color: ink,
+          }}
         >
           {shown || 'IC'}
         </span>
@@ -684,7 +690,7 @@ function CascoConfiguratorNew({
                 texto: '',
                 tamano: 'M',
                 colorHilo: firstCascoColor(CASCO_PALETTE_IDS.logoHilo),
-                tipografia: 'trajan',
+                tipografia: FONT_DEFAULT,
               },
             })
           }
