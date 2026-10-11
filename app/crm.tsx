@@ -297,7 +297,7 @@ function ProductCard({
   supplierName?: string;
   selected: boolean;
   archived: boolean;
-  money: (n: number) => string;
+  money: (n: number, tentativo?: boolean) => React.ReactNode;
   stockAvailable: number;
   onOpen: () => void;
   onToggle: (checked: boolean) => void;
@@ -590,7 +590,7 @@ function OrderCard({
 }: {
   order: Order;
   customerName: string;
-  money: (n: number) => string;
+  money: (n: number, tentativo?: boolean) => React.ReactNode;
   products?: Product[];
   compact?: boolean;
   archiveButton: ReactNode;
@@ -700,7 +700,9 @@ function OrderCard({
             ) : null}
             <div>
               <dt>Ganancia</dt>
-              <dd className="amount">{money(order.total - order.cost)}</dd>
+              <dd className="amount">
+                {money(order.total - order.cost, orderIsQuote(order.status))}
+              </dd>
             </div>
           </>
         )}
@@ -1140,7 +1142,15 @@ export default function CRM({
       ? 'Movimientos'
       : nav.find((n) => n.id === viewModule)?.title || 'Estado de cuenta';
   const currency = data?.currency || 'ARS';
-  const money = (n: number) => formatMoney(n, currency);
+  /**
+   * El importe formateado: en rojo cuando está en contra y en gris cuando es
+   * `tentativo` (la ganancia de una cotización, que todavía no se concretó).
+   */
+  const money = (n: number, tentativo = false) => (
+    <span className={tentativo ? 'money-tentativo' : n < 0 ? 'money-neg' : undefined}>
+      {formatMoney(n, currency)}
+    </span>
+  );
   const search = (...values: (string | undefined)[]) =>
     values.join(' ').toLowerCase().includes(query.toLowerCase());
   const activeOrders = data?.orders.filter(orderIsLive) || [];
@@ -1421,7 +1431,7 @@ export default function CRM({
                     {orderIsSponsor(o) ? '—' : money(o.paid)}
                   </TableCell>
                   <TableCell className="text-right amount">
-                    {money(o.total - o.cost)}
+                    {money(o.total - o.cost, orderIsQuote(o.status))}
                   </TableCell>
                   <TableCell>
                     {compact ? (

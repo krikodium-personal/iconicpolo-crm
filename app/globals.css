@@ -865,6 +865,12 @@ h3 {
 .money-neg {
   color: #ad3333;
 }
+/* La ganancia de una cotización todavía no existe: va en gris para que no se
+   lea como plata ganada ni como pérdida. Más claro que `--muted-foreground`,
+   que al lado de los importes firmes todavía pesaba demasiado. */
+.money-tentativo {
+  color: #8a9794;
+}
 .panel-heading .secondary {
   flex-shrink: 0;
 }
@@ -1166,6 +1172,7 @@ h3 {
   white-space: nowrap;
   font-weight: 500;
 }
+
 .record-link {
   font-weight: 550;
   text-align: left;

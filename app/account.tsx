@@ -58,7 +58,7 @@ function currentYear() {
   return Number(today().slice(0, 4));
 }
 const ALL_MONTHS = -1;
-function sheetValue(cents: number, money: (n: number) => string) {
+function sheetValue(cents: number, money: (n: number) => React.ReactNode) {
   return cents ? money(cents) : '—';
 }
 
@@ -110,7 +110,7 @@ function ResultMonth({
   onSave,
 }: {
   row: MonthlyResult;
-  money: (n: number) => string;
+  money: (n: number) => React.ReactNode;
   busy: boolean;
   /** Sin onSave (vista anual) las comisiones son de solo lectura. */
   onSave?: (kind: 'mkt' | 'comisiones', amount: number) => Promise<void>;
@@ -398,7 +398,12 @@ export function AccountBoard({
           : ` de ${focus.partner}`;
     return `${count} ${count === 1 ? one : many}${who}`;
   }
-  const money = (cents: number) => formatMoney(cents, data.currency);
+  /** El importe como texto, para donde no se puede poner un elemento. */
+  const montoTexto = (cents: number) => formatMoney(cents, data.currency);
+  /** El importe para mostrar; en rojo cuando está en contra. */
+  const money = (cents: number) => (
+    <span className={cents < 0 ? 'money-neg' : undefined}>{montoTexto(cents)}</span>
+  );
   function openEntryForm() {
     E('');
     setEntry({
@@ -474,7 +479,7 @@ export function AccountBoard({
       partner: string,
       kind: LedgerFocus['kind'],
       value: number,
-      label: string,
+      label: React.ReactNode,
     ) => {
       if (!value) return label;
       const focus = { partner: partner === 'Total' ? null : partner, kind };
@@ -1117,7 +1122,7 @@ export function AccountBoard({
             <DialogTitle>Registrar cashout</DialogTitle>
             <DialogDescription>
               {sharesReady && selectedPartner
-                ? `${selectedPartner.name} recibe ${shareLabel(selectedPartner.share)} de la ganancia. Puede retirar hasta ${money(partnerAvailable)}.`
+                ? `${selectedPartner.name} recibe ${shareLabel(selectedPartner.share)} de la ganancia. Puede retirar hasta ${montoTexto(partnerAvailable)}.`
                 : 'Definí los % de cada socio en Configuración para repartir la ganancia.'}
             </DialogDescription>
           </DialogHeader>
