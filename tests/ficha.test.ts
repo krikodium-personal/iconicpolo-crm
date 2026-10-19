@@ -260,6 +260,8 @@ test('new casco ficha uses catalog swatches and the slot of each personalization
   assert.equal(labelOf('Logo Iconic')?.name, hilo.nombre);
   assert.equal(ficha.initials?.text, 'MP');
   assert.equal(ficha.initials?.fontName, 'Didot');
+  // Sin fontWeight el canvas exporta `undefined 52px …` y cae a una tipografía chica.
+  assert.equal(ficha.initials?.fontWeight, 700);
   assert.equal(ficha.initials?.place, 'Atrás');
   assert.equal(ficha.initials?.size, '18 mm');
   assert.equal(ficha.artwork[0]?.kind, 'logo');

@@ -132,11 +132,19 @@ function canvasToBlob(
  */
 async function esperarTipografia(weight: number, family: string) {
   if (typeof document === 'undefined' || !document.fonts) return;
+  // Sin grosor el string queda `undefined 52px …` y el canvas cae a una
+  // tipografía chica: no es la que eligió el cliente.
+  const grosor = Number.isFinite(weight) && weight > 0 ? weight : 700;
   try {
-    await document.fonts.load(`${weight} 52px ${family}`);
+    await document.fonts.load(`${grosor} 52px ${family}`);
   } catch {
     /* se dibuja con la alternativa */
   }
+}
+
+function tipografiaCanvas(weight: number, family: string) {
+  const grosor = Number.isFinite(weight) && weight > 0 ? weight : 700;
+  return `${grosor} 52px ${family}`;
 }
 
 async function renderFichaCanvas(ficha: FichaData) {
@@ -291,7 +299,10 @@ async function renderFichaCanvas(ficha: FichaData) {
     ctx.fillStyle = 'rgba(0,0,0,0.18)';
     ctx.fillRect(pad, y, contentW, boxH);
     ctx.fillStyle = ficha.initials.hex;
-    ctx.font = `${ficha.initials.fontWeight} 52px ${ficha.initials.fontFamily}`;
+    ctx.font = tipografiaCanvas(
+      ficha.initials.fontWeight,
+      ficha.initials.fontFamily,
+    );
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(ficha.initials.text, pad + contentW / 2, y + boxH / 2);
@@ -1247,7 +1258,10 @@ async function renderCotizacionCanvas(
       ctx.fillStyle = 'rgba(0,0,0,0.18)';
       ctx.fillRect(pad, y, contentW, boxH);
       ctx.fillStyle = detail.initials.hex;
-      ctx.font = `${detail.initials.fontWeight} 52px ${detail.initials.fontFamily}`;
+      ctx.font = tipografiaCanvas(
+        detail.initials.fontWeight,
+        detail.initials.fontFamily,
+      );
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(detail.initials.text, pad + contentW / 2, y + boxH / 2);

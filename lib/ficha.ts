@@ -351,6 +351,7 @@ function configuredVisuals(
         fontId: c.iniciales.tipografia,
         fontName: fontLabel(c.iniciales.tipografia),
         fontFamily: fontStack(c.iniciales.tipografia),
+        fontWeight: fontWeight(c.iniciales.tipografia),
         colorName: cascoChosenColorName(c.iniciales.colorHilo, lang),
         hex: c.iniciales.colorHilo.hex,
         surfaceHex: c.colores.top?.hex || c.colores.airholes.hex,
