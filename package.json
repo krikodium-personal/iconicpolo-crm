@@ -6,7 +6,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "vinext dev",
+    "dev": "vinext dev --port 5174 --strictPort",
     "build": "vinext build",
     "deploy": "vinext build && node scripts/prepare-wrangler-deploy.mjs && wrangler deploy --config dist/server/wrangler.json --keep-vars",
     "start": "wrangler dev --config dist/server/wrangler.json",
