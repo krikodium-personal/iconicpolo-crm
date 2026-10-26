@@ -1,55 +1,49 @@
 # Iconic CRM — memoria de continuidad
 
-Actualizado: 2026-09-10
+Actualizado: 2026-10-23
 
 ## Objetivo
 
-Iconic CRM es una aplicación privada para gestionar el negocio de productos de polo, equitación y salto. La primera versión cubre catálogo, precios, margen, proveedores, clientes, pedidos, pagos, fotos y stock trazable.
+Iconic CRM es una aplicación privada para gestionar el negocio de productos de
+polo, equitación y salto: catálogo, precios, margen, proveedores, clientes,
+pedidos, pagos, fotos, stock trazable y estado de cuenta.
 
 Este directorio es la fuente de verdad del proyecto:
 
 `/Users/kriko/Documents/ChatGPT/app`
 
-## Estado actual
+El repo git real vive en Dropbox:
 
-- La app funciona localmente con Vinext, React 19, TypeScript, Cloudflare D1 y R2.
-- El catálogo real se transcribió de dos capturas provistas por el usuario.
-- Los 72 productos de `data/catalogo-real.json` ya están importados en la base local, en USD.
-- Hay siete categorías: monturas, botas, tacos, rodilleras, cabezadas, cascos y accesorios.
-- Los cascos y el conjunto de cabezada (cabezadas, cierra bocas, pelham, riendas y riendillas) salieron de accesorios.
-- El stock inicial se cargó desde `data/stock-inicial.json` (planilla de inventario del 2026-09-10) como movimientos inmutables con motivo documentado.
-- En Productos se pueden seleccionar varios registros para cambiarles la categoría, asignarles el mismo proveedor o aumentarles el precio el mismo porcentaje.
-- Los productos todavía no tienen fotos asignadas. El proveedor MARTIN se creó para la funda `1025FC`; el resto del catálogo sigue sin proveedor.
-- La UI y el backend aceptan un precio Friends & Family exacto por producto (`ff_price`).
-- Los productos con costo o precio F&F faltante muestran el valor como pendiente. Un producto sin costo no se puede vender; la opción F&F no aparece si ese precio está pendiente.
-- Esos datos pendientes se van a completar editando los registros en la app.
+`/Users/kriko/Library/CloudStorage/Dropbox/Mi Mac (christians-MacBook-Pro.local)/Documents/ChatGPT/app`
 
-## Datos pendientes de la fuente
+`/Users/kriko/Documents/ChatGPT/app` es un alias. Dropbox puede dejar lecturas
+o diffs brevemente desactualizados; si un archivo “vuelve” a un valor viejo,
+releerlo.
 
-Tres productos no tenían costo unitario visible:
+## Stack y producción
 
-- Taquera de cordura y cuero chica (15 tacos), SKU `1019TCC`
-- Taquera de cordura y cuero mediana (25 tacos), SKU `1019TCM`
-- Taquera de cordura y cuero grande (50 tacos), SKU `1019TCG`
+- Vinext 1.0.0-beta.5 (Next-like) + React 19 + TypeScript, en Cloudflare Workers.
+- D1 `iconic-crm` y R2 `iconic-crm-files`.
+- Worker: `iconic-crm`. URL: `https://iconic-crm.krikodium.workers.dev`.
+  Dominio de producción: `https://crm.iconicpolo.com`.
+- `npm run deploy` = `vinext build` + `prepare-wrangler-deploy` +
+  `wrangler deploy --config dist/server/wrangler.json --keep-vars`.
+- Tras un commit **y** push, publicar en el mismo turno:
 
-Siete productos no tenían precio Friends & Family visible:
+```bash
+export VITE_BUILD="$(git rev-parse --short HEAD)"
+npm run deploy
+```
 
-- Las tres taqueras anteriores
-- Almohadillas interior cascos homologados, SKU `1023AL`
-- Red para cascos, SKU `1024RC`
-- Funda para cascos, SKU `1025FC` (tampoco tenía precio de lista en la planilla de inventario)
-- Tensabotas, SKU `1025TB`
-- Protectores, SKU `1026PT`
+Reportar la URL del Worker. No publicar si el usuario lo pide explícitamente,
+o si el deploy falla después de un reintento razonable.
 
-La planilla fuente repetía tres SKU. Para preservar la restricción de SKU único se guardaron así:
-
-| Producto                               | SKU en la fuente |   SKU usado en CRM |
-| -------------------------------------- | ---------------: | -----------------: |
-| Montura americana combinada            |        `1001ACM` |     `1001ACM-COMB` |
-| Montura bauti combinada                |        `1001BCM` |     `1001BCM-COMB` |
-| Cincha neoprene tiradores de cuero JMG |     `1003CNDJMG` | `1003CNDJMG-CUERO` |
-
-El SKU original se conserva en las características del producto.
+- `npm run dev` usa bindings remotos (`"remote": true` en D1 y R2): el
+  desarrollo local trabaja contra la **base de producción**.
+- Operaciones destructivas en D1 de producción sólo con pedido explícito.
+- App privada: `noindex` por metadatos + `X-Robots-Tag: noindex, nofollow`
+  (`next.config.ts` y `public/_headers`). No agregar `Disallow: /` en
+  `robots.txt` (está administrado por Cloudflare).
 
 ## Cómo ejecutar
 
@@ -57,100 +51,197 @@ Requiere Node.js 22.13 o posterior.
 
 ```bash
 npm install
-npm run dev -- --host 127.0.0.1
+export VITE_BUILD="$(git rev-parse --short HEAD)"
+npm run dev
 ```
 
-Abrir `http://localhost:3000/productos`.
+Abrir **`http://localhost:5174/`**. Ese puerto está fijo
+(`package.json` + `vite.config.ts`, `strictPort`). Si está ocupado, el
+servidor falla en vez de irse al 3000 u otro. El proyecto `alquileres` a veces
+toma el 5174: hay que apagarlo.
 
-Este proyecto está dentro de Dropbox. En esta máquina `node_modules` puede ser un enlace a `/private/tmp/iconic-crm-runtime/node_modules` para evitar que Dropbox deshidrate dependencias. Si el enlace está roto:
+El túnel remoto de D1 se cierra solo (“Tunnel closed”). Reiniciar `npm run dev`
+y comprobar con `lsof -nP -iTCP:5174 -sTCP:LISTEN`.
+
+`.dev.vars` tiene `CRM_SHARED_KEY`. Está en `.gitignore` (el repo es público).
+
+## Sitio público vs CRM
+
+El sitio (iconicpolo.com) vive en
+`/Users/kriko/.gemini/antigravity/scratch/iconic-polo-equipment` (Worker
+`iconicpolo`).
+
+**Las opciones del sitio mandan; los precios del CRM mandan.** El CRM se copia
+del personalizador. Los precios se administran acá y el sitio los lee.
+
+Detalle del puente: `docs/PUENTE-CON-EL-SITIO.md`.
+
+### Secreto y rutas
+
+Los dos Workers tienen `CRM_SHARED_KEY` (mismo valor). El sitio usa
+`CRM_ORIGIN=https://crm.iconicpolo.com`. El CRM declara `CRM_SHARED_KEY` e
+`ICONIC_SITE_ORIGIN` (por defecto `https://www.iconicpolo.com`).
+
+Rutas consultadas **servidor a servidor** (nunca desde el navegador del
+cliente), protegidas por `X-Iconic-Crm-Key`:
+
+- `GET /api/solicitud?id=<32 chars>` — precarga un pedido desde una consulta
+  del sitio. **No guarda el pedido**: el botón del mail es un GET y los
+  proxies de correo lo disparan solos.
+- `GET /api/precios` — precio de lista de los cuatro configurables. **Sólo
+  precio**: nunca costo ni Friends & Family.
+
+Si la clave no coincide, ambos Workers registran 5 bytes de SHA-256 (huella),
+no la longitud ni el valor.
+
+### Traductor (`lib/solicitud.ts`)
+
+Traduce el casco del sitio a `CascoConfigV2`. Lo que no se puede traducir no
+se inventa: va a `avisos` (recuadro del formulario + notas del pedido).
+Colores por hexadecimal contra la paleta de cada zona; si no está, queda el
+primero y se avisa. Cubierto por `tests/solicitud.test.ts`.
+
+Sólo se traducen cascos. Monturas, botas y rodilleras llegan como texto y van
+a las notas.
+
+### Precios en el sitio
+
+El sitio espeja `selectedPriceKeys()`. Si acá se agrega una opción con
+recargo, hay que reflejarla en `src/data/precios.ts` del sitio o mostrará un
+precio de menos.
+
+## Casco: Print, tira de visera y fichas
+
+### Material Print
+
+Cuarto material del casco (`prints`). Precio: `material_prints` (sin cambio).
+
+Un Print tiene **exactamente una** fuente:
+
+1. `printCatalogoId` — uno de los 16 dibujos del sitio (`lib/print-catalogo.ts`,
+   mismas ids y nombres). Imágenes en `public/prints/` (`<id>.webp` y
+   `<id>-thumb.webp`). Si se agrega o cambia un print, actualizar los dos
+   repos.
+2. `printImagen` — imagen propia en R2 (`/api/images/<id>`).
+3. `estampado` legado (`topographic` / `halftone` / `lightning`) — sólo para
+   abrir pedidos viejos; no se ofrece al crear.
+
+Helpers: `cascoPrintUrl`, `cascoPrintNombre`. Con Print no hay colores de
+tela: sólo correaje y tapones. Sin fuente: “Elegí un print o subí una
+imagen.”
+
+`stockKey` agrupa el catálogo por `catalogo:<id>`. Una imagen propia usa la
+ruta de R2. Sin print no se agrega la clave, para no romper el stock ya
+cargado.
+
+Solicitud del sitio: si `printId` está en `PRINTS_CATALOGO`, se guarda el id y
+**no** se sube `printDataUrl` a R2. Si no, se sube como imagen propia.
+
+### Tira de visera (`peakStrip`)
+
+Zona nueva del casco (casquete, visera, banda, bajo visera, tira). Al leer un
+casco viejo es **opcional**: si no viene, no se muestra. En `stockKey` entra
+**sólo si tiene color**, para que el stock cargado antes de la zona siga
+coincidiendo.
+
+### Colores
+
+“Naranja Casablanca” → “Naranja” / “Orange” (softshell, correaje, hilo).
+`cascoChosenColorName` lee el nombre del catálogo, no el guardado, para que
+los pedidos viejos se vean actualizados. Amarillo Girasol es `#fcce30`.
+
+### Tipografías de bordado
+
+`FONTS` son las 17 del sitio. Las 10 viejas están en `LEGACY_FONTS`: no se
+ofrecen, se siguen aceptando al leer. No borrarlas. `FONT_DEFAULT` es
+`'serif'`. Al leer un registro sin el campo se conserva `'trajan'`.
+
+Las webfonts van por `<link>` en `app/layout.tsx`, **no** `next/font`: la
+ficha las dibuja en canvas con `ctx.font`. Antes de dibujar,
+`esperarTipografia()` usa `document.fonts.load`.
+
+### Fichas exportadas (imagen / PDF)
+
+En cascos nuevos, `configuredVisuals` **tiene** que setear `fontWeight`. Sin
+eso el canvas arma `undefined 52px …` y las iniciales salen chicas, aunque en
+el CRM se vean bien (el CSS cubre el tamaño). `app/ficha.tsx` usa
+`tipografiaCanvas()` como red.
+
+## Pedidos, stock y estado de cuenta
+
+- Productos configurables (`cfg-*`) con `version`: un UPDATE debe hacer
+  `version=version+1`.
+- Stock: movimientos inmutables. Una entrega se vincula a la carga de la que
+  sale (`source_movement_id` / `stock_load_id`). No borrar una carga con
+  entregas.
+- Botas: calidad (clásica / premium / texanas) × cuero (doble / triple).
+  Talle estándar es el default; “a medida” es extra `a_medida` (+50 USD de
+  lista). Extra `bordado`. Precio de lista: Clásica DC 500 / TC 550, Premium
+  DC 650 / TC 700, Texanas aparte.
+- Importes negativos en rojo (`.money-neg`). Ganancia de una cotización en
+  gris (`.money-tentativo`): todavía no es plata ganada.
+- Un movimiento de cuenta se puede borrar directo en D1 si el usuario lo pide
+  (la UI no tiene botón para un movimiento suelto). Ejemplo: gasto
+  publicitario `60fae9ae-…` del 2026-10-08, US$ 49, ya borrado.
+
+## Convenciones de trabajo
+
+- Responder en español, voseo (como el resto del CRM). No mezclar tuteo
+  (“Elige”) con voseo (“Elegí”).
+- Commitear **sólo** cuando el usuario lo pide. Excluir `.cursor/`, `output/`,
+  `tsconfig.tsbuildinfo`, `.dev.vars`. Trailer:
+  `Co-authored-by: Cursor <cursoragent@cursor.com>`.
+- Si hay cambios ajenos sin commit en los mismos archivos, stagear sólo los
+  hunks propios (aplicar sobre HEAD) y verificar en una copia limpia:
 
 ```bash
-unlink node_modules
-npm install
+rm -rf /tmp/staged && mkdir /tmp/staged && git archive HEAD | tar -x -C /tmp/staged
+# copiar sólo lo stageado
+ln -s "$PWD/node_modules" /tmp/staged/node_modules
+cp .dev.vars /tmp/staged/
 ```
 
-El respaldo `.node_modules.dropbox` está ignorado por Git y no forma parte del proyecto.
+Publicar desde esa copia para no subir trabajo ajeno.
 
-## Catálogo real
+- `tests/account.test.ts` falla con `node --test` (import de `./types` sin
+  `.ts`). No es una regresión. Correr tests con
+  `node --import tsx --test tests/*.test.ts`.
+- `npx tsc --noEmit` tiene errores previos a ignorar: TS5097 (imports `.ts`),
+  `app/ficha.tsx` (~463, CSS custom property), `app/forms.tsx` (~3254–3525),
+  `lib/ficha.ts` si falta algún campo en un objeto de iniciales.
+- Verificar UI en el navegador cuando el cambio es de interfaz. Los
+  `Select` de Base UI a veces no se automatizan: cubrir con tests y decirlo.
+- No tocar D1 / R2 / `CRM_SHARED_KEY` / el puente con el sitio salvo que la
+  tarea lo pida.
 
-La fuente editable y versionable es:
+## Mapa del código (lo que más se toca)
 
-- `data/catalogo-real.json`
-
-Con el servidor local activo, importar o actualizar por SKU:
-
-```bash
-npm run catalog:import
-npm run stock:import
-```
-
-El importador `scripts/import-real-catalog.mjs` conserva fotos y opciones de los productos ya existentes. Convierte los importes a centavos y marca explícitamente los datos pendientes.
-
-`scripts/import-stock-inicial.mjs` crea un movimiento de ingreso por SKU con motivo `Stock inicial inventario 2026-09-10`. Es idempotente: si ese motivo ya existe, no duplica unidades. Quedan sin match las riendas por par negro/marrón sueltas (SKU `#N/A` en la planilla).
-
-`scripts/prepare-real-catalog.sql` se usó una sola vez para retirar los registros demo y cambiar la base local vacía a USD. No ejecutarlo sobre una base con datos reales sin revisar primero su contenido.
-
-## Base de datos y reglas importantes
-
-- El esquema fuente está en `db/schema.ts`.
-- Las migraciones Drizzle están en `drizzle/`.
-- `drizzle/0001_confused_korath.sql` agrega `products.ff_price`.
-- Los importes se guardan como centavos enteros.
-- Los porcentajes se guardan en puntos básicos; `1500` representa 15,00 %.
-- El margen mostrado es `(venta - costo) / venta`.
-- Cada ítem de pedido conserva una copia de nombre, SKU, costo, precio y opciones para no alterar el historial cuando cambie el catálogo.
-- El stock se calcula como suma de movimientos. Los movimientos son inmutables por triggers de SQLite.
-- Cerrar un pedido descuenta stock; reabrirlo devuelve stock. La base impide stock negativo.
-- Los registros se archivan en lugar de borrarse.
-- La moneda global solo se puede cambiar cuando no existen productos ni pedidos.
-
-Las decisiones completas están en `docs/DECISIONES.md`.
-
-## Mapa del código
-
-- `app/crm.tsx`: navegación, tablas, dashboard, paneles y llamadas al API.
-- `app/forms.tsx`: formularios de productos, contactos, pedidos, stock y configuración.
-- `app/api/crm/route.ts`: endpoint principal del CRM.
-- `app/api/images/`: carga y lectura de imágenes en R2.
-- `lib/server.ts`: validaciones y mutaciones del dominio.
-- `lib/money.ts`: cálculos monetarios, margen y precios.
-- `lib/types.ts`: tipos compartidos.
-- `db/schema.ts`: esquema relacional.
-- `data/catalogo-real.json`: catálogo real reproducible.
-- `scripts/import-real-catalog.mjs`: importación idempotente por SKU.
-- `data/stock-inicial.json`: inventario transcrito de la planilla del 2026-09-10.
-- `scripts/import-stock-inicial.mjs`: carga idempotente de stock inicial por SKU.
-- `.openai/hosting.json`: bindings de D1/R2 y proyecto de Sites.
-
-La página registra una herramienta WebMCP opcional llamada `start_crm_record`, que abre formularios sin guardar datos.
+- `app/configure-form.tsx`: configuradores (casco, bota, montura, rodillera).
+  Pedidos y stock usan el mismo `CascoForm`.
+- `app/forms.tsx`: pedidos, contactos, stock, precarga de solicitud.
+- `app/ficha.tsx` + `lib/ficha.ts`: ficha en pantalla y canvas (imagen/PDF).
+- `lib/configure.ts`: parseo, labels, `stockKey`, precios, Print, tipografías.
+- `lib/casco-catalog.ts` + `lib/casco-catalogo.json`: paletas y materiales.
+- `lib/print-catalogo.ts` + `public/prints/`: 16 prints del sitio.
+- `lib/solicitud.ts` + `app/api/solicitud/` + `app/api/precios/`: puente.
+- `docs/PUENTE-CON-EL-SITIO.md`: contrato del puente.
+- `docs/DECISIONES.md`: decisiones de dominio más viejas.
 
 ## Verificación
 
-Después de cambiar código:
-
 ```bash
-npm test
-npm run lint
+node --import tsx --test tests/*.test.ts
+npx tsc --noEmit -p .
 npm run build
 ```
 
-Validar además en el navegador:
+`npm test` (script del package) sigue fallando en `tests/account.test.ts` por
+el import sin extensión; no usarlo como señal de regresión.
 
-- listado y búsqueda de productos;
-- creación/edición de un producto;
-- precio de lista, F&F exacto y márgenes;
-- bloqueo de productos con costo pendiente;
-- creación y cierre de pedidos;
-- movimientos de stock, stock inicial importado por SKU y rechazo de stock negativo.
+## Pendiente / no commiteado
 
-## Próximos pasos sugeridos
-
-1. Completar a mano los 3 costos, el precio de lista de `1025FC` y los precios F&F pendientes.
-2. Confirmar que los tres SKU corregidos sean los identificadores definitivos.
-3. Cargar proveedores y asociarlos a productos.
-4. Resolver las riendas sueltas de inventario (sin SKU) o crear esos productos.
-5. Incorporar fotos y características por categoría.
-6. Cargar clientes y comenzar pedidos reales.
-7. Revisar los textos transcritos de las capturas antes de publicar.
-
-No desplegar ni reemplazar datos de producción sin revisar primero el catálogo y hacer una copia de seguridad de D1.
+- `app/webapp.tsx`: el service worker sólo se registra en producción. Quedó
+  sin commit a propósito (no era parte del arreglo de fichas ni del puerto).
+- Completar a mano costos / F&F que siguen pendientes en el catálogo
+  (taqueras, almohadillas, red, funda, tensabotas, protectores). Ver
+  `docs/DECISIONES.md` y el catálogo.
