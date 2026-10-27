@@ -653,6 +653,9 @@ export async function ensureConfiguredCatalog() {
       "INSERT OR IGNORE INTO categories(id,name,fields) VALUES('botas','Botas','[]')",
     ),
     stmt(
+      "INSERT OR IGNORE INTO categories(id,name,fields) VALUES('tacos','Tacos','[]')",
+    ),
+    stmt(
       'CREATE INDEX IF NOT EXISTS idx_stock_product_config ON stock_movements (product_id, config_key)',
     ),
     stmt('DROP TRIGGER IF EXISTS stock_no_negative'),
@@ -678,7 +681,11 @@ export async function ensureConfiguredCatalog() {
       pending,
     ),
     stmt(
-      "UPDATE products SET kind='configured', version=version+1 WHERE id IN ('cfg-montura','cfg-casco','cfg-rodillera','cfg-bota') AND kind!='configured'",
+      "INSERT OR IGNORE INTO products(id,name,sku,category,supplier_id,cost,price,ff_discount,ff_price,promo_kind,promo_value,photos,options,attributes,pricing,kind) VALUES ('cfg-taco','Taco','TACO','tacos',NULL,0,0,1500,NULL,'none',0,'[]','[]',?,'{}','configured')",
+      pending,
+    ),
+    stmt(
+      "UPDATE products SET kind='configured', version=version+1 WHERE id IN ('cfg-montura','cfg-casco','cfg-rodillera','cfg-bota','cfg-taco') AND kind!='configured'",
     ),
   ]);
 }
@@ -1367,6 +1374,8 @@ export async function product(
   const kind =
     id === TEMPLATE_IDS.rodilleras ||
     id === TEMPLATE_IDS.botas ||
+    // Tacos comparte la categoría con productos comunes: sólo la plantilla es configurable.
+    id === TEMPLATE_IDS.tacos ||
     category === 'monturas' ||
     category === 'cascos'
       ? 'configured'
@@ -1379,10 +1388,12 @@ export async function product(
           ? TEMPLATE_IDS.rodilleras
           : category === 'botas'
             ? TEMPLATE_IDS.botas
-            : TEMPLATE_IDS.monturas;
+            : category === 'tacos'
+              ? TEMPLATE_IDS.tacos
+              : TEMPLATE_IDS.monturas;
     if (!b.id || id !== expected)
       throw new Error(
-        'Monturas, cascos, rodilleras y botas se configuran desde Productos.',
+        'Monturas, cascos, rodilleras, botas y tacos se configuran desde Productos.',
       );
   }
   const pricingJson = JSON.stringify(

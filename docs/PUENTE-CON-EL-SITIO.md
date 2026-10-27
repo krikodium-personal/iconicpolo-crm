@@ -72,7 +72,7 @@ solicitud vencida); un "no se pudo" genérico obliga a ir a los logs.
 
 ## 4. El traductor: `lib/solicitud.ts`
 
-Convierte el casco del personalizador del sitio a `CascoConfigV2`.
+Convierte el casco del personalizador del sitio a `CascoConfigV2`, y el taco a `TacoConfig` (ver al final).
 
 - **Colores:** el sitio manda `{hex, es, en}`, sin paleta ni posición. Se
   resuelven por hexadecimal contra la paleta que corresponde a cada zona. Si un
@@ -90,9 +90,20 @@ Convierte el casco del personalizador del sitio a `CascoConfigV2`.
 Cubierto por `tests/solicitud.test.ts` (15 casos). Incluye uno que verifica que
 lo traducido pasa `parseCasco` sin completar nada a mano.
 
-**Sólo se traducen cascos.** Monturas, botas y rodilleras llegan como texto y
-se vuelcan en las notas: el sitio todavía no manda su configuración
-estructurada.
+**Tacos (`mapearTaco`, desde 2026-10-27).** El sitio manda `disenoTaco` con
+tamaño, flex, peso y manija (vacío o 0 = estándar, el cliente no los eligió), color del número, las tres casillas de iniciales y
+los colores de cigarro, bandas, extremos, puntas y puntera. A diferencia del
+casco, **los colores se resuelven por nombre** (`es`), no por hexadecimal: en
+las lacas el Rojo y el Rojo Neón comparten `#ff0000` y en el taller son dos
+lacas distintas. Las opciones se comparan por el texto que vio el cliente. Lo
+que no está en el catálogo queda en el valor de fábrica (Natural, en colores)
+con un aviso. Los dos renders del sitio quedan como imágenes del diseño.
+Catálogo en `lib/taco-catalog.ts`, copiado de `src/data/malletModel.ts` del
+sitio; si allá cambia una opción o un color, hay que reflejarlo acá. Cubierto
+por `tests/taco.test.ts`.
+
+**Monturas, botas y rodilleras** llegan como texto y se vuelcan en las notas:
+el sitio todavía no manda su configuración estructurada.
 
 ---
 

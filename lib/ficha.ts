@@ -31,7 +31,9 @@ import {
   type RodilleraConfig,
   type BotaConfig,
   type ColorElegido,
+  type TacoConfig,
 } from './configure.ts';
+import { TACO_ZONAS, tacoLaca, tacoPuntera } from './taco-catalog.ts';
 import { cascoChosenColorName } from './casco-catalog.ts';
 import type { Contact, Item, Product, ProductUnit } from './types';
 import { whatsapp, whatsappGroup } from './whatsapp.ts';
@@ -41,6 +43,7 @@ const KIND_NAME: Record<ConfiguredKind, Record<ConfigLang, string>> = {
   casco: { es: 'Casco', en: 'Helmet' },
   rodillera: { es: 'Rodillera', en: 'Knee pad' },
   bota: { es: 'Bota', en: 'Boot' },
+  taco: { es: 'Taco', en: 'Mallet' },
 };
 
 export type FichaSwatch = {
@@ -271,6 +274,35 @@ function configuredVisuals(
         caption: `${L('Bordado', 'Embroidery')} · ${size} · ${place} · ${colorSwatch(c.bordadoColor)?.name || c.bordadoColor}`,
       });
     }
+    return { swatches, initials, artwork };
+  }
+
+  if (kind === 'taco') {
+    const c = raw as TacoConfig;
+    for (const zona of TACO_ZONAS) {
+      const color = tacoLaca(c.colores[zona.id]);
+      swatches.push({
+        label: L(zona.label, zona.labelEn),
+        name: color ? L(color.name, color.nameEn) : c.colores[zona.id],
+        hex: color?.hex || '#e0b166',
+      });
+    }
+    const puntera = tacoPuntera(c.puntera);
+    swatches.push({
+      label: L('Puntera', 'Binding'),
+      name: puntera ? L(puntera.name, puntera.nameEn) : c.puntera,
+      hex: puntera?.hex || '#f2f2f2',
+    });
+    // Las iniciales se graban a hierro con una tipografía fija: van en el
+    // detalle, no como muestra de bordado.
+    const designPhotos = configDesignPhotos('taco', c);
+    designPhotos.slice(1).forEach((url, index) => {
+      artwork.push({
+        kind: 'diseno',
+        url,
+        caption: `${L('Diseño', 'Design')} · ${index + 2} ${L('de', 'of')} ${designPhotos.length}`,
+      });
+    });
     return { swatches, initials, artwork };
   }
 

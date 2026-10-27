@@ -83,6 +83,19 @@ import {
   stockForConfig,
   configDesignPhotos,
 } from '@/lib/configure';
+import {
+  TACO_COLORES_NUMERO,
+  TACO_FLEX,
+  TACO_INICIALES_MAX,
+  TACO_LACAS,
+  TACO_MANIJAS,
+  TACO_PESOS,
+  TACO_PUNTERAS,
+  TACO_TAMANOS,
+  TACO_ZONAS,
+  tacoZonasPintadas,
+  type TacoConfig,
+} from '@/lib/taco-catalog';
 import { formatMoney } from '@/lib/money';
 import { PRINTS_CATALOGO, urlMiniaturaPrint } from '@/lib/print-catalogo';
 import type { Movement } from '@/lib/types';
@@ -1485,6 +1498,175 @@ export function Configurator({
       </div>
     );
   }
+  if (kind === 'taco') {
+    const c = value as TacoConfig;
+    const set = (patch: Partial<TacoConfig>) => onChange({ ...c, ...patch });
+    // Una casilla por letra: cada una tiene su lugar fijo en el cigarro.
+    const casillas = Array.from(
+      { length: TACO_INICIALES_MAX },
+      (_, i) => (c.inicialesTexto[i] || '').trim(),
+    );
+    const setCasilla = (i: number, letra: string) => {
+      const next = [...casillas];
+      next[i] = letra.toUpperCase().slice(-1);
+      set({ inicialesTexto: next.map((l) => l || ' ').join('').trimEnd() });
+    };
+    return (
+      <div className="configurator">
+        <div className="form-grid">
+          <Field label="Tamaño *">
+            <Pick
+              label="Tamaño"
+              value={String(c.tamano)}
+              onChange={(v) => set({ tamano: Number(v) as TacoConfig['tamano'] })}
+              options={TACO_TAMANOS.map((tamano) => ({
+                value: String(tamano),
+                label: `${tamano}"`,
+              }))}
+            />
+          </Field>
+          {(
+            [
+              {
+                activo: 'conFlex',
+                titulo: 'Flex de la caña',
+                clave: 'flex',
+                valor: c.flex,
+                elegir: (v: string) => set({ flex: v as TacoConfig['flex'] }),
+                opciones: TACO_FLEX.map((flex) => ({ value: flex.id, label: flex.label })),
+              },
+              {
+                activo: 'conPeso',
+                titulo: 'Peso del cigarro',
+                clave: 'peso',
+                valor: String(c.peso),
+                elegir: (v: string) => set({ peso: Number(v) as TacoConfig['peso'] }),
+                opciones: TACO_PESOS.map((peso) => ({ value: String(peso), label: `${peso} g` })),
+              },
+              {
+                activo: 'conManija',
+                titulo: 'Medida del grip',
+                clave: 'manija',
+                valor: c.manija,
+                elegir: (v: string) => set({ manija: v as TacoConfig['manija'] }),
+                opciones: TACO_MANIJAS.map((manija) => ({ value: manija.id, label: manija.label })),
+              },
+            ] as const
+          ).map((opcion) => (
+            <Field key={opcion.clave} label={opcion.titulo}>
+              <Pick
+                label={opcion.titulo}
+                value={c[opcion.activo] ? 'si' : 'no'}
+                onChange={(v) => set({ [opcion.activo]: v === 'si' })}
+                options={[
+                  { value: 'no', label: 'Estándar' },
+                  { value: 'si', label: 'A elección · costo extra' },
+                ]}
+              />
+              {c[opcion.activo] ? (
+                <>
+                  <Pick
+                    label={`${opcion.titulo}: valor`}
+                    value={opcion.valor}
+                    onChange={opcion.elegir}
+                    options={opcion.opciones}
+                  />
+                  <ExtraNote extra={pricePoint(pricing, opcion.clave)} currency={currency} />
+                </>
+              ) : null}
+            </Field>
+          ))}
+          <Field label="Color del número *">
+            <Pick
+              label="Color del número"
+              value={c.colorNumero}
+              onChange={(v) => set({ colorNumero: v as TacoConfig['colorNumero'] })}
+              options={TACO_COLORES_NUMERO.map((color) => ({
+                value: color.id,
+                label: color.label,
+              }))}
+            />
+          </Field>
+        </div>
+        {TACO_ZONAS.map((zona) => (
+          <div key={zona.id}>
+            <ColorPicker
+              label={`${zona.label} *`}
+              value={c.colores[zona.id]}
+              colors={TACO_LACAS}
+              onChange={(id) => set({ colores: { ...c.colores, [zona.id]: id } })}
+            />
+          </div>
+        ))}
+        {tacoZonasPintadas(c.colores).length ? (
+          <ExtraNote extra={pricePoint(pricing, 'pintura')} currency={currency} />
+        ) : null}
+        <ColorPicker
+          label="Puntera *"
+          value={c.puntera}
+          colors={TACO_PUNTERAS}
+          onChange={(id) => set({ puntera: id })}
+        />
+        <div className="form-grid">
+          <Field label="Iniciales">
+            <Pick
+              label="Iniciales"
+              value={c.iniciales ? 'si' : 'no'}
+              onChange={(v) =>
+                set({ iniciales: v === 'si', inicialesTexto: v === 'si' ? c.inicialesTexto : '' })
+              }
+              options={[
+                { value: 'no', label: 'No' },
+                { value: 'si', label: 'Sí · costo extra' },
+              ]}
+            />
+            {c.iniciales ? (
+              <ExtraNote extra={pricePoint(pricing, 'iniciales')} currency={currency} />
+            ) : null}
+          </Field>
+          {c.iniciales
+            ? casillas.map((letra, i) => (
+                <Field key={i} label={`Inicial ${i + 1}`}>
+                  <input
+                    value={letra}
+                    maxLength={1}
+                    aria-label={`Inicial ${i + 1}`}
+                    onChange={(e) => setCasilla(i, e.target.value)}
+                  />
+                </Field>
+              ))
+            : null}
+        </div>
+        {c.iniciales ? (
+          <p className="hint">
+            Cada casilla tiene su lugar en el cigarro: la 1 y la 3 en los
+            extremos, la 2 junto a la caña. Se graban del color del número.
+          </p>
+        ) : null}
+        <Field label="Imágenes de referencia del diseño" wide>
+          <Photos
+            value={c.disenoImagenes}
+            max={CASCO_DISENO_MAX}
+            camera
+            onChange={(urls) => set({ disenoImagenes: urls })}
+            onError={onError || (() => undefined)}
+            onBusy={onBusy || (() => undefined)}
+          />
+          <small>
+            Los renders que manda el sitio, o fotos y bocetos para el proveedor.
+          </small>
+        </Field>
+        <ConfigSummary
+          kind="taco"
+          value={c}
+          extras={extras}
+          available={available}
+          totals={totals}
+          currency={currency}
+        />
+      </div>
+    );
+  }
   if (kind === 'bota') {
     const c = value as BotaConfig;
     const set = (patch: Partial<BotaConfig>) => onChange({ ...c, ...patch });
@@ -2275,6 +2457,10 @@ function extraForLabel(
     if (charge.id.startsWith('modelo_') && label === 'Modelo') return true;
     if (charge.id.startsWith('material_') && label === 'Material externo')
       return true;
+    if (charge.id === 'flex' && label === 'Flex de la caña') return true;
+    if (charge.id === 'peso' && label === 'Peso del cigarro') return true;
+    if (charge.id === 'manija' && label === 'Grip') return true;
+    if (charge.id === 'pintura' && label === 'Pintura') return true;
     return false;
   });
 }

@@ -10,7 +10,7 @@
  * Christian revisa, completa con precios y confirma. Lo que no se puede
  * traducir no se inventa: va a `avisos` y a las notas del pedido.
  *
- * Hoy sólo se traducen los cascos, que son lo único que el sitio manda
+ * Se traducen los cascos y los tacos, que son lo que el sitio manda
  * estructurado. Las monturas, botas y rodilleras llegan como texto y se
  * vuelcan en las notas.
  */
@@ -25,12 +25,28 @@ import {
 } from './casco-catalog.ts';
 import {
   defaultCasco,
+  defaultTaco,
   FONT_DEFAULT,
   FONTS,
   type CascoConfigV2,
   type CascoPosicion,
+  type ProductConfig,
 } from './configure.ts';
 import { PRINTS_CATALOGO } from './print-catalogo.ts';
+import {
+  TACO_FLEX,
+  TACO_INICIALES_MAX,
+  TACO_LACAS,
+  TACO_MANIJAS,
+  TACO_NATURAL,
+  TACO_PESOS,
+  TACO_PUNTERAS,
+  TACO_TAMANOS,
+  TACO_ZONAS,
+  tacoColorPorNombre,
+  type TacoColor,
+  type TacoConfig,
+} from './taco-catalog.ts';
 
 /** Una solicitud tal como la entrega `GET /api/solicitud/<id>` del sitio. */
 export type SolicitudSitio = {
@@ -50,8 +66,28 @@ export type SolicitudSitio = {
     subtitle: string;
     details: string[];
     diseno?: DisenoSitio;
+    disenoTaco?: DisenoTacoSitio;
     imagenes: Array<{ label: string; mimeType: string; dataUrl: string }>;
   }>;
+};
+
+/**
+ * El taco del personalizador del sitio. Las opciones viajan con el texto que
+ * ve el cliente; los colores, con su nombre, porque en las lacas hay dos que
+ * comparten hexadecimal.
+ */
+export type DisenoTacoSitio = {
+  tamano: number;
+  /** '' = estándar: el cliente no eligió el flex. */
+  flex: string;
+  /** 0 = estándar. */
+  peso: number;
+  /** '' = estándar. */
+  manija: string;
+  colores: Record<'cigarro' | 'bandas' | 'extremos' | 'puntas' | 'puntera', ColorSitio>;
+  colorNumero: 'Negro' | 'Blanco';
+  /** Una letra por casilla, '' si está vacía. Vacío del todo = sin iniciales. */
+  iniciales: string[];
 };
 
 type ColorSitio = { hex: string; es: string; en: string };
@@ -106,9 +142,9 @@ export function printDelCatalogo(diseno: DisenoSitio): string {
 }
 
 export type PrefillItem = {
-  /** Plantilla configurable del CRM: `cfg-casco`. */
+  /** Plantilla configurable del CRM: `cfg-casco` o `cfg-taco`. */
   product_id: string;
-  config: CascoConfigV2;
+  config: ProductConfig;
 };
 
 export type OrderPrefill = {
@@ -341,6 +377,100 @@ export function mapearCasco(
   return { config, avisos };
 }
 
+/**
+ * Una opción del taco por el texto del sitio. Si no la encuentra no inventa
+ * una parecida: deja la de fábrica y avisa.
+ */
+function opcionTaco<T extends string>(
+  lista: readonly { id: T; label: string }[],
+  texto: string,
+  porDefecto: T,
+  etiqueta: string,
+  avisos: string[],
+): T {
+  const encontrada = lista.find(
+    (o) => o.label.toLowerCase() === (texto || '').trim().toLowerCase(),
+  );
+  if (encontrada) return encontrada.id;
+  avisos.push(
+    `${etiqueta}: el cliente eligió «${texto}» y el CRM no tiene esa opción. Quedó la de fábrica: revisala.`,
+  );
+  return porDefecto;
+}
+
+function numeroTaco<T extends number>(
+  lista: readonly T[],
+  valor: number,
+  porDefecto: T,
+  etiqueta: string,
+  unidad: string,
+  avisos: string[],
+): T {
+  if (lista.includes(Number(valor) as T)) return Number(valor) as T;
+  avisos.push(
+    `${etiqueta}: el cliente eligió ${valor}${unidad} y el CRM no tiene esa medida. Quedó ${porDefecto}${unidad}: revisala.`,
+  );
+  return porDefecto;
+}
+
+function colorTaco(
+  paleta: TacoColor[],
+  color: ColorSitio | undefined,
+  etiqueta: string,
+  avisos: string[],
+): string {
+  const encontrado = color ? tacoColorPorNombre(paleta, color.es) : undefined;
+  if (encontrado) return encontrado.id;
+  avisos.push(
+    `${etiqueta}: el cliente eligió «${color?.es || color?.hex || 'sin color'}», que no está en la paleta del CRM. Quedó Natural: revisalo.`,
+  );
+  return TACO_NATURAL;
+}
+
+/**
+ * Traduce el taco del sitio a la configuración del CRM. `imagenes` son los
+ * renders ya subidos al CRM.
+ */
+export function mapearTaco(
+  diseno: DisenoTacoSitio,
+  imagenes: string[] = [],
+): { config: TacoConfig; avisos: string[] } {
+  const avisos: string[] = [];
+  const base = defaultTaco();
+  const letras = Array.from(
+    { length: TACO_INICIALES_MAX },
+    (_, i) => (diseno.iniciales?.[i] || '').trim().toUpperCase().slice(0, 1),
+  );
+  const conIniciales = letras.some(Boolean);
+  const config: TacoConfig = {
+    tamano: numeroTaco(TACO_TAMANOS, diseno.tamano, base.tamano, 'Tamaño', '"', avisos),
+    conFlex: !!diseno.flex,
+    flex: diseno.flex
+      ? opcionTaco(TACO_FLEX, diseno.flex, base.flex, 'Flex de la caña', avisos)
+      : base.flex,
+    conPeso: !!diseno.peso,
+    peso: diseno.peso
+      ? numeroTaco(TACO_PESOS, diseno.peso, base.peso, 'Peso del cigarro', ' g', avisos)
+      : base.peso,
+    conManija: !!diseno.manija,
+    manija: diseno.manija
+      ? opcionTaco(TACO_MANIJAS, diseno.manija, base.manija, 'Medida del grip', avisos)
+      : base.manija,
+    colores: Object.fromEntries(
+      TACO_ZONAS.map((zona) => [
+        zona.id,
+        colorTaco(TACO_LACAS, diseno.colores?.[zona.id], zona.label, avisos),
+      ]),
+    ) as TacoConfig['colores'],
+    puntera: colorTaco(TACO_PUNTERAS, diseno.colores?.puntera, 'Puntera', avisos),
+    colorNumero: diseno.colorNumero === 'Blanco' ? 'blanco' : 'negro',
+    iniciales: conIniciales,
+    inicialesTexto: conIniciales ? letras.map((l) => l || ' ').join('').trimEnd() : '',
+    disenoImagenes: imagenes,
+  };
+  return { config, avisos };
+}
+
 /** Club y país del cliente, para la ficha del contacto nuevo. */
 export function notasDeCliente(cliente: SolicitudSitio['cliente']): string {
   return [
@@ -367,8 +497,8 @@ export function notasDeSolicitud(
   if (datos.length) partes.push(datos.join(' · '));
   if (cliente.notes) partes.push(`Notas del cliente: ${cliente.notes}`);
   for (const item of solicitud.items) {
-    // Los cascos ya viajan en la configuración; el resto sólo existe como texto.
-    if (item.diseno) continue;
+    // Cascos y tacos ya viajan en la configuración; el resto sólo existe como texto.
+    if (item.diseno || item.disenoTaco) continue;
     partes.push(
       [`${item.name} (${item.subtitle})`, ...item.details.map((d) => `  - ${d}`)].join('\n'),
     );

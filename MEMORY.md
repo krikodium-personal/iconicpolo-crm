@@ -88,7 +88,7 @@ cliente), protegidas por `X-Iconic-Crm-Key`:
 - `GET /api/solicitud?id=<32 chars>` — precarga un pedido desde una consulta
   del sitio. **No guarda el pedido**: el botón del mail es un GET y los
   proxies de correo lo disparan solos.
-- `GET /api/precios` — precio de lista de los cuatro configurables. **Sólo
+- `GET /api/precios` — precio de lista de los cinco configurables. **Sólo
   precio**: nunca costo ni Friends & Family.
 
 Si la clave no coincide, ambos Workers registran 5 bytes de SHA-256 (huella),
@@ -101,8 +101,8 @@ se inventa: va a `avisos` (recuadro del formulario + notas del pedido).
 Colores por hexadecimal contra la paleta de cada zona; si no está, queda el
 primero y se avisa. Cubierto por `tests/solicitud.test.ts`.
 
-Sólo se traducen cascos. Monturas, botas y rodilleras llegan como texto y van
-a las notas.
+Se traducen cascos y tacos. Monturas, botas y rodilleras llegan como texto y
+van a las notas.
 
 ### Precios en el sitio
 
@@ -166,6 +166,26 @@ En cascos nuevos, `configuredVisuals` **tiene** que setear `fontWeight`. Sin
 eso el canvas arma `undefined 52px …` y las iniciales salen chicas, aunque en
 el CRM se vean bien (el CSS cubre el tamaño). `app/ficha.tsx` usa
 `tipografiaCanvas()` como red.
+
+## Taco (desde 2026-10-27)
+
+Quinto configurable: `cfg-taco`, categoría `tacos`. Opciones y paletas en
+`lib/taco-catalog.ts` (copiadas del sitio). Precio base = taco estándar en
+madera natural. Flex, peso y manija son **opcionales** (`conFlex`, `conPeso`,
+`conManija`; en el sitio, botones "Estándar / Elegir") y cada uno tiene **un
+único recargo** (`flex`, `peso`, `manija`) sea cual sea el valor elegido
+(decisión de Christian, 2026-10-27). Si el recargo vale 0 el sitio igual ofrece
+la opción, sin mostrar precio. La pintura sigue el mismo criterio: un único
+recargo `pintura`, una vez si alguna zona no es Natural. Además `iniciales`.
+En pantalla la manija se llama **"Grip"** (ids internos `manija`). Las
+iniciales son 3 casillas con lugar fijo: una casilla vacía va como espacio en
+`inicialesTexto`.
+
+**La categoría Tacos es compartida:** además de la plantilla tiene productos
+comunes (taqueras, "Tacos estándar", "Tacos personalizados"). Por eso `tacos`
+**no** está en `CONFIGURED_CATEGORIES` (que esconde la categoría del selector
+de productos comunes) pero sí en `KIND_BY_CATEGORY`, y `lib/server.ts` marca
+como configurable sólo el id `cfg-taco`.
 
 ## Pedidos, stock y estado de cuenta
 

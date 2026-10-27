@@ -31,6 +31,25 @@ import {
   parseCabezadaConfig,
 } from './cabezada.ts';
 import { PRINTS_CATALOGO, urlPrint } from './print-catalogo.ts';
+import {
+  TACO_COLORES_NUMERO,
+  TACO_FLEX,
+  TACO_INICIALES_MAX,
+  TACO_LACAS,
+  TACO_MANIJAS,
+  TACO_NATURAL,
+  TACO_PESOS,
+  TACO_PUNTERAS,
+  TACO_TAMANOS,
+  TACO_ZONAS,
+  tacoLaca,
+  tacoZonasPintadas,
+  tacoPuntera,
+  type TacoConfig,
+  type TacoZona,
+} from './taco-catalog.ts';
+
+export type { TacoConfig } from './taco-catalog.ts';
 
 export {
   CASCO_ESTAMPADOS,
@@ -267,6 +286,14 @@ export const COUNTRIES = [
   'Zimbabue',
 ] as const;
 
+/**
+ * Categorías que sólo tienen el producto configurable: se esconden del
+ * selector de categoría de los productos comunes.
+ *
+ * Tacos no está: además del taco configurable tiene productos comunes (las
+ * taqueras y los tacos que se cargaron como SKU antes del configurador), así
+ * que la categoría se comparte. Ver `KIND_BY_CATEGORY`.
+ */
 export const CONFIGURED_CATEGORIES = [
   'monturas',
   'cascos',
@@ -278,19 +305,22 @@ export const TEMPLATE_IDS = {
   cascos: 'cfg-casco',
   rodilleras: 'cfg-rodillera',
   botas: 'cfg-bota',
+  tacos: 'cfg-taco',
 } as const;
 
-export type ConfiguredKind = 'montura' | 'casco' | 'rodillera' | 'bota';
+export type ConfiguredKind = 'montura' | 'casco' | 'rodillera' | 'bota' | 'taco';
 export type ConfigLang = 'es' | 'en';
 
+/** Qué configurable vive en cada categoría. Incluye las compartidas, como tacos. */
 export const KIND_BY_CATEGORY: Record<
-  (typeof CONFIGURED_CATEGORIES)[number],
+  (typeof CONFIGURED_CATEGORIES)[number] | 'tacos',
   ConfiguredKind
 > = {
   monturas: 'montura',
   cascos: 'casco',
   rodilleras: 'rodillera',
   botas: 'bota',
+  tacos: 'taco',
 };
 
 export const CATEGORY_BY_KIND: Record<ConfiguredKind, string> = {
@@ -298,6 +328,7 @@ export const CATEGORY_BY_KIND: Record<ConfiguredKind, string> = {
   casco: 'cascos',
   rodillera: 'rodilleras',
   bota: 'botas',
+  taco: 'tacos',
 };
 
 export const KIND_TITLES: Record<ConfiguredKind, string> = {
@@ -305,6 +336,7 @@ export const KIND_TITLES: Record<ConfiguredKind, string> = {
   casco: 'Cascos',
   rodillera: 'Rodilleras',
   bota: 'Botas',
+  taco: 'Tacos',
 };
 
 export function isConfiguredCategory(id: string) {
@@ -821,6 +853,7 @@ export const REFERENCE_PHOTO_GROUPS: Record<ConfiguredKind, PricedGroup[]> = {
       })),
     },
   ],
+  taco: [],
 };
 
 export function referencePhotoIds(kind: ConfiguredKind) {
@@ -841,6 +874,7 @@ export function selectedReferenceIds(
     const config = raw as RodilleraConfig;
     return [`tipo_${config.tipo}`, `modelo_${config.modelo}`];
   }
+  if (kind === 'taco') return [];
   return [botaModeloPriceId((raw as BotaConfig).modelo)];
 }
 
@@ -967,6 +1001,21 @@ export const PRICED_GROUPS: Record<ConfiguredKind, PricedGroup[]> = {
       ],
     },
   ],
+  taco: [
+    {
+      // Un recargo único por opción, sea cual sea el valor elegido.
+      id: 'aEleccion',
+      label: 'Recargos (uno por opción, sea cual sea el valor)',
+      options: [
+        { id: 'flex', label: 'Flex de la caña' },
+        { id: 'peso', label: 'Peso del cigarro' },
+        { id: 'manija', label: 'Medida del grip' },
+        // Una vez, aunque se pinte más de una zona.
+        { id: 'pintura', label: 'Pintura (cualquier zona en un color que no sea Natural)' },
+        { id: 'iniciales', label: 'Iniciales' },
+      ],
+    },
+  ],
 };
 
 function moneyAmount(value: unknown, label: string) {
@@ -1063,6 +1112,16 @@ export function selectedPriceKeys(
       ...(config.modelo === 'premium' ? ['modelo_premium'] : []),
       ...(config.iniciales ? ['iniciales'] : []),
       ...(config.bordado ? ['bordado'] : []),
+    ];
+  }
+  if (kind === 'taco') {
+    const config = raw as TacoConfig;
+    return [
+      ...(config.conFlex ? ['flex'] : []),
+      ...(config.conPeso ? ['peso'] : []),
+      ...(config.conManija ? ['manija'] : []),
+      ...(tacoZonasPintadas(config.colores).length ? ['pintura'] : []),
+      ...(config.iniciales ? ['iniciales'] : []),
     ];
   }
   if (kind === 'bota') {
@@ -1316,7 +1375,8 @@ export type ProductConfig =
   | MonturaConfig
   | CascoConfig
   | RodilleraConfig
-  | BotaConfig;
+  | BotaConfig
+  | TacoConfig;
 
 export function defaultMontura(): MonturaConfig {
   return {
@@ -1497,10 +1557,30 @@ export function defaultBota(): BotaConfig {
   };
 }
 
+/** El taco como arranca en el sitio: 52", estándar y en madera natural. */
+export function defaultTaco(): TacoConfig {
+  return {
+    tamano: 52,
+    conFlex: false,
+    flex: 'media',
+    conPeso: false,
+    peso: 190,
+    conManija: false,
+    manija: 'regular',
+    colores: { cigarro: TACO_NATURAL, bandas: TACO_NATURAL, extremos: TACO_NATURAL, puntas: TACO_NATURAL },
+    puntera: TACO_NATURAL,
+    colorNumero: 'negro',
+    iniciales: false,
+    inicialesTexto: '',
+    disenoImagenes: [],
+  };
+}
+
 export function defaultConfig(kind: ConfiguredKind): ProductConfig {
   if (kind === 'montura') return defaultMontura();
   if (kind === 'casco') return defaultCasco();
   if (kind === 'rodillera') return defaultRodillera();
+  if (kind === 'taco') return defaultTaco();
   return defaultBota();
 }
 
@@ -1984,6 +2064,7 @@ function parseCascoDesignPhotos(b: Record<string, unknown>): string[] {
 }
 
 export function configDesignPhotos(kind: ConfiguredKind, raw: ProductConfig) {
+  if (kind === 'taco') return (raw as TacoConfig).disenoImagenes.filter(Boolean);
   if (kind !== 'casco') return [];
   const config = raw as CascoConfig;
   if (Array.isArray(config.disenoImagenes) && config.disenoImagenes.length)
@@ -2157,10 +2238,72 @@ export function parseBota(raw: unknown): BotaConfig {
   return config;
 }
 
+function oneOfNumber<T extends number>(
+  v: unknown,
+  values: readonly T[],
+  label: string,
+) {
+  const n = typeof v === 'string' ? Number(v) : v;
+  if (typeof n !== 'number' || !values.includes(n as T))
+    throw new Error(`${label}: opción inválida.`);
+  return n as T;
+}
+
+export function parseTaco(raw: unknown): TacoConfig {
+  const b =
+    raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const colores =
+    b.colores && typeof b.colores === 'object'
+      ? (b.colores as Record<string, unknown>)
+      : {};
+  const config: TacoConfig = {
+    tamano: oneOfNumber(b.tamano, TACO_TAMANOS, 'Tamaño'),
+    conFlex: flag(b.conFlex),
+    flex: oneOf(b.flex, TACO_FLEX.map((flex) => flex.id), 'Flex de la caña'),
+    conPeso: flag(b.conPeso),
+    peso: oneOfNumber(b.peso, TACO_PESOS, 'Peso del cigarro'),
+    conManija: flag(b.conManija),
+    manija: oneOf(
+      b.manija,
+      TACO_MANIJAS.map((manija) => manija.id),
+      'Medida del grip',
+    ),
+    colores: Object.fromEntries(
+      TACO_ZONAS.map((zona) => [
+        zona.id,
+        oneOf(
+          colores[zona.id],
+          TACO_LACAS.map((color) => color.id),
+          `Color de ${zona.label.toLowerCase()}`,
+        ),
+      ]),
+    ) as Record<TacoZona, string>,
+    puntera: oneOf(
+      b.puntera,
+      TACO_PUNTERAS.map((color) => color.id),
+      'Color de la puntera',
+    ),
+    colorNumero: oneOf(
+      b.colorNumero,
+      TACO_COLORES_NUMERO.map((color) => color.id),
+      'Color del número',
+    ),
+    iniciales: flag(b.iniciales),
+    // Sin trim al principio: un espacio es una casilla vacía con su lugar.
+    inicialesTexto: text(b.inicialesTexto).toUpperCase().slice(0, TACO_INICIALES_MAX).trimEnd(),
+    disenoImagenes: optionalImages(b.disenoImagenes, 'referencia del diseño', CASCO_DISENO_MAX),
+  };
+  if (config.iniciales && !config.inicialesTexto.trim())
+    throw new Error('Escribí las iniciales.');
+  if (!config.iniciales) config.inicialesTexto = '';
+  return config;
+}
+
 export function parseConfig(kind: ConfiguredKind, raw: unknown): ProductConfig {
   if (kind === 'montura') return parseMontura(raw);
   if (kind === 'casco') return parseCasco(raw);
   if (kind === 'rodillera') return parseRodillera(raw);
+  if (kind === 'taco') return parseTaco(raw);
   return parseBota(raw);
 }
 
@@ -2189,6 +2332,20 @@ export function stockKey(kind: ConfiguredKind, raw: ProductConfig) {
       color: c.color,
       protectorCentroColor: c.protectorCentroColor,
       tamano: c.tamano,
+    });
+  }
+  if (kind === 'taco') {
+    // Las iniciales no entran: se graban al entregar, igual que en el resto.
+    const c = raw as TacoConfig;
+    return JSON.stringify({
+      tamano: c.tamano,
+      // Lo que no se eligió es el estándar, guarde el valor que guarde.
+      flex: c.conFlex ? c.flex : '',
+      peso: c.conPeso ? c.peso : '',
+      manija: c.conManija ? c.manija : '',
+      colores: TACO_ZONAS.map((zona) => c.colores[zona.id]),
+      puntera: c.puntera,
+      colorNumero: c.colorNumero,
     });
   }
   if (kind === 'bota') {
@@ -2420,6 +2577,43 @@ export function configLabels(
         lang,
       );
     }
+    return labels;
+  }
+  if (kind === 'taco') {
+    const c = raw as TacoConfig;
+    const opcion = (lista: readonly { id: string; label: string; labelEn: string }[], id: string) => {
+      const item = lista.find((o) => o.id === id);
+      return item ? (lang === 'en' ? item.labelEn : item.label) : id;
+    };
+    const color = (item: { name: string; nameEn: string } | undefined, id: string) =>
+      item ? (lang === 'en' ? item.nameEn : item.name) : id;
+    labels[key('Tamaño', 'Size')] = `${c.tamano}"`;
+    const estandar = key('Estándar', 'Standard');
+    labels[key('Flex de la caña', 'Cane stiffness')] = c.conFlex
+      ? opcion(TACO_FLEX, c.flex)
+      : estandar;
+    labels[key('Peso del cigarro', 'Head weight')] = c.conPeso ? `${c.peso} g` : estandar;
+    labels[key('Grip', 'Grip size')] = c.conManija
+      ? opcion(TACO_MANIJAS, c.manija)
+      : estandar;
+    for (const zona of TACO_ZONAS) {
+      labels[lang === 'en' ? zona.labelEn : zona.label] = color(
+        tacoLaca(c.colores[zona.id]),
+        c.colores[zona.id],
+      );
+    }
+    const pintadas = tacoZonasPintadas(c.colores);
+    labels[key('Pintura', 'Paint')] = pintadas.length
+      ? pintadas.map((zona) => (lang === 'en' ? zona.labelEn : zona.label)).join(', ')
+      : key('Sin pintar', 'Unpainted');
+    labels[key('Puntera', 'Binding')] = color(tacoPuntera(c.puntera), c.puntera);
+    labels[key('Color del número', 'Number color')] = opcion(TACO_COLORES_NUMERO, c.colorNumero);
+    labels[key('Iniciales', 'Initials')] = c.iniciales
+      ? c.inicialesTexto
+          .split('')
+          .map((letra) => (letra.trim() ? letra : '·'))
+          .join(' ')
+      : without;
     return labels;
   }
   if (kind === 'bota') {

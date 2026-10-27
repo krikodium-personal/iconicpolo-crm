@@ -82,7 +82,7 @@ export function TypeCards({
 }) {
   return (
     <div className="type-card-grid">
-      {(['montura', 'casco', 'rodillera', 'bota'] as ConfiguredKind[]).map((kind) => {
+      {(['montura', 'casco', 'rodillera', 'bota', 'taco'] as ConfiguredKind[]).map((kind) => {
         const product = configuredProductOf(data.products, kind);
         if (!product) return null;
         const hay = `${KIND_TITLES[kind]} ${kind} ${product.name}`.toLowerCase();
@@ -367,6 +367,8 @@ export function TypeConfigForm({
             ? 'H1 homologado y Standard sin homologar tienen su propio costo y precio de lista. El resto de las variantes se suma a ese valor.'
             : kind === 'bota'
               ? 'Cada modelo de bota tiene su costo y precio de lista por talle estándar. Hacerla a medida y el resto de los adicionales se suman a ese valor.'
+              : kind === 'taco'
+                ? 'El precio base es el del taco estándar en madera natural. Flex, peso y grip son a elección del cliente: cada uno suma un único recargo si lo elige, sea cual sea el valor. La pintura se cobra una sola vez si alguna zona va en un color que no sea Natural, y las iniciales aparte. Con 0, el sitio ofrece la opción sin mostrar recargo.'
               : 'Estos precios se usan en cada pedido. Las variantes se suman al precio base; dejá 0 si esa opción no cambia el valor.'}
       </p>
       <section className="form-section">

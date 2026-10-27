@@ -16,6 +16,7 @@ import { stmt } from '@/lib/server';
 import { TEMPLATE_IDS } from '@/lib/configure';
 import {
   mapearCasco,
+  mapearTaco,
   notasDeCliente,
   notasDeSolicitud,
   printDelCatalogo,
@@ -158,6 +159,19 @@ export async function GET(request: Request) {
   const avisos: string[] = [];
   const items: OrderPrefill['items'] = [];
   for (const item of solicitud.items) {
+    if (item.disenoTaco) {
+      const renders: string[] = [];
+      for (const imagen of item.imagenes) {
+        const ruta = await guardarImagen(imagen.dataUrl, imagen.label || 'taco');
+        if (ruta) renders.push(ruta);
+      }
+      if (renders.length < item.imagenes.length)
+        avisos.push('Algún render del taco no se pudo cargar: está en el mail.');
+      const taco = mapearTaco(item.disenoTaco, renders);
+      avisos.push(...taco.avisos);
+      items.push({ product_id: TEMPLATE_IDS.tacos, config: taco.config });
+      continue;
+    }
     if (!item.diseno) continue;
     const imagenes: string[] = [];
     for (const imagen of item.imagenes) {
@@ -183,7 +197,7 @@ export async function GET(request: Request) {
 
   if (!items.length)
     return Response.json(
-      { error: 'Esa solicitud no trae ningún casco configurado.' },
+      { error: 'Esa solicitud no trae ningún casco ni taco configurado.' },
       { status: 400 },
     );
 
