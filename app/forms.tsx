@@ -1588,7 +1588,17 @@ function itemPhoto(
   movements: Movement[] = [],
 ) {
   if (!product) return undefined;
-  if (item.selections.from_stock) {
+  // Carga elegida: su foto si tiene; si no, cae al default del producto.
+  const loadIds = stockLoadIdsOf(item.selections);
+  if (loadIds.length) {
+    const loadUrl = uniquePhotoUrls(
+      loadIds.flatMap((id) => {
+        const movement = movements.find((entry) => entry.id === id);
+        return movement?.photos || [];
+      }),
+    )[0];
+    if (loadUrl) return loadUrl;
+  } else if (item.selections.from_stock) {
     const hold = itemStockHold(item, configuredKindOf(product), {
       id: item.order_id,
       number: '',

@@ -31,6 +31,7 @@ export function productNameEn(name: string, product?: Product) {
     [/cincha neoprene/gi, 'Neoprene girth'],
     [/cincha standard/gi, 'Standard girth'],
     [/sobrecinchas? guarda pampa/gi, 'Overgirth guarda pampa'],
+    [/sobrecinchas? lisa/gi, 'Plain overgirth'],
     [/montura americana/gi, 'American saddle'],
     [/montura bauti/gi, 'Bauti saddle'],
     [/cuero forrado/gi, 'lined leather'],
@@ -52,6 +53,7 @@ export function productNameEn(name: string, product?: Product) {
     [/riendas por par/gi, 'Reins per pair'],
     [/sobrecinchas?/gi, 'Overgirth'],
     [/sobreinchas?/gi, 'Overgirth'],
+    [/\blisa\b/gi, 'plain'],
     [/estriberas/gi, 'Stirrup leathers'],
     [/riendillas/gi, 'Running reins'],
     [/riendas/gi, 'Reins'],
@@ -130,6 +132,7 @@ const ATTRIBUTE_VALUE_EN: Record<string, string> = {
   Mediano: 'Medium',
   Mediana: 'Medium',
   Grande: 'Large',
+  Lisa: 'Plain',
   '1 rienda': '1 rein',
   '2 riendas': '2 reins',
 };

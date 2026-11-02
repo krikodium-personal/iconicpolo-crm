@@ -391,6 +391,7 @@ test('english quote translates sku titles, attributes and leather colors', () =>
     productNameEn('Sobrecinchas guarda pampa'),
     'Overgirth guarda pampa',
   );
+  assert.equal(productNameEn('Sobrecincha lisa'), 'Plain overgirth');
   assert.equal(
     productNameEn('Cincha neoprene desmontable 2 tiradores JMG'),
     'Detachable neoprene girth 2 straps JMG',
