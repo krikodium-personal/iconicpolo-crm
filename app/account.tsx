@@ -36,14 +36,19 @@ import {
   ledgerFilter,
   ledgerSummary,
   LEDGER_NO_PARTNER,
+  conceptLabel,
+  movementRefOf,
   type LedgerEntry,
   type LedgerFocus,
   type MonthlyResult,
+  type MovementRef,
 } from '@/lib/account';
 import { decimal, formatMoney, parseDecimal, previewFx } from '@/lib/money';
 import {
+  actorName,
   formatDate,
   orderIsLive,
+  type AccountEntry,
   type AccountView,
   type Data,
   type Order,
@@ -167,13 +172,13 @@ export function AccountBoard({
   save,
   view = 'board',
   initialYear,
-  onOpenOrder,
+  onOpenMovement,
 }: {
   data: Data;
   save: (body: Record<string, unknown>) => Promise<void>;
   view?: AccountView;
   initialYear?: number;
-  onOpenOrder?: (order: Order) => void;
+  onOpenMovement?: (ref: MovementRef) => void;
 }) {
   const results = useMemo(
     () => monthlyResults(data.orders, data.expenses),
@@ -285,10 +290,6 @@ export function AccountBoard({
           .map((contact) => [contact.id, contact.name]),
       ),
     [data.contacts],
-  );
-  const ordersById = useMemo(
-    () => new Map(data.orders.map((order) => [order.id, order])),
-    [data.orders],
   );
   const entrySupplierId = entry.supplier_id || suppliers[0]?.id || '';
   const orderOptions = useMemo(() => {
@@ -420,10 +421,9 @@ export function AccountBoard({
     });
     setEntryOpen(true);
   }
-  function openLedgerOrder(entry: LedgerEntry) {
-    if (!entry.order_id || !onOpenOrder) return;
-    const order = ordersById.get(entry.order_id);
-    if (order) onOpenOrder(order);
+  function openLedgerMovement(entry: LedgerEntry) {
+    const ref = movementRefOf(entry);
+    if (ref) onOpenMovement?.(ref);
   }
   const fxPreview = previewFx(entry.currency, entry.amount, entry.fx_rate);
   async function run(body: Record<string, unknown>, after?: () => void) {
@@ -622,15 +622,13 @@ export function AccountBoard({
               {rows.length ? (
                 rows.map((entry, index) => {
                   const clickable =
-                    !!entry.order_id &&
-                    !!onOpenOrder &&
-                    ordersById.has(entry.order_id);
+                    !!movementRefOf(entry) && !!onOpenMovement;
                   return (
                     <TableRow
                       key={`${entry.date}-${entry.label}-${index}`}
                       className={clickable ? 'clickable-row' : undefined}
                       onClick={
-                        clickable ? () => openLedgerOrder(entry) : undefined
+                        clickable ? () => openLedgerMovement(entry) : undefined
                       }
                     >
                       <TableCell className="ledger-col-date">
@@ -643,7 +641,7 @@ export function AccountBoard({
                             className="record-link"
                             onClick={(e) => {
                               e.stopPropagation();
-                              openLedgerOrder(entry);
+                              openLedgerMovement(entry);
                             }}
                           >
                             {entry.label}
@@ -693,15 +691,14 @@ export function AccountBoard({
         <div className="record-card-list ledger-list">
           {rows.length ? null : <p className="hint">{emptyText}</p>}
           {rows.map((entry, index) => {
-            const clickable =
-              !!entry.order_id &&
-              !!onOpenOrder &&
-              ordersById.has(entry.order_id);
+            const clickable = !!movementRefOf(entry) && !!onOpenMovement;
             return (
               <article
                 className={`ledger-row${clickable ? ' clickable-row' : ''}`}
                 key={`${entry.date}-${entry.label}-${index}`}
-                onClick={clickable ? () => openLedgerOrder(entry) : undefined}
+                onClick={
+                  clickable ? () => openLedgerMovement(entry) : undefined
+                }
               >
                 <div className="ledger-row-top">
                   {clickable ? (
@@ -710,7 +707,7 @@ export function AccountBoard({
                       className="record-link"
                       onClick={(e) => {
                         e.stopPropagation();
-                        openLedgerOrder(entry);
+                        openLedgerMovement(entry);
                       }}
                     >
                       {entry.label}
@@ -1465,5 +1462,495 @@ export function AccountBoard({
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export function movementTitle(data: Data, ref: MovementRef) {
+  if (ref.source === 'payment') return 'Cobro al cliente';
+  if (ref.source === 'cashout') return 'Cashout';
+  if (ref.source === 'sponsoreo') return 'Sponsoreo';
+  const entry = data.entries.find((row) => row.id === ref.id);
+  if (!entry) return 'Movimiento';
+  const supplier = data.contacts.find(
+    (contact) => contact.id === entry.supplier_id,
+  );
+  return conceptLabel(entry.concept, entry.detail, supplier?.name);
+}
+
+function movementFact(label: string, value: string, pending = false) {
+  return (
+    <div className="pdp-fact">
+      <span>{label}</span>
+      <strong className={pending ? 'pending-text' : undefined}>{value}</strong>
+    </div>
+  );
+}
+
+export function MovementDetail({
+  data,
+  source,
+  id,
+  orderId,
+  onOpenOrder,
+}: {
+  data: Data;
+  source: MovementRef['source'];
+  id?: string;
+  orderId?: string;
+  onOpenOrder?: (order: Order) => void;
+}) {
+  const payment = (data.payments || []).find((row) => row.id === id);
+  const entry = data.entries.find((row) => row.id === id);
+  const cashout = data.cashouts.find((row) => row.id === id);
+  const linkedOrderId =
+    orderId || payment?.order_id || entry?.order_id || '';
+  const order = data.orders.find((row) => row.id === linkedOrderId);
+  const customer = order
+    ? data.contacts.find((contact) => contact.id === order.customer_id)
+    : undefined;
+  let date = '';
+  let amount = 0;
+  let currency = data.currency;
+  let partner = '';
+  let actor = '';
+  let notes = '';
+  let receipt = '';
+  let negative = false;
+  if (source === 'payment') {
+    date = payment?.date || order?.date || '';
+    amount = payment?.amount ?? order?.paid ?? 0;
+    currency = order?.currency || data.currency;
+    partner = actorName(data.partners, payment?.partner_id || order?.paid_partner_id);
+    actor = actorName(data.partners, payment?.created_by);
+  } else if (source === 'entry' && entry) {
+    date = entry.date;
+    amount = entry.amount;
+    currency = entry.currency;
+    partner = actorName(data.partners, entry.partner_id);
+    actor = actorName(data.partners, entry.created_by);
+    notes = entry.detail;
+    receipt = entry.receipt || '';
+    negative = true;
+  } else if (source === 'cashout' && cashout) {
+    date = cashout.date;
+    amount = cashout.amount;
+    partner = actorName(data.partners, cashout.partner_id);
+    actor = actorName(data.partners, cashout.created_by);
+    notes = cashout.notes;
+    negative = true;
+  } else if (source === 'sponsoreo' && order) {
+    date = order.date;
+    amount = order.cost;
+    currency = order.currency || data.currency;
+    actor = actorName(data.partners, order.created_by);
+    negative = true;
+  } else {
+    return <p className="hint">Este movimiento ya no está disponible.</p>;
+  }
+  return (
+    <div className="pdp">
+      <section className="form-section" style={{ borderTop: 0, marginTop: 0 }}>
+        <div className="pdp-facts">
+          {movementFact('Fecha', date ? formatDate(date) : 'Sin fecha')}
+          {movementFact(
+            'Importe',
+            `${negative ? '− ' : ''}${formatMoney(amount, currency)}`,
+          )}
+          {partner
+            ? movementFact(
+                source === 'payment'
+                  ? 'Socio que recibió el adelanto'
+                  : source === 'cashout'
+                    ? 'Socio'
+                    : 'Pagó',
+                partner,
+              )
+            : null}
+          {actor ? movementFact('Registró', actor) : null}
+          {notes ? movementFact('Detalle', notes) : null}
+          {source === 'entry' && entry ? (
+            <>
+              {entryFxNote(entry)
+                ? movementFact('Tipo de cambio', entryFxNote(entry))
+                : null}
+              {receipt ? movementFact('Comprobante', 'Hay factura o recibo') : null}
+            </>
+          ) : null}
+        </div>
+      </section>
+      {order ? (
+        <section className="form-section">
+          <h3>Pedido asociado</h3>
+          <button
+            type="button"
+            className="movement-order"
+            onClick={() => onOpenOrder?.(order)}
+          >
+            <span>{order.number}</span>
+            <strong>{customer?.name || 'Sin cliente'}</strong>
+          </button>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+export function MovementForm({
+  data,
+  source,
+  id,
+  save,
+  onCancel,
+}: {
+  data: Data;
+  source: MovementRef['source'];
+  id: string;
+  save: (body: Record<string, unknown>) => Promise<void>;
+  onCancel?: () => void;
+}) {
+  const payment = (data.payments || []).find((row) => row.id === id);
+  const entry = data.entries.find((row) => row.id === id);
+  const partners = data.partners.filter(
+    (partner) =>
+      !partner.archived ||
+      partner.id === payment?.partner_id ||
+      partner.id === entry?.partner_id,
+  );
+  const suppliers = data.contacts.filter(
+    (contact) =>
+      contact.kind === 'supplier' &&
+      (!contact.archived || contact.id === entry?.supplier_id),
+  );
+  const order = payment
+    ? data.orders.find((row) => row.id === payment.order_id)
+    : entry?.order_id
+      ? data.orders.find((row) => row.id === entry.order_id)
+      : undefined;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [paymentForm, setPaymentForm] = useState({
+    amount: decimal(payment?.amount || 0),
+    partner_id: payment?.partner_id || partners[0]?.id || '',
+    date: payment?.date || today(),
+  });
+  const [entryForm, setEntryForm] = useState({
+    concept: (entry?.concept || 'pago_proveedor') as AccountEntry['concept'],
+    detail: entry?.detail || '',
+    partner_id: entry?.partner_id || partners[0]?.id || '',
+    supplier_id: entry?.supplier_id || suppliers[0]?.id || '',
+    order_id: entry?.order_id || '',
+    receipt: entry?.receipt || '',
+    amount: decimal(entry?.amount || 0),
+    currency: (entry?.currency ||
+      (data.currency === 'ARS' ? 'ARS' : 'USD')) as 'ARS' | 'USD',
+    fx_rate: decimal(entry?.fx_rate || 0),
+    date: entry?.date || today(),
+  });
+  const fxPreview = previewFx(
+    entryForm.currency,
+    entryForm.amount,
+    entryForm.fx_rate,
+  );
+  const customerNames = new Map(
+    data.contacts
+      .filter((contact) => contact.kind === 'customer')
+      .map((contact) => [contact.id, contact.name]),
+  );
+  const orderOptions = data.orders
+    .filter(
+      (row) =>
+        !row.archived && !row.deleted && row.status !== 'cotización',
+    )
+    .sort(
+      (a, b) => b.date.localeCompare(a.date) || b.number.localeCompare(a.number),
+    )
+    .slice(0, 80)
+    .map((row) => ({
+      value: row.id,
+      label: [
+        row.number,
+        customerNames.get(row.customer_id) || 'Sin cliente',
+        formatDate(row.date),
+      ].join(' · '),
+    }));
+  if (source === 'payment' && !payment)
+    return <p className="hint">Este cobro ya no está disponible.</p>;
+  if (source === 'entry' && !entry)
+    return <p className="hint">Este movimiento ya no está disponible.</p>;
+  return (
+    <form
+      className="cashout-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void (async () => {
+          try {
+            setBusy(true);
+            setError('');
+            if (source === 'payment' && payment) {
+              const amount = parseDecimal(paymentForm.amount);
+              if (amount <= 0)
+                throw new Error('El cobro tiene que ser mayor a 0.');
+              const due =
+                (order ? Math.max(0, order.total - order.paid) : 0) +
+                payment.amount;
+              if (amount > due)
+                throw new Error(
+                  `El cobro no puede superar el saldo (${formatMoney(due, data.currency)}).`,
+                );
+              if (!paymentForm.partner_id)
+                throw new Error('Elegí qué socio recibió el adelanto.');
+              await save({
+                action: 'order_payment',
+                id: payment.id,
+                amount,
+                partner_id: paymentForm.partner_id,
+                date: paymentForm.date,
+              });
+              return;
+            }
+            if (source === 'entry' && entry) {
+              if (entryForm.concept === 'otros' && !entryForm.detail.trim())
+                throw new Error('Especificá el concepto.');
+              if (
+                entryForm.concept === 'pago_proveedor' &&
+                !entryForm.supplier_id
+              )
+                throw new Error('Elegí el proveedor.');
+              const amount = parseDecimal(entryForm.amount);
+              const fxRate = parseDecimal(entryForm.fx_rate);
+              if (!fxRate)
+                throw new Error('Tipo de cambio: debe ser mayor a cero.');
+              if (!entryForm.partner_id)
+                throw new Error(
+                  'Agregá un socio en Configuración para indicar quién pagó.',
+                );
+              await save({
+                action: 'account_entry',
+                id: entry.id,
+                concept: entryForm.concept,
+                detail: entryForm.detail,
+                partner_id: entryForm.partner_id,
+                supplier_id: entryForm.supplier_id,
+                order_id:
+                  entryForm.concept === 'pago_proveedor'
+                    ? entryForm.order_id
+                    : '',
+                receipt: entryForm.receipt,
+                amount,
+                currency: entryForm.currency,
+                fx_rate: fxRate,
+                date: entryForm.date,
+              });
+            }
+          } catch (err) {
+            setError((err as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        })();
+      }}
+    >
+      <ErrorBox message={error} />
+      {source === 'payment' ? (
+        <div className="form-grid">
+          <Field label={`Monto · ${data.currency} *`} wide>
+            <input
+              inputMode="decimal"
+              required
+              value={paymentForm.amount}
+              onChange={(e) =>
+                setPaymentForm({ ...paymentForm, amount: e.target.value })
+              }
+            />
+          </Field>
+          <Field label="Socio que recibió el adelanto *" wide>
+            <Pick
+              label="Socio que recibió el adelanto"
+              value={paymentForm.partner_id}
+              onChange={(value) =>
+                setPaymentForm({ ...paymentForm, partner_id: value })
+              }
+              options={partners.map((partner) => ({
+                value: partner.id,
+                label: partner.name,
+              }))}
+            />
+          </Field>
+          <Field label="Fecha *" wide>
+            <DateCalendar
+              label="Fecha"
+              value={paymentForm.date}
+              onChange={(value) =>
+                setPaymentForm({ ...paymentForm, date: value })
+              }
+            />
+          </Field>
+        </div>
+      ) : (
+        <div className="form-grid">
+          <Field label="Concepto *">
+            <Pick
+              label="Concepto"
+              value={entryForm.concept}
+              onChange={(value) =>
+                setEntryForm({
+                  ...entryForm,
+                  concept: value as AccountEntry['concept'],
+                })
+              }
+              options={ACCOUNT_CONCEPTS.map((item) => ({
+                value: item.id,
+                label: item.label,
+              }))}
+            />
+          </Field>
+          <Field label="Pagado por *">
+            <Pick
+              label="Pagado por"
+              value={entryForm.partner_id}
+              onChange={(value) =>
+                setEntryForm({ ...entryForm, partner_id: value })
+              }
+              options={partners.map((partner) => ({
+                value: partner.id,
+                label: partner.name,
+              }))}
+            />
+          </Field>
+          {entryForm.concept === 'pago_proveedor' ? (
+            <>
+              <Field label="Proveedor *" wide>
+                <Pick
+                  label="Proveedor"
+                  value={entryForm.supplier_id}
+                  onChange={(value) =>
+                    setEntryForm({
+                      ...entryForm,
+                      supplier_id: value,
+                      order_id: '',
+                    })
+                  }
+                  options={suppliers.map((supplier) => ({
+                    value: supplier.id,
+                    label: supplier.name,
+                  }))}
+                />
+              </Field>
+              <Field label="Pedido asociado" wide>
+                <Pick
+                  label="Pedido asociado"
+                  value={entryForm.order_id || '__none__'}
+                  onChange={(value) =>
+                    setEntryForm({
+                      ...entryForm,
+                      order_id: value === '__none__' ? '' : value,
+                    })
+                  }
+                  options={[
+                    { value: '__none__', label: 'Sin pedido' },
+                    ...orderOptions,
+                  ]}
+                />
+              </Field>
+              <Field label="Concepto del gasto" wide>
+                <input
+                  value={entryForm.detail}
+                  onChange={(e) =>
+                    setEntryForm({ ...entryForm, detail: e.target.value })
+                  }
+                />
+              </Field>
+              <Field label="Factura o recibo" wide>
+                <Photos
+                  value={entryForm.receipt ? [entryForm.receipt] : []}
+                  onChange={(urls) =>
+                    setEntryForm({
+                      ...entryForm,
+                      receipt: urls[0] || '',
+                    })
+                  }
+                  onError={setError}
+                  onBusy={setBusy}
+                  max={1}
+                  camera
+                />
+              </Field>
+            </>
+          ) : null}
+          {entryForm.concept === 'otros' ? (
+            <Field label="Especificar *" wide>
+              <input
+                required
+                value={entryForm.detail}
+                onChange={(e) =>
+                  setEntryForm({ ...entryForm, detail: e.target.value })
+                }
+              />
+            </Field>
+          ) : null}
+          <Field label="Monto *" wide>
+            <div className="amount-currency">
+              <Pick
+                label="Moneda"
+                value={entryForm.currency}
+                onChange={(value) =>
+                  setEntryForm({
+                    ...entryForm,
+                    currency: value as 'ARS' | 'USD',
+                  })
+                }
+                options={[
+                  { value: 'ARS', label: 'Pesos' },
+                  { value: 'USD', label: 'Dólares' },
+                ]}
+              />
+              <input
+                inputMode="decimal"
+                required
+                value={entryForm.amount}
+                onChange={(e) =>
+                  setEntryForm({ ...entryForm, amount: e.target.value })
+                }
+              />
+            </div>
+          </Field>
+          <Field label="Tipo de cambio *" wide>
+            <input
+              inputMode="decimal"
+              required
+              placeholder="Pesos por dólar"
+              value={entryForm.fx_rate}
+              onChange={(e) =>
+                setEntryForm({ ...entryForm, fx_rate: e.target.value })
+              }
+            />
+          </Field>
+          <p className="entry-fx-preview">
+            {fxPreview
+              ? `Equivale a ${formatMoney(fxPreview.amount, fxPreview.currency)}`
+              : `Ingresá el monto y el tipo de cambio para ver el equivalente en ${entryForm.currency === 'USD' ? 'pesos' : 'dólares'}.`}
+          </p>
+          <Field label="Fecha *" wide>
+            <DateCalendar
+              label="Fecha"
+              value={entryForm.date}
+              onChange={(value) =>
+                setEntryForm({ ...entryForm, date: value })
+              }
+            />
+          </Field>
+        </div>
+      )}
+      <div className="form-actions">
+        {onCancel ? (
+          <button type="button" className="secondary" onClick={onCancel}>
+            Cancelar
+          </button>
+        ) : null}
+        <button className="primary" disabled={busy || !partners.length}>
+          {busy ? 'Guardando…' : 'Guardar'}
+        </button>
+      </div>
+    </form>
   );
 }

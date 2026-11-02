@@ -184,6 +184,13 @@ test('ledger lists each customer payment with its own date and partner', () => {
     ],
   );
   assert.equal(cobros[1]?.actor, 'Ivan');
+  assert.deepEqual(
+    cobros.map((entry) => [entry.source, entry.id, entry.order_id]),
+    [
+      ['payment', 'p1', 'o1'],
+      ['payment', 'p2', 'o1'],
+    ],
+  );
   assert.equal(ledger.at(-1)?.balance, 100_000);
 });
 

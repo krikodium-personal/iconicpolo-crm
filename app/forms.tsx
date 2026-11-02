@@ -52,6 +52,7 @@ import {
   shareInput,
   shareLabel,
   sharesTotal,
+  type MovementRef,
 } from '@/lib/account';
 import { closedFields, findVariantProduct, skuFields } from '@/lib/variants';
 import {
@@ -1697,6 +1698,7 @@ export function OrderDetail({
   save,
   quote = false,
   onCloseQuote,
+  onOpenMovement,
 }: {
   record: Order;
   data: Data;
@@ -1704,6 +1706,7 @@ export function OrderDetail({
   save: Save;
   quote?: boolean;
   onCloseQuote?: () => void;
+  onOpenMovement?: (ref: MovementRef) => void;
 }) {
   const [error, E] = useState('');
   const [fichaItem, setFichaItem] = useState<Item | null>(null);
@@ -2107,7 +2110,12 @@ export function OrderDetail({
         </div>
       </section>
       {!orderIsQuote(record.status) ? (
-        <OrderMovements order={record} data={data} save={save} />
+        <OrderMovements
+          order={record}
+          data={data}
+          save={save}
+          onOpenMovement={onOpenMovement}
+        />
       ) : null}
       {record.notes.trim() ? (
         <section className="form-section">
@@ -2123,10 +2131,12 @@ function OrderMovements({
   order,
   data,
   save,
+  onOpenMovement,
 }: {
   order: Order;
   data: Data;
   save: Save;
+  onOpenMovement?: (ref: MovementRef) => void;
 }) {
   const partners = data.partners.filter((partner) => !partner.archived);
   const suppliersFromOrder = Array.from(
@@ -2281,7 +2291,19 @@ function OrderMovements({
                   {
                     date: order.date,
                     node: (
-            <li key="legacy-paid">
+            <li
+              key="legacy-paid"
+              className={onOpenMovement ? 'clickable-row' : undefined}
+              onClick={
+                onOpenMovement
+                  ? () =>
+                      onOpenMovement({
+                        source: 'payment',
+                        order_id: order.id,
+                      })
+                  : undefined
+              }
+            >
               <div className="order-supplier-payment-top">
                 <b>Cobro al cliente</b>
                 <span>{formatMoney(order.paid, data.currency)}</span>
@@ -2301,7 +2323,20 @@ function OrderMovements({
                 date: payment.date,
                 created_at: payment.created_at,
                 node: (
-                <li key={payment.id}>
+                <li
+                  key={payment.id}
+                  className={onOpenMovement ? 'clickable-row' : undefined}
+                  onClick={
+                    onOpenMovement
+                      ? () =>
+                          onOpenMovement({
+                            source: 'payment',
+                            id: payment.id,
+                            order_id: order.id,
+                          })
+                      : undefined
+                  }
+                >
                   <div className="order-supplier-payment-top">
                     <b>Cobro al cliente</b>
                     <span className="order-payment-amount">
@@ -2311,14 +2346,18 @@ function OrderMovements({
                           <button
                             type="button"
                             className="ghost danger"
-                            onClick={() => void removePayment(payment.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void removePayment(payment.id);
+                            }}
                           >
                             Borrar
                           </button>
                           <button
                             type="button"
                             className="ghost"
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               setRemoving('');
                               setRemoveError('');
                             }}
@@ -2332,7 +2371,10 @@ function OrderMovements({
                           className="ghost icon-button"
                           aria-label="Borrar cobro"
                           title="Borrar cobro"
-                          onClick={() => setRemoving(payment.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRemoving(payment.id);
+                          }}
                         >
                           <Trash2 size={15} />
                         </button>
@@ -2362,7 +2404,19 @@ function OrderMovements({
                   {
                     date: order.date,
                     node: (
-            <li key="sponsor-cost">
+            <li
+              key="sponsor-cost"
+              className={onOpenMovement ? 'clickable-row' : undefined}
+              onClick={
+                onOpenMovement
+                  ? () =>
+                      onOpenMovement({
+                        source: 'sponsoreo',
+                        order_id: order.id,
+                      })
+                  : undefined
+              }
+            >
               <div className="order-supplier-payment-top">
                 <b>Inversión en sponsoreo</b>
                 <span className="money-neg">
@@ -2392,7 +2446,20 @@ function OrderMovements({
               date: entry.date,
               created_at: entry.created_at,
               node: (
-              <li key={entry.id}>
+              <li
+                key={entry.id}
+                className={onOpenMovement ? 'clickable-row' : undefined}
+                onClick={
+                  onOpenMovement
+                    ? () =>
+                        onOpenMovement({
+                          source: 'entry',
+                          id: entry.id,
+                          order_id: order.id,
+                        })
+                    : undefined
+                }
+              >
                 <div className="order-supplier-payment-top">
                   <b>
                     {conceptLabel(entry.concept, entry.detail, supplier?.name)}
@@ -2740,10 +2807,7 @@ export function OrderForm({
       record?.paid_partner_id ||
       data.partners.find((partner) => !partner.archived)?.id ||
       '',
-    cost_partner_id:
-      record?.cost_partner_id ||
-      data.partners.find((partner) => !partner.archived)?.id ||
-      '',
+    cost_partner_id: record?.cost_partner_id || '',
     invoice: !!record?.invoice,
     notes: record?.notes || prefill?.notes || '',
     shipping_carrier: record?.shipping_carrier || '',
@@ -3364,9 +3428,9 @@ export function OrderForm({
                   onChange={(e) => set({ ...f, paid: e.target.value })}
                 />
               </Field>
-              <Field label="Socio que recibió el cobro">
+              <Field label="Socio que recibió el adelanto">
                 <select
-                  aria-label="Socio que recibió el cobro"
+                  aria-label="Socio que recibió el adelanto"
                   value={f.paid_partner_id}
                   disabled={!activePartners.length}
                   onChange={(e) =>
@@ -3384,24 +3448,25 @@ export function OrderForm({
                   )}
                 </select>
               </Field>
-              <Field label="Quién recupera el costo *">
+              <Field label="Quién recupera el costo">
                 <select
-                  aria-label="Quién recupera el costo del proveedor"
+                  aria-label="Quién recupera el costo"
                   value={f.cost_partner_id}
                   disabled={!activePartners.length}
                   onChange={(e) =>
                     set({ ...f, cost_partner_id: e.target.value })
                   }
                 >
-                  {!activePartners.length ? (
-                    <option value="">Sin socios activos</option>
-                  ) : (
-                    activePartners.map((partner) => (
-                      <option key={partner.id} value={partner.id}>
-                        {partner.name}
-                      </option>
-                    ))
-                  )}
+                  <option value="">
+                    {activePartners.length
+                      ? 'Seleccionar una opción'
+                      : 'Sin socios activos'}
+                  </option>
+                  {activePartners.map((partner) => (
+                    <option key={partner.id} value={partner.id}>
+                      {partner.name}
+                    </option>
+                  ))}
                 </select>
               </Field>
               <div className="field">

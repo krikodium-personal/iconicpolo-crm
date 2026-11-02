@@ -45,6 +45,12 @@ export type MonthlyResult = {
   orders: number;
 };
 
+export type MovementSource = 'payment' | 'entry' | 'cashout' | 'sponsoreo';
+export type MovementRef = {
+  source: MovementSource;
+  id?: string;
+  order_id?: string;
+};
 export type LedgerEntry = {
   date: string;
   created_at?: string;
@@ -60,8 +66,29 @@ export type LedgerEntry = {
   amount_ars?: number;
   amount_usd?: number;
   order_id?: string;
+  id?: string;
+  source?: MovementSource;
   balance: number;
 };
+export function movementRefOf(entry: LedgerEntry): MovementRef | null {
+  if (entry.source === 'sponsoreo' && entry.order_id)
+    return { source: 'sponsoreo', order_id: entry.order_id };
+  if (
+    (entry.source === 'payment' ||
+      entry.source === 'entry' ||
+      entry.source === 'cashout') &&
+    (entry.id || entry.order_id)
+  )
+    return {
+      source: entry.source,
+      id: entry.id,
+      order_id: entry.order_id,
+    };
+  return null;
+}
+export function canEditMovement(ref: MovementRef) {
+  return (ref.source === 'payment' || ref.source === 'entry') && !!ref.id;
+}
 
 /** Monto del movimiento en `currency` usando el equivalente guardado; 0 si no hay. */
 export function amountIn(
@@ -445,6 +472,7 @@ export function accountLedger(
     const base = {
       label: `Cobro · ${order.number}`,
       kind: 'cobro' as const,
+      source: 'payment' as const,
       currency: order.currency || boardCurrency,
       notes: customerNames.get(order.customer_id) || 'Sin cliente',
       order_id: order.id,
@@ -461,6 +489,7 @@ export function accountLedger(
       ];
     return rows.map((payment) => ({
       ...base,
+      id: payment.id,
       date: payment.date,
       created_at: payment.created_at,
       amount: payment.amount,
@@ -474,6 +503,7 @@ export function accountLedger(
       date: order.date,
       label: `Sponsoreo · ${order.number}`,
       kind: 'movimiento' as const,
+      source: 'sponsoreo' as const,
       amount: -order.cost,
       currency: order.currency || boardCurrency,
       actor: names.get(order.created_by || '') || undefined,
@@ -488,6 +518,8 @@ export function accountLedger(
       created_at: cashout.created_at,
       label: 'Cashout',
       kind: 'cashout' as const,
+      source: 'cashout' as const,
+      id: cashout.id,
       amount: -cashout.amount,
       currency: boardCurrency,
       partner: names.get(cashout.partner_id),
@@ -507,6 +539,8 @@ export function accountLedger(
           supplierNames.get(entry.supplier_id || '') || '',
         ),
         kind: 'movimiento' as const,
+        source: 'entry' as const,
+        id: entry.id,
         amount: -entry.amount,
         currency: entry.currency,
         partner: names.get(entry.partner_id),

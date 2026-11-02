@@ -158,10 +158,11 @@ async function supplierIdForOrderItem(
     throw new Error('Completá los datos del proveedor nuevo.');
   return requireSupplier(input.supplier_id, keep);
 }
-/** Socio que recupera el capital (costo) de una venta. Obligatorio si hay costo. */
+/** Socio que recupera el capital (costo) de una venta. Vacío si no se eligió. */
 async function requireCostPartner(id: unknown, cost: number) {
   if (cost <= 0) return '';
-  const partnerId = str(id, 'Socio que recupera el costo', true);
+  const partnerId = str(id ?? '', 'Socio que recupera el costo');
+  if (!partnerId) return '';
   const partner = await stmt(
     'SELECT id FROM partners WHERE id=? AND archived=0',
     partnerId,
@@ -2644,6 +2645,57 @@ export async function mutate(
     }
     case 'order_payment': {
       await ensureAccountTables();
+      if (b.id) {
+        const id = str(b.id, 'Cobro', true);
+        const payment = await stmt(
+          'SELECT * FROM order_payments WHERE id=?',
+          id,
+        ).first<OrderPayment>();
+        if (!payment) throw new Error('Cobro no disponible.');
+        const order = await stmt(
+          'SELECT * FROM orders WHERE id=? AND archived=0 AND deleted=0',
+          payment.order_id,
+        ).first<Order>();
+        if (!order) throw new Error('Pedido no disponible.');
+        if (order.kind === 'sponsoreo')
+          throw new Error('Los pedidos de sponsoreo no se cobran.');
+        if (orderIsQuote(order.status))
+          throw new Error('Las cotizaciones no se cobran.');
+        const amount = integer(b.amount, 'Monto');
+        if (!amount) throw new Error('El cobro tiene que ser mayor a 0.');
+        const partnerId = str(b.partner_id, 'Socio que recibió el adelanto', true);
+        if (
+          !(await stmt(
+            'SELECT id FROM partners WHERE id=? AND archived=0',
+            partnerId,
+          ).first())
+        )
+          throw new Error('Elegí un socio activo que recibió el cobro.');
+        const paid =
+          Number(order.paid) - Number(payment.amount) + amount;
+        if (paid > Number(order.total))
+          throw new Error('El cobro no puede superar el saldo del pedido.');
+        const paymentDate = date(b.date, true);
+        await stmt(
+          'UPDATE order_payments SET amount=?,partner_id=?,date=? WHERE id=?',
+          amount,
+          partnerId,
+          paymentDate,
+          id,
+        ).run();
+        const paidPartnerId =
+          (await latestPaymentPartner(order.id)) || partnerId;
+        const orderUpdate = await stmt(
+          'UPDATE orders SET paid=?,paid_partner_id=?,version=version+1 WHERE id=? AND paid=?',
+          paid,
+          paidPartnerId,
+          order.id,
+          Number(order.paid),
+        ).run();
+        if (!orderUpdate.meta.changes)
+          throw new Error('El pedido cambió. Actualizá y probá de nuevo.');
+        return { ok: true };
+      }
       const orderId = str(b.order_id, 'Pedido', true);
       const order = await stmt(
         'SELECT * FROM orders WHERE id=? AND archived=0 AND deleted=0',
@@ -2726,6 +2778,13 @@ export async function mutate(
     }
     case 'account_entry': {
       await ensureAccountTables();
+      const existing = b.id
+        ? await stmt(
+            'SELECT * FROM account_entries WHERE id=?',
+            str(b.id, 'Movimiento', true),
+          ).first<AccountEntry>()
+        : null;
+      if (b.id && !existing) throw new Error('Movimiento no disponible.');
       const concept = choice(
         b.concept,
         ['pago_proveedor', 'gasto_publicitario', 'gastos_extras', 'otros'],
@@ -2766,6 +2825,25 @@ export async function mutate(
         amount,
         fxRate,
       );
+      if (existing) {
+        await stmt(
+          'UPDATE account_entries SET concept=?,detail=?,partner_id=?,supplier_id=?,order_id=?,receipt=?,amount=?,currency=?,fx_rate=?,amount_ars=?,amount_usd=?,date=? WHERE id=?',
+          concept,
+          detail,
+          partnerId,
+          supplierId,
+          orderId,
+          receipt,
+          amount,
+          currency,
+          fxRate,
+          amountArs,
+          amountUsd,
+          date(b.date, true),
+          existing.id,
+        ).run();
+        return { ok: true };
+      }
       await stmt(
         'INSERT INTO account_entries(id,concept,detail,partner_id,supplier_id,order_id,receipt,amount,currency,fx_rate,amount_ars,amount_usd,date,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         crypto.randomUUID(),

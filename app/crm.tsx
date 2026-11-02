@@ -96,7 +96,13 @@ import {
 } from './forms';
 import { BUILD } from '@/lib/build';
 import type { OrderPrefill } from '@/lib/solicitud';
-import { AccountBoard } from './account';
+import {
+  AccountBoard,
+  MovementDetail,
+  MovementForm,
+  movementTitle,
+} from './account';
+import { canEditMovement, type MovementRef } from '@/lib/account';
 import { AuthScreen } from './login';
 import {
   StatusMenu,
@@ -193,6 +199,13 @@ type Panel =
       itemKey?: string;
     }
   | { type: 'inventory'; record: Product; itemKey?: string; movementId?: string }
+  | {
+      type: 'movement';
+      source: MovementRef['source'];
+      id?: string;
+      order_id?: string;
+      editing?: boolean;
+    }
   | { type: 'settings' };
 type SessionUser = { id: string; name: string; email: string };
 type AuthMode = 'loading' | 'setup' | 'login' | 'ready';
@@ -210,6 +223,9 @@ function panelIdentity(panel: Panel | null) {
   }
   if (panel.type === 'order') {
     return `order:${panel.record?.id || panel.prefill?.solicitud_id || 'new'}:${panel.editing ? 'edit' : panel.quote ? 'quote' : 'view'}`;
+  }
+  if (panel.type === 'movement') {
+    return `movement:${panel.source}:${panel.id || panel.order_id || 'legacy'}:${panel.editing ? 'edit' : 'view'}`;
   }
   return panel.type;
 }
@@ -1082,6 +1098,15 @@ export default function CRM({
         )
       )
         return;
+      if (panel?.type === 'movement') {
+        if (
+          body.action === 'order_payment' ||
+          body.action === 'account_entry'
+        ) {
+          P({ ...panel, editing: false });
+          return;
+        }
+      }
       P(null);
     } catch {
       P(null);
@@ -1496,7 +1521,9 @@ export default function CRM({
           ? panel.record
             ? customer(panel.record.customer_id) || panel.record.number
             : 'Nuevo pedido'
-          : panel?.type === 'product' &&
+          : panel?.type === 'movement' && data
+            ? movementTitle(data, panel)
+            : panel?.type === 'product' &&
               panel.record &&
               isConfiguredProduct(panel.record)
             ? `Configurar ${panel.record.name}`
@@ -1504,7 +1531,9 @@ export default function CRM({
               ? panel.record?.name || 'Nuevo producto'
             : panel?.type === 'supplier'
               ? panel.record?.name || 'Nuevo proveedor'
-              : panel?.record?.name || 'Nuevo cliente';
+              : panel?.type === 'customer'
+                ? panel.record?.name || 'Nuevo cliente'
+                : 'Movimiento';
   const inventoryRecord =
     panel?.type === 'inventory' || panel?.type === 'stock'
       ? (data?.products.find((p) => p.id === panel.record.id) ?? panel.record)
@@ -1722,7 +1751,7 @@ export default function CRM({
                 save={save}
                 view="movimientos"
                 initialYear={accountYear}
-                onOpenOrder={(order) => P({ type: 'order', record: order })}
+                onOpenMovement={(ref) => P({ type: 'movement', ...ref })}
               />
             ) : viewModule === 'dashboard' ? (
               <>
@@ -1760,7 +1789,7 @@ export default function CRM({
                   save={save}
                   view={accountView}
                   initialYear={accountYear}
-                  onOpenOrder={(order) => P({ type: 'order', record: order })}
+                  onOpenMovement={(ref) => P({ type: 'movement', ...ref })}
                 />
                 <p className="report-note">
                   Pedidos activos · Cobrado y por cobrar según cada
@@ -2452,6 +2481,35 @@ export default function CRM({
                     Agregar stock
                   </button>
                 </div>
+              ) : panel?.type === 'movement' ? (
+                <div className="stock-dialog-heading order-dialog-heading">
+                  <div>
+                    <p className="dialog-kicker">Movimiento</p>
+                    <DialogTitle>
+                      {panel.editing
+                        ? panel.source === 'payment'
+                          ? 'Editar cobro'
+                          : 'Editar movimiento'
+                        : data
+                          ? movementTitle(data, panel)
+                          : 'Movimiento'}
+                    </DialogTitle>
+                    <DialogDescription className="sr-only">
+                      {panel.editing
+                        ? 'Editá los datos de este movimiento.'
+                        : 'Detalle del movimiento.'}
+                    </DialogDescription>
+                  </div>
+                  {!panel.editing && canEditMovement(panel) ? (
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => P({ ...panel, editing: true })}
+                    >
+                      <Pencil size={16} /> Editar
+                    </button>
+                  ) : null}
+                </div>
               ) : panel?.type === 'order' && panel.record && !panel.editing ? (
                 <div className="stock-dialog-heading order-dialog-heading">
                   <div>
@@ -2681,6 +2739,7 @@ export default function CRM({
                       return patchOrder(record, body);
                     }}
                     save={save}
+                    onOpenMovement={(ref) => P({ type: 'movement', ...ref })}
                   />
                 ) : (
                   <OrderForm
@@ -2706,6 +2765,24 @@ export default function CRM({
                           }
                         : undefined
                     }
+                  />
+                )
+              ) : panel.type === 'movement' ? (
+                panel.editing && panel.id ? (
+                  <MovementForm
+                    data={data}
+                    source={panel.source}
+                    id={panel.id}
+                    save={save}
+                    onCancel={() => P({ ...panel, editing: false })}
+                  />
+                ) : (
+                  <MovementDetail
+                    data={data}
+                    source={panel.source}
+                    id={panel.id}
+                    orderId={panel.order_id}
+                    onOpenOrder={(order) => P({ type: 'order', record: order })}
                   />
                 )
               ) : panel.type === 'inventory' ? (
