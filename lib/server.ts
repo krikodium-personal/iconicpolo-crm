@@ -3,10 +3,10 @@ import {
   integer,
   lineTotals,
   fixedLineTotals,
-  discounted,
-  promoPrice,
   increaseByPercent,
   fxAmounts,
+  parseListPrices,
+  resolveListBasePrice,
 } from './money';
 import {
   ORDER_STATUSES,
@@ -25,6 +25,7 @@ import {
   type Option,
   type Category,
   type Partner,
+  type PriceList,
   type AccountExpense,
   type AccountEntry,
   type PartnerCashout,
@@ -293,6 +294,101 @@ export function stmt(sql: string, ...args: (string | number | null)[]) {
     .prepare(sql)
     .bind(...args);
 }
+async function ensurePriceLists() {
+  const d = db();
+  await d
+    .prepare(
+      'CREATE TABLE IF NOT EXISTS price_lists (id text PRIMARY KEY NOT NULL, name text NOT NULL, discount integer NOT NULL DEFAULT 0, archived integer NOT NULL DEFAULT 0, version integer NOT NULL DEFAULT 1, sort integer NOT NULL DEFAULT 0)',
+    )
+    .run();
+  const productNames = await columnNames('products');
+  const productAlter = await addColumn(
+    'products',
+    productNames,
+    'list_prices',
+    "list_prices text NOT NULL DEFAULT '{}'",
+  );
+  if (productAlter) await productAlter.run();
+  const orderNames = await columnNames('orders');
+  const orderAlter = await addColumn(
+    'orders',
+    orderNames,
+    'price_list_id',
+    "price_list_id text NOT NULL DEFAULT ''",
+  );
+  if (orderAlter) await orderAlter.run();
+  const existing = await stmt(
+    'SELECT COUNT(*) n FROM price_lists',
+  ).first<{ n: number }>();
+  if ((existing?.n || 0) > 0) return;
+  const products = await stmt(
+    'SELECT id, ff_discount, ff_price, promo_kind, promo_value, list_prices FROM products',
+  ).all<{
+    id: string;
+    ff_discount: number;
+    ff_price: number | null;
+    promo_kind: string;
+    promo_value: number;
+    list_prices: string | null;
+  }>();
+  const ffCounts = new Map<number, number>();
+  const promoCounts = new Map<number, number>();
+  let hasPromoPercent = false;
+  let hasPromoManual = false;
+  for (const row of products.results) {
+    const ff = Number(row.ff_discount) || 0;
+    ffCounts.set(ff, (ffCounts.get(ff) || 0) + 1);
+    if (row.promo_kind === 'percent') {
+      hasPromoPercent = true;
+      const pv = Number(row.promo_value) || 0;
+      promoCounts.set(pv, (promoCounts.get(pv) || 0) + 1);
+    } else if (row.promo_kind === 'manual') hasPromoManual = true;
+  }
+  const mostCommon = (counts: Map<number, number>, fallback: number) => {
+    let best = fallback;
+    let bestN = -1;
+    for (const [value, n] of counts) {
+      if (n > bestN) {
+        best = value;
+        bestN = n;
+      }
+    }
+    return best;
+  };
+  const ffId = 'list-friends-family';
+  const promoId = 'list-promocion';
+  const ffDiscount = mostCommon(ffCounts, 1500);
+  await stmt(
+    'INSERT INTO price_lists(id,name,discount,archived,version,sort) VALUES(?,?,?,0,1,?)',
+    ffId,
+    'Friends & Family',
+    ffDiscount,
+    0,
+  ).run();
+  if (hasPromoPercent || hasPromoManual) {
+    await stmt(
+      'INSERT INTO price_lists(id,name,discount,archived,version,sort) VALUES(?,?,?,0,1,?)',
+      promoId,
+      'Promoción',
+      hasPromoPercent ? mostCommon(promoCounts, 0) : 0,
+      1,
+    ).run();
+  }
+  for (const row of products.results) {
+    const prices = parseListPrices(row.list_prices);
+    if (row.ff_price != null && Number.isFinite(Number(row.ff_price)))
+      prices[ffId] = Number(row.ff_price);
+    if (row.promo_kind === 'manual' && Number(row.promo_value) >= 0)
+      prices[promoId] = Number(row.promo_value);
+    if (!Object.keys(prices).length) continue;
+    await stmt(
+      'UPDATE products SET list_prices=? WHERE id=?',
+      JSON.stringify(prices),
+      row.id,
+    ).run();
+  }
+}
+
 export async function ensureAccountTables() {
   const d = db();
   await d.batch([
@@ -420,6 +516,7 @@ export async function ensureAccountTables() {
   if (entryAlters.length)
     await d.batch(entryAlters as ReturnType<typeof stmt>[]);
   await ensureTasksTable();
+  await ensurePriceLists();
 }
 
 export async function ensureTasksTable() {
@@ -694,6 +791,7 @@ export async function ensureConfiguredCatalog() {
 }
 
 function usesWarehouseStock(item: Item, product?: Product) {
+  if (item.selections.make_to_order) return false;
   const kind = product ? configuredKindOf(product) : null;
   if (!kind) return true;
   return !!item.selections.from_stock;
@@ -1182,6 +1280,7 @@ export async function allData() {
     cat,
     s,
     partners,
+    priceLists,
     expenses,
     cashouts,
     entries,
@@ -1198,6 +1297,9 @@ export async function allData() {
     d.prepare('SELECT * FROM categories ORDER BY name'),
     d.prepare('SELECT currency FROM settings WHERE id=1'),
     d.prepare('SELECT * FROM partners ORDER BY name'),
+    d.prepare(
+      'SELECT * FROM price_lists ORDER BY archived ASC, sort ASC, name ASC',
+    ),
     d.prepare(
       'SELECT * FROM account_expenses ORDER BY date DESC, created_at DESC',
     ),
@@ -1218,14 +1320,15 @@ export async function allData() {
     products: p.results.map((r) => {
       const raw = obj(r);
       const product = decode<Product>(
-        { ...raw, pricing: raw.pricing ?? '{}' },
-        ['photos', 'options', 'attributes', 'pricing'],
+        { ...raw, pricing: raw.pricing ?? '{}', list_prices: raw.list_prices ?? '{}' },
+        ['photos', 'options', 'attributes', 'pricing', 'list_prices'],
       );
       return {
         ...product,
         kind: product.kind === 'configured' ? 'configured' : 'sku',
         unit: isProductUnit(product.unit) ? product.unit : 'unidad',
         pricing: parsePricing(product.pricing),
+        list_prices: parseListPrices(product.list_prices),
       };
     }),
     orders: o.results.map((r) => {
@@ -1240,9 +1343,22 @@ export async function allData() {
           typeof row.paid_partner_id === 'string' ? row.paid_partner_id : '',
         cost_partner_id:
           typeof row.cost_partner_id === 'string' ? row.cost_partner_id : '',
+        price_list_id:
+          typeof row.price_list_id === 'string' ? row.price_list_id : '',
         kind: row.kind === 'sponsoreo' ? 'sponsoreo' : 'venta',
         items: items.filter((item) => item.order_id === row.id),
       };
+    }),
+    price_lists: priceLists.results.map((row) => {
+      const list = obj(row);
+      return {
+        id: String(list.id),
+        name: String(list.name || ''),
+        discount: Number(list.discount) || 0,
+        archived: Number(list.archived) ? 1 : 0,
+        version: Number(list.version) || 1,
+        sort: Number(list.sort) || 0,
+      } as PriceList;
     }),
     movements: m.results.map((r) => {
       const row = obj(r);
@@ -1423,21 +1539,65 @@ export async function product(
   if (new Set(options.map((o) => o.id)).size !== options.length)
     throw new Error('Opciones duplicadas.');
   const photos = list(b.photos, 10).map(photo);
-  const pk = choice(b.promo_kind, ['none', 'percent', 'manual'], 'Promoción');
+  const price = integer(b.price, 'Precio');
+  await ensurePriceLists();
+  const activeLists = (
+    await stmt(
+      'SELECT id, discount FROM price_lists WHERE archived=0',
+    ).all<{ id: string; discount: number }>()
+  ).results;
+  const listPrices: Record<string, number> = {};
+  if (b.list_prices && typeof b.list_prices === 'object' && !Array.isArray(b.list_prices)) {
+    for (const [listId, amount] of Object.entries(
+      b.list_prices as Record<string, unknown>,
+    )) {
+      if (!activeLists.some((entry) => entry.id === listId)) continue;
+      if (amount === null || amount === undefined || amount === '') continue;
+      const exact = integer(amount, 'Precio de lista especial');
+      if (exact > price)
+        throw new Error(
+          'El precio especial no puede superar el precio de lista.',
+        );
+      listPrices[listId] = exact;
+    }
+  }
+  // Compat: mapear F&F / promo viejos a list_prices si no vinieron exactos.
+  const ffList =
+    activeLists.find((entry) => entry.id === 'list-friends-family') ||
+    activeLists.find((entry) => /friends|family|f&f/i.test(entry.id));
+  const promoList =
+    activeLists.find((entry) => entry.id === 'list-promocion') ||
+    activeLists.find((entry) => /promo/i.test(entry.id));
+  const pk = choice(
+    b.promo_kind || 'none',
+    ['none', 'percent', 'manual'],
+    'Promoción',
+  );
   const pv = integer(
-    b.promo_value,
+    b.promo_value || 0,
     'Promoción',
     pk === 'percent' ? 10000 : 1e12,
   );
-  const price = integer(b.price, 'Precio');
-  if (pk === 'manual' && pv > price)
-    throw new Error('El precio promocional no puede superar lista.');
   const ffPrice =
     b.ff_price === null || b.ff_price === undefined
       ? null
       : integer(b.ff_price, 'Precio F&F');
   if (ffPrice !== null && ffPrice > price)
     throw new Error('El precio F&F no puede superar lista.');
+  if (ffList && ffPrice !== null && listPrices[ffList.id] === undefined)
+    listPrices[ffList.id] = ffPrice;
+  if (promoList && pk === 'manual' && listPrices[promoList.id] === undefined) {
+    if (pv > price)
+      throw new Error('El precio promocional no puede superar lista.');
+    listPrices[promoList.id] = pv;
+  }
+  const ffDiscount = integer(
+    b.ff_discount !== undefined && b.ff_discount !== null
+      ? b.ff_discount
+      : ffList?.discount || 0,
+    'F&F',
+    10000,
+  );
   const cost = integer(b.cost, 'Costo');
   const productAttributes = attributes(b.attributes);
   if (cost > 0 && productAttributes.Costo === 'Pendiente de definir')
@@ -1446,7 +1606,7 @@ export async function product(
   if (productAttributes['Precio de lista'] === 'Pendiente de definir')
     delete productAttributes['Precio de lista'];
   if (
-    ffPrice !== null &&
+    (ffPrice !== null || listPrices[ffList?.id || ''] != null) &&
     productAttributes['Precio F&F'] === 'Pendiente de definir'
   )
     delete productAttributes['Precio F&F'];
@@ -1482,6 +1642,9 @@ export async function product(
     b.unit === undefined
       ? null
       : choice(b.unit, PRODUCT_UNITS.map((u) => u.id), 'Unidad');
+  const syncedFfPrice =
+    ffPrice ??
+    (ffList && listPrices[ffList.id] != null ? listPrices[ffList.id]! : null);
   const values = [
     str(b.name, 'Nombre', true, 150),
     str(b.sku, 'SKU', true, 80).toUpperCase(),
@@ -1489,8 +1652,8 @@ export async function product(
     supplier,
     cost,
     price,
-    integer(b.ff_discount, 'F&F', 10000),
-    ffPrice,
+    ffDiscount,
+    syncedFfPrice,
     pk,
     pv,
     JSON.stringify(photos),
@@ -1498,10 +1661,11 @@ export async function product(
     JSON.stringify(productAttributes),
     pricingJson,
     kind,
+    JSON.stringify(listPrices),
   ];
   if (b.id) {
     const result = await stmt(
-      'UPDATE products SET name=?,sku=?,category=?,supplier_id=?,cost=?,price=?,ff_discount=?,ff_price=?,promo_kind=?,promo_value=?,photos=?,options=?,attributes=?,pricing=?,kind=?,unit=COALESCE(?,unit),version=? WHERE id=? AND archived=0',
+      'UPDATE products SET name=?,sku=?,category=?,supplier_id=?,cost=?,price=?,ff_discount=?,ff_price=?,promo_kind=?,promo_value=?,photos=?,options=?,attributes=?,pricing=?,kind=?,list_prices=?,unit=COALESCE(?,unit),version=? WHERE id=? AND archived=0',
       ...values,
       unit,
       integer(b.version, 'Versión') + 1,
@@ -1511,7 +1675,7 @@ export async function product(
   } else {
     if (!actor?.id) throw new Error('Tenés que ingresar.');
     await stmt(
-      'INSERT INTO products(name,sku,category,supplier_id,cost,price,ff_discount,ff_price,promo_kind,promo_value,photos,options,attributes,pricing,kind,unit,id,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO products(name,sku,category,supplier_id,cost,price,ff_discount,ff_price,promo_kind,promo_value,photos,options,attributes,pricing,kind,list_prices,unit,id,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       ...values,
       unit || 'unidad',
       id,
@@ -1676,16 +1840,53 @@ export async function saveOrder(
         throw new Error(
           `Completá el precio de lista de ${p.name} antes de venderlo.`,
         );
+      p.list_prices = parseListPrices(
+        (rawProduct as { list_prices?: unknown }).list_prices,
+      );
+      await ensurePriceLists();
+      const priceLists = (
+        await stmt(
+          'SELECT id, discount, archived FROM price_lists',
+        ).all<PriceList>()
+      ).results;
+      const allowedModes = [
+        'list',
+        'ff',
+        'promo',
+        'manual',
+        ...priceLists.filter((entry) => !entry.archived).map((entry) => entry.id),
+      ];
       const mode = choice(
-        input.price_mode || 'list',
-        ['list', 'ff', 'promo', 'manual'],
+        input.price_mode ||
+          (typeof input.price_list_id === 'string' && input.price_list_id
+            ? input.price_list_id
+            : 'list'),
+        allowedModes,
         'Precio',
       );
       if (
-        mode === 'ff' &&
+        (mode === 'ff' || mode === 'list-friends-family') &&
         p.attributes['Precio F&F'] === 'Pendiente de definir'
       )
         throw new Error(`Completá el precio F&F de ${p.name}.`);
+      const priceListId =
+        mode === 'list' || mode === 'manual'
+          ? ''
+          : mode === 'ff'
+            ? priceLists.find((entry) => entry.id === 'list-friends-family')?.id ||
+              ''
+            : mode === 'promo'
+              ? priceLists.find((entry) => entry.id === 'list-promocion')?.id ||
+                ''
+              : mode;
+      const base = resolveListBasePrice(
+        p,
+        mode,
+        priceLists,
+        mode === 'manual'
+          ? integer(input.manual_price, 'Precio manual')
+          : undefined,
+      );
       const configured = configuredKindOf(p);
       if (configured) {
         const config = parseConfig(configured, input.config);
@@ -1694,14 +1895,6 @@ export async function saveOrder(
           throw new Error(
             `Completá los precios de ${p.name} en Productos antes de venderlo.`,
           );
-        const base =
-          mode === 'manual'
-            ? integer(input.manual_price, 'Precio manual')
-            : mode === 'ff'
-              ? (p.ff_price ?? discounted(p.price, p.ff_discount))
-              : mode === 'promo'
-                ? promoPrice(p)
-                : p.price;
         snapshot = {
           product_id: p.id,
           name: p.name,
@@ -1719,6 +1912,7 @@ export async function saveOrder(
               ? str(input.location || '', 'Ubicación', false, 40) || undefined
               : undefined,
             list_unit_price: integer(p.price + extras.price),
+            ...(priceListId ? { price_list_id: priceListId } : {}),
           },
           unit_price: integer(base + extras.price),
           unit_cost: integer(p.cost + extras.cost),
@@ -1751,14 +1945,6 @@ export async function saveOrder(
           if (p.attributes[k] && p.attributes[k] !== v)
             throw new Error(`La combinación no corresponde al SKU ${p.sku}.`);
         }
-        const base =
-          mode === 'manual'
-            ? integer(input.manual_price, 'Precio manual')
-            : mode === 'ff'
-              ? (p.ff_price ?? discounted(p.price, p.ff_discount))
-              : mode === 'promo'
-                ? promoPrice(p)
-                : p.price;
         const cabezada = isCabezadaProduct(p)
           ? parseCabezadaConfig(input.config)
           : null;
@@ -1785,21 +1971,34 @@ export async function saveOrder(
               ? str(input.location || '', 'Ubicación', false, 40) || undefined
               : undefined,
             list_unit_price: integer(p.price + optionPrice),
+            ...(priceListId ? { price_list_id: priceListId } : {}),
           },
           unit_price: integer(base + optionPrice),
           unit_cost: integer(p.cost + options.reduce((s, o) => s + o.cost, 0)),
         };
       }
     }
-    snapshot = {
-      ...snapshot,
-      selections: await withStockLoad(
-        snapshot.product_id,
-        snapshot.selections,
-        input.stock_load_id,
-        input.stock_load_ids,
-      ),
-    };
+    if (input.make_to_order) {
+      const {
+        stock_load_id: _load,
+        stock_load_ids: _loads,
+        ...rest
+      } = snapshot.selections;
+      snapshot = {
+        ...snapshot,
+        selections: { ...rest, make_to_order: true },
+      };
+    } else {
+      snapshot = {
+        ...snapshot,
+        selections: await withStockLoad(
+          snapshot.product_id,
+          { ...snapshot.selections, make_to_order: undefined },
+          input.stock_load_id,
+          input.stock_load_ids,
+        ),
+      };
+    }
     const itemId = old?.id || crypto.randomUUID();
     if (used.has(itemId)) throw new Error('Ítem duplicado.');
     used.add(itemId);
@@ -1908,6 +2107,15 @@ export async function saveOrder(
       }>()
     )?.currency ||
     'ARS';
+  await ensurePriceLists();
+  const orderPriceListId = str(b.price_list_id || '', 'Lista de precios', false, 64);
+  if (orderPriceListId) {
+    const list = await stmt(
+      'SELECT id FROM price_lists WHERE id=? AND archived=0',
+      orderPriceListId,
+    ).first();
+    if (!list) throw new Error('Lista de precios no disponible.');
+  }
   const number =
     existing?.number ||
     `IC-${new Date().getUTCFullYear()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
@@ -1915,7 +2123,7 @@ export async function saveOrder(
   if (existing) {
     statements.push(
       stmt(
-        'UPDATE orders SET customer_id=?,date=?,delivery=?,paid=?,paid_partner_id=?,cost_partner_id=?,invoice=?,notes=?,shipping_carrier=?,shipping_amount=?,total=?,cost=?,kind=?,version=? WHERE id=?',
+        'UPDATE orders SET customer_id=?,date=?,delivery=?,paid=?,paid_partner_id=?,cost_partner_id=?,invoice=?,notes=?,shipping_carrier=?,shipping_amount=?,price_list_id=?,total=?,cost=?,kind=?,version=? WHERE id=?',
         customer,
         orderDate,
         delivery,
@@ -1926,6 +2134,7 @@ export async function saveOrder(
         notes,
         shippingCarrier,
         shippingAmount,
+        orderPriceListId,
         total,
         cost,
         kind,
@@ -1937,7 +2146,7 @@ export async function saveOrder(
   } else {
     statements.push(
       stmt(
-        "INSERT INTO orders(id,number,customer_id,date,delivery,status,paid,paid_partner_id,cost_partner_id,invoice,notes,currency,shipping_carrier,shipping_amount,total,cost,kind,created_by) VALUES (?,?,?,?,?,'nuevo',?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO orders(id,number,customer_id,date,delivery,status,paid,paid_partner_id,cost_partner_id,invoice,notes,currency,shipping_carrier,shipping_amount,price_list_id,total,cost,kind,created_by) VALUES (?,?,?,?,?,'nuevo',?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         id,
         number,
         customer,
@@ -1951,6 +2160,7 @@ export async function saveOrder(
         currency,
         shippingCarrier,
         shippingAmount,
+        orderPriceListId,
         total,
         cost,
         kind,
@@ -2161,9 +2371,17 @@ async function productsBulk(b: Record<string, unknown>) {
       `SELECT * FROM products WHERE id IN (${placeholders})`,
       ...ids,
     ).all()
-  ).results.map((row) =>
-    decode<Product>(row, ['photos', 'options', 'attributes']),
-  );
+  ).results.map((row) => {
+    const raw = obj(row);
+    const product = decode<Product>(
+      { ...raw, list_prices: raw.list_prices ?? '{}' },
+      ['photos', 'options', 'attributes', 'list_prices'],
+    );
+    return {
+      ...product,
+      list_prices: parseListPrices(product.list_prices),
+    };
+  });
   if (found.length !== ids.length)
     throw new Error(
       'Algunos productos ya no están disponibles. Recargá la lista.',
@@ -2246,12 +2464,20 @@ async function productsBulk(b: Record<string, unknown>) {
         promoValue = increaseByPercent(product.promo_value, bp);
         if (promoValue > price) promoValue = price;
       }
+      const listPrices: Record<string, number> = {};
+      for (const [listId, exact] of Object.entries(product.list_prices || {})) {
+        const next = increaseByPercent(exact, bp);
+        listPrices[listId] = next > price ? price : next;
+      }
+      if (ffPrice != null && !listPrices['list-friends-family'])
+        listPrices['list-friends-family'] = ffPrice;
       statements.push(
         stmt(
-          'UPDATE products SET price=?,ff_price=?,promo_value=?,version=? WHERE id=?',
+          'UPDATE products SET price=?,ff_price=?,promo_value=?,list_prices=?,version=? WHERE id=?',
           price,
           ffPrice,
           promoValue,
+          JSON.stringify(listPrices),
           product.version + 1,
           product.id,
         ),
@@ -2572,6 +2798,36 @@ export async function mutate(
         currency,
       ).run();
       return { ok: true };
+    }
+    case 'price_list': {
+      await ensurePriceLists();
+      const name = str(b.name, 'Nombre de la lista', true, 80);
+      const discount = integer(b.discount, 'Descuento', 10000);
+      if (b.id) {
+        const id = str(b.id, 'Lista', true);
+        const archived = b.archived ? 1 : 0;
+        const r = await stmt(
+          'UPDATE price_lists SET name=?,discount=?,archived=?,version=version+1 WHERE id=?',
+          name,
+          discount,
+          archived,
+          id,
+        ).run();
+        if (!r.meta.changes) throw new Error('Lista no disponible.');
+        return { id };
+      }
+      const maxSort = await stmt(
+        'SELECT COALESCE(MAX(sort),-1) n FROM price_lists',
+      ).first<{ n: number }>();
+      const id = crypto.randomUUID();
+      await stmt(
+        'INSERT INTO price_lists(id,name,discount,archived,version,sort) VALUES(?,?,?,0,1,?)',
+        id,
+        name,
+        discount,
+        (maxSort?.n ?? -1) + 1,
+      ).run();
+      return { id };
     }
     case 'category': {
       const fields = list(b.fields, 20).map((v) => {

@@ -96,6 +96,16 @@ export function unitWord(unit?: ProductUnit, quantity = 2) {
 export function unitAgree(stem: string, unit?: ProductUnit, quantity = 2) {
   return `${stem}${unitInfo(unit).ending}${quantity === 1 ? '' : 's'}`;
 }
+/** Lista de precios especiales definida en Configuración (% sobre lista). */
+export type PriceList = {
+  id: string;
+  name: string;
+  /** Descuento en basis points (1500 = 15%). */
+  discount: number;
+  archived: number;
+  version: number;
+  sort: number;
+};
 export type Product = {
   id: string;
   name: string;
@@ -104,10 +114,16 @@ export type Product = {
   supplier_id: string | null;
   cost: number;
   price: number;
+  /** @deprecated Preferir price_lists + list_prices. */
   ff_discount: number;
+  /** @deprecated Preferir list_prices. */
   ff_price: number | null;
+  /** @deprecated Preferir price_lists. */
   promo_kind: string;
+  /** @deprecated Preferir list_prices. */
   promo_value: number;
+  /** Precio exacto opcional por id de lista (centavos). */
+  list_prices: Record<string, number>;
   photos: string[];
   options: Option[];
   attributes: Record<string, string>;
@@ -138,6 +154,10 @@ export type Item = {
     stock_load_id?: string;
     /** Cargas elegidas (puede ser más de una si la cantidad supera una sola). */
     stock_load_ids?: string[];
+    /** No sale del depósito: se manda a producir para este pedido. */
+    make_to_order?: boolean;
+    /** Lista especial elegida (id de price_lists). Vacío = precio de lista. */
+    price_list_id?: string;
     /** percent = descuento en bp; fixed = unit_price es el precio de venta. */
     sale_mode?: 'percent' | 'fixed';
     /** Precio de lista unitario (sin dto. ni precio especial) al momento de la venta. */
@@ -169,6 +189,8 @@ export type Order = {
   shipping_carrier: string;
   /** Costo de envío en centavos. */
   shipping_amount: number;
+  /** Lista de precios default del pedido (ítems pueden cambiarla). */
+  price_list_id: string;
   total: number;
   cost: number;
   /** venta = se cobra; sponsoreo = se entrega sin cobro y solo cuenta el costo. */
@@ -306,6 +328,7 @@ export type Data = {
   categories: Category[];
   movements: Movement[];
   partners: Partner[];
+  price_lists: PriceList[];
   expenses: AccountExpense[];
   cashouts: PartnerCashout[];
   entries: AccountEntry[];

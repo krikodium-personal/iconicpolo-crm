@@ -179,3 +179,75 @@ export function promoPrice(p: {
       ? p.promo_value
       : p.price;
 }
+
+/** Precio exacto opcional por lista; si no hay, lista − %. */
+export function parseListPrices(raw: unknown): Record<string, number> {
+  if (!raw) return {};
+  let value: unknown = raw;
+  if (typeof raw === 'string') {
+    if (!raw.trim()) return {};
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out: Record<string, number> = {};
+  for (const [id, amount] of Object.entries(value as Record<string, unknown>)) {
+    if (!id || typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount < 0)
+      continue;
+    out[id] = amount;
+  }
+  return out;
+}
+
+export function priceFromList(
+  listPrice: number,
+  list: { id: string; discount: number },
+  exactPrices?: Record<string, number | null | undefined> | null,
+): number {
+  const exact = exactPrices?.[list.id];
+  if (typeof exact === 'number' && Number.isSafeInteger(exact) && exact >= 0)
+    return exact;
+  return discounted(listPrice, list.discount);
+}
+
+/**
+ * Resuelve el precio base según modo: `list`, `manual`, id de lista, o legacy `ff`/`promo`.
+ */
+export function resolveListBasePrice(
+  product: {
+    price: number;
+    list_prices?: Record<string, number>;
+    ff_discount?: number;
+    ff_price?: number | null;
+    promo_kind?: string;
+    promo_value?: number;
+  },
+  mode: string,
+  lists: { id: string; discount: number; archived?: number }[],
+  manualPrice?: number,
+): number {
+  if (mode === 'manual') {
+    if (manualPrice === undefined)
+      throw new Error('Precio manual: revisá el valor.');
+    return integer(manualPrice, 'Precio manual');
+  }
+  if (!mode || mode === 'list') return integer(product.price, 'Precio');
+  if (mode === 'ff')
+    return friendsPrice({
+      price: product.price,
+      ff_discount: product.ff_discount || 0,
+      ff_price: product.ff_price,
+    });
+  if (mode === 'promo')
+    return promoPrice({
+      price: product.price,
+      promo_kind: product.promo_kind || 'none',
+      promo_value: product.promo_value || 0,
+    });
+  const list = lists.find((entry) => entry.id === mode && !entry.archived);
+  if (!list) throw new Error('Lista de precios no disponible.');
+  return priceFromList(product.price, list, product.list_prices);
+}

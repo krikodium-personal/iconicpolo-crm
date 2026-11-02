@@ -40,8 +40,8 @@ import {
   markup,
   lineTotals,
   fixedLineTotals,
-  promoPrice,
-  friendsPrice,
+  priceFromList,
+  resolveListBasePrice,
   previewFx,
 } from '@/lib/money';
 import {
@@ -131,6 +131,9 @@ import { FichaView, CotizacionFichaView, buildCotizacionData } from './ficha';
 import { whatsapp, whatsappGroup } from '@/lib/whatsapp';
 export type Save = (body: Record<string, unknown>) => Promise<void>;
 export { whatsapp, whatsappGroup };
+function activePriceLists(data: Data) {
+  return (data.price_lists || []).filter((list) => !list.archived);
+}
 const options = (values: string[]) =>
   values.map((value) => ({ value, label: value }));
 const COST_PENDING = 'Costo pendiente';
@@ -608,10 +611,14 @@ export function ProductForm({
     unit: (record?.unit || 'unidad') as ProductUnit,
     cost: decimal(record?.cost || 0),
     price: decimal(record?.price || 0),
-    ff_discount: percent(record?.ff_discount ?? 1500),
-    ff_price: record?.ff_price == null ? '' : decimal(record.ff_price),
-    promo_kind: record?.promo_kind || 'none',
-    promo_value: decimal(record?.promo_value || 0),
+    list_prices: Object.fromEntries(
+      activePriceLists(data).map((list) => [
+        list.id,
+        record?.list_prices?.[list.id] != null
+          ? decimal(record.list_prices[list.id]!)
+          : '',
+      ]),
+    ) as Record<string, string>,
     photos: record?.photos || [],
     options: record?.options || [],
     attributes: record?.attributes || {},
@@ -625,22 +632,25 @@ export function ProductForm({
     cost: '0.00',
     photo: '',
   });
-  let calc: { cost: number; price: number; ff: number; promo: number } | null =
-    null;
+  const priceLists = activePriceLists(data);
+  let calc: {
+    cost: number;
+    price: number;
+    lists: { id: string; name: string; amount: number }[];
+  } | null = null;
   try {
     const price = parseDecimal(f.price),
       cost = parseDecimal(f.cost);
     calc = {
       cost,
       price,
-      ff: f.ff_price.trim()
-        ? parseDecimal(f.ff_price)
-        : friendsPrice({ price, ff_discount: parsePercent(f.ff_discount, 'F&F') }),
-      promo: promoPrice({
-        price,
-        promo_kind: f.promo_kind,
-        promo_value: parseDecimal(f.promo_value),
-      }),
+      lists: priceLists.map((list) => ({
+        id: list.id,
+        name: list.name,
+        amount: f.list_prices[list.id]?.trim()
+          ? parseDecimal(f.list_prices[list.id]!)
+          : priceFromList(price, list, {}),
+      })),
     };
   } catch {
     /* Incomplete values while editing. */
@@ -670,14 +680,21 @@ export function ProductForm({
         B(true);
         E('');
         try {
+          const listPrices: Record<string, number> = {};
+          for (const list of priceLists) {
+            const raw = f.list_prices[list.id]?.trim();
+            if (raw) listPrices[list.id] = parseDecimal(raw);
+          }
           await save({
             action: 'product',
             ...f,
             cost: parseDecimal(f.cost),
             price: parseDecimal(f.price),
-            ff_discount: parsePercent(f.ff_discount, 'F&F'),
-            ff_price: f.ff_price.trim() ? parseDecimal(f.ff_price) : null,
-            promo_value: parseDecimal(f.promo_value),
+            list_prices: listPrices,
+            ff_discount: 0,
+            ff_price: null,
+            promo_kind: 'none',
+            promo_value: 0,
             id: record?.id,
             version: record?.version,
           });
@@ -808,70 +825,49 @@ export function ProductForm({
               onChange={(e) => set({ ...f, price: e.target.value })}
             />
           </Field>
-          <Field label="Descuento Friends & Family (%)">
-            <input
-              required
-              inputMode="numeric"
-              value={f.ff_discount}
-              onChange={(e) => set({ ...f, ff_discount: e.target.value })}
-            />
-          </Field>
-          <Field
-            label="Precio Friends & Family exacto"
-            pending={
-              f.attributes['Precio F&F'] === 'Pendiente de definir' &&
-              !f.ff_price.trim()
-            }
-          >
-            <input
-              inputMode="decimal"
-              placeholder={
-                f.attributes['Precio F&F'] === 'Pendiente de definir'
-                  ? 'Pendiente'
-                  : 'Opcional'
-              }
-              value={f.ff_price}
-              onChange={(e) => set({ ...f, ff_price: e.target.value })}
-            />
-          </Field>
-          <Field label="Precio promocional">
-            <Pick
-              label="Tipo de promoción"
-              value={f.promo_kind}
-              onChange={(v) =>
-                set({ ...f, promo_kind: v, promo_value: '0.00' })
-              }
-              options={[
-                { value: 'none', label: 'Sin promoción' },
-                { value: 'percent', label: 'Descuento porcentual' },
-                { value: 'manual', label: 'Precio manual' },
-              ]}
-            />
-          </Field>
-          {f.promo_kind !== 'none' && (
-            <Field
-              label={
-                f.promo_kind === 'percent'
-                  ? 'Descuento promocional (%)'
-                  : 'Precio promocional'
-              }
-            >
-              <input
-                inputMode="decimal"
-                value={f.promo_value}
-                onChange={(e) => set({ ...f, promo_value: e.target.value })}
-              />
-            </Field>
+          {priceLists.length ? (
+            priceLists.map((list) => (
+              <Field
+                key={list.id}
+                label={`Precio exacto · ${list.name}`}
+                pending={
+                  list.id === 'list-friends-family' &&
+                  f.attributes['Precio F&F'] === 'Pendiente de definir' &&
+                  !f.list_prices[list.id]?.trim()
+                }
+              >
+                <input
+                  inputMode="decimal"
+                  placeholder={`Opcional · ${percent(list.discount)}% dto.`}
+                  value={f.list_prices[list.id] || ''}
+                  onChange={(e) =>
+                    set({
+                      ...f,
+                      list_prices: {
+                        ...f.list_prices,
+                        [list.id]: e.target.value,
+                      },
+                    })
+                  }
+                />
+              </Field>
+            ))
+          ) : (
+            <p className="hint" style={{ gridColumn: '1 / -1' }}>
+              Agregá listas de precios en Configuración para fijar precios
+              exactos por lista.
+            </p>
           )}
         </div>
         {calc && (
           <div className="price-preview">
             {[
               ['Lista', calc.price],
-              ['Friends & Family', calc.ff],
-              ...(f.promo_kind === 'none' ? [] : [['Promoción', calc.promo]]),
+              ...calc.lists.map(
+                (list) => [list.name, list.amount] as [string, number],
+              ),
             ].map(([label, value]) => (
-              <article key={label}>
+              <article key={String(label)}>
                 <span>{label}</span>
                 <strong>{formatMoney(Number(value), data.currency)}</strong>
                 <p>
@@ -891,7 +887,7 @@ export function ProductForm({
         )}
         <p className="hint">
           El margen es ganancia ÷ precio de venta. Importes comerciales sin
-          desglose de IVA.
+          desglose de IVA. Los % de cada lista se definen en Configuración.
         </p>
       </section>
       <section className="form-section">
@@ -1150,13 +1146,6 @@ export function ProductDetail({
   const costPending = record.attributes.Costo === 'Pendiente de definir';
   const pricePending =
     record.attributes['Precio de lista'] === 'Pendiente de definir';
-  const ffPending = record.attributes['Precio F&F'] === 'Pendiente de definir';
-  const promo =
-    record.promo_kind === 'percent'
-      ? `${(record.promo_value / 100).toFixed(2)}% de descuento`
-      : record.promo_kind === 'manual'
-        ? formatMoney(record.promo_value, data.currency)
-        : 'Sin promoción';
   const listProfit = record.price - record.cost;
   const movements = data.movements.filter((m) => m.product_id === record.id);
   const balances = stockLoadBalances(data.movements, record.id);
@@ -1272,16 +1261,28 @@ export function ProductDetail({
             }
             pending={pricePending}
           />
-          <Fact
-            label="Friends & Family"
-            value={
-              ffPending
-                ? 'Pendiente'
-                : formatMoney(friendsPrice(record), data.currency)
-            }
-            pending={ffPending}
-          />
-          <Fact label="Promoción" value={promo} />
+          {activePriceLists(data).map((list) => {
+            const exact = record.list_prices?.[list.id];
+            const pending =
+              list.id === 'list-friends-family' &&
+              record.attributes['Precio F&F'] === 'Pendiente de definir' &&
+              exact == null;
+            return (
+              <Fact
+                key={list.id}
+                label={list.name}
+                value={
+                  pending
+                    ? 'Pendiente'
+                    : formatMoney(
+                        priceFromList(record.price, list, record.list_prices),
+                        data.currency,
+                      )
+                }
+                pending={pending}
+              />
+            );
+          })}
           <Fact
             label="Ganancia de lista"
             value={
@@ -1530,6 +1531,7 @@ type DraftItem = {
   location?: string;
   stock_load_id?: string;
   stock_load_ids?: string[];
+  make_to_order?: boolean;
   snapshot?: Item;
 };
 function productFieldValues(
@@ -2022,6 +2024,8 @@ export function OrderDetail({
                         .filter(Boolean) as Movement[];
                       const kind = product ? configuredKindOf(product) : null;
                       const usesStock = !kind || !!item.selections.from_stock;
+                      if (item.selections.make_to_order)
+                        return <small>Se mandan a hacer</small>;
                       if (loads.length)
                         return (
                           <small>
@@ -2826,8 +2830,10 @@ export function OrderForm({
     notes: record?.notes || prefill?.notes || '',
     shipping_carrier: record?.shipping_carrier || '',
     shipping_amount: decimal(record?.shipping_amount || 0),
+    price_list_id: record?.price_list_id || '',
   });
   const activePartners = data.partners.filter((partner) => !partner.archived);
+  const orderPriceLists = activePriceLists(data);
   /**
    * `notes` no tiene campo en el formulario: viene de la solicitud del sitio
    * (club y país) y queda en la ficha del cliente nuevo. Desde Clientes se
@@ -2864,7 +2870,7 @@ export function OrderForm({
           i.selections.sale_mode === 'fixed'
             ? decimal(i.unit_price)
             : decimal(i.discount),
-        price_mode: 'list',
+        price_mode: i.selections.price_list_id || 'list',
         manual_price: '0.00',
         option_ids: i.selections.options.map((o) => o.id),
         attributes: i.selections.attributes,
@@ -2878,6 +2884,7 @@ export function OrderForm({
         location: i.selections.location,
         stock_load_id: i.selections.stock_load_id,
         stock_load_ids: stockLoadIdsOf(i.selections),
+        make_to_order: !!i.selections.make_to_order,
         snapshot: i,
       };
     }) || prefillDraftItems(prefill, data),
@@ -2918,6 +2925,7 @@ export function OrderForm({
             location: item.location,
             stock_load_id: item.stock_load_id,
             stock_load_ids: item.stock_load_ids,
+            make_to_order: item.make_to_order,
           },
         },
         product ? configuredKindOf(product) : null,
@@ -3010,7 +3018,7 @@ export function OrderForm({
           quantity: '1',
           discount_mode: 'percent',
           discount: '0.00',
-          price_mode: 'list',
+          price_mode: f.price_list_id || 'list',
           manual_price: '0.00',
           ...next,
         },
@@ -3078,14 +3086,14 @@ export function OrderForm({
           ),
         });
       }
-      const base =
+      const base = resolveListBasePrice(
+        p,
+        i.price_mode || 'list',
+        orderPriceLists,
         i.price_mode === 'manual'
           ? parseDecimal(i.manual_price)
-          : i.price_mode === 'ff'
-            ? friendsPrice(p)
-            : i.price_mode === 'promo'
-              ? promoPrice(p)
-              : p.price;
+          : undefined,
+      );
       const price = base + extras.price;
       const cost = p.cost + extras.cost;
       return withSale(price, cost, {
@@ -3119,14 +3127,14 @@ export function OrderForm({
       throw new Error('No hay un SKU para esa combinación.');
     const product = match || p;
     const selected = product.options.filter((o) => i.option_ids.includes(o.id));
-    const base =
+    const base = resolveListBasePrice(
+      product,
+      i.price_mode || 'list',
+      orderPriceLists,
       i.price_mode === 'manual'
         ? parseDecimal(i.manual_price)
-        : i.price_mode === 'ff'
-          ? friendsPrice(product)
-          : i.price_mode === 'promo'
-            ? promoPrice(product)
-            : product.price;
+        : undefined,
+    );
     const price =
       i.snapshot?.unit_price ??
       base + selected.reduce((s, o) => s + o.price, 0);
@@ -3254,6 +3262,7 @@ export function OrderForm({
             shipping_amount: f.shipping_carrier
               ? parseDecimal(f.shipping_amount)
               : 0,
+            price_list_id: f.price_list_id || '',
             id: record?.id,
             version: record?.version,
             items: items.map((i) => {
@@ -3274,6 +3283,10 @@ export function OrderForm({
                   discount: 0,
                   sale_price: sale,
                   price_mode: i.price_mode,
+                  price_list_id:
+                    i.price_mode !== 'list' && i.price_mode !== 'manual'
+                      ? i.price_mode
+                      : undefined,
                   manual_price: parseDecimal(i.manual_price),
                   option_ids: i.option_ids,
                   attributes: i.attributes,
@@ -3282,12 +3295,17 @@ export function OrderForm({
                   from_stock: i.from_stock,
                   stock_qty: i.stock_qty,
                   location: i.location,
-                  stock_load_id: i.stock_load_ids?.[0] || i.stock_load_id,
-                  stock_load_ids: i.stock_load_ids?.length
-                    ? i.stock_load_ids
-                    : i.stock_load_id
-                      ? [i.stock_load_id]
-                      : undefined,
+                  stock_load_id: i.make_to_order
+                    ? undefined
+                    : i.stock_load_ids?.[0] || i.stock_load_id,
+                  stock_load_ids: i.make_to_order
+                    ? undefined
+                    : i.stock_load_ids?.length
+                      ? i.stock_load_ids
+                      : i.stock_load_id
+                        ? [i.stock_load_id]
+                        : undefined,
+                  make_to_order: i.make_to_order || undefined,
                 };
               }
               return {
@@ -3297,6 +3315,10 @@ export function OrderForm({
                 discount_mode: 'percent' as const,
                 discount: parseDecimal(i.discount),
                 price_mode: i.price_mode,
+                price_list_id:
+                  i.price_mode !== 'list' && i.price_mode !== 'manual'
+                    ? i.price_mode
+                    : undefined,
                 manual_price: parseDecimal(i.manual_price),
                 option_ids: i.option_ids,
                 attributes: i.attributes,
@@ -3305,12 +3327,17 @@ export function OrderForm({
                 from_stock: i.from_stock,
                 stock_qty: i.stock_qty,
                 location: i.location,
-                stock_load_id: i.stock_load_ids?.[0] || i.stock_load_id,
-                stock_load_ids: i.stock_load_ids?.length
-                  ? i.stock_load_ids
-                  : i.stock_load_id
-                    ? [i.stock_load_id]
-                    : undefined,
+                stock_load_id: i.make_to_order
+                  ? undefined
+                  : i.stock_load_ids?.[0] || i.stock_load_id,
+                stock_load_ids: i.make_to_order
+                  ? undefined
+                  : i.stock_load_ids?.length
+                    ? i.stock_load_ids
+                    : i.stock_load_id
+                      ? [i.stock_load_id]
+                      : undefined,
+                make_to_order: i.make_to_order || undefined,
               };
             }),
           });
@@ -3447,6 +3474,41 @@ export function OrderForm({
               onChange={(e) => set({ ...f, delivery: e.target.value })}
             />
           </Field>
+          {!sponsor ? (
+            <Field label="Lista de precios">
+              <Pick
+                disabled={closed}
+                label="Lista de precios"
+                value={f.price_list_id}
+                onChange={(v) => {
+                  const previous = f.price_list_id || 'list';
+                  set({ ...f, price_list_id: v });
+                  I(
+                    items.map((item) => {
+                      const current = item.price_mode || 'list';
+                      if (
+                        current !== previous &&
+                        !(previous === 'list' && current === 'list')
+                      )
+                        return item;
+                      if (current === 'manual') return item;
+                      return {
+                        ...item,
+                        price_mode: v || 'list',
+                      };
+                    }),
+                  );
+                }}
+                options={[
+                  { value: '', label: 'Lista (sin descuento especial)' },
+                  ...orderPriceLists.map((list) => ({
+                    value: list.id,
+                    label: `${list.name} · ${percent(list.discount)}%`,
+                  })),
+                ]}
+              />
+            </Field>
+          ) : null}
           {!sponsor && !orderIsQuote(f.status) ? (
             <>
               <Field label="Adelanto cobrado">
@@ -3912,17 +3974,20 @@ export function OrderForm({
                       label="Sale del stock"
                       wide
                       pending={
+                        !i.make_to_order &&
                         !(i.stock_load_ids?.length || i.stock_load_id) &&
                         !sponsor
                       }
                     >
                       {(() => {
                         const selected = new Set(
-                          i.stock_load_ids?.length
-                            ? i.stock_load_ids
-                            : i.stock_load_id
-                              ? [i.stock_load_id]
-                              : [],
+                          i.make_to_order
+                            ? []
+                            : i.stock_load_ids?.length
+                              ? i.stock_load_ids
+                              : i.stock_load_id
+                                ? [i.stock_load_id]
+                                : [],
                         );
                         const missing = [...selected].filter(
                           (id) =>
@@ -3970,6 +4035,7 @@ export function OrderForm({
                                 row.supplier_id === picked[0]!.supplier_id,
                             );
                           update(i.key, {
+                            make_to_order: false,
                             stock_load_ids: ids.length ? ids : undefined,
                             stock_load_id: ids[0],
                             location: sameLocation
@@ -3985,51 +4051,66 @@ export function OrderForm({
                         }
                         return (
                           <div className="stock-load-checks">
+                            <p className="hint">
+                              Marcá de qué carga(s) sale, o pedilas a hacer si
+                              no querés sacar del depósito (obligatorio para
+                              entregar).
+                            </p>
                             {!rows.length ? (
                               <p className="hint">
                                 No hay stock cargado de este producto
                               </p>
                             ) : (
-                              <>
-                                <p className="hint">
-                                  Marcá de qué carga(s) sale (obligatorio para
-                                  entregar). Podés combinar varias si una sola
-                                  no alcanza.
-                                </p>
-                                {rows.map((row) => (
-                                  <Check
-                                    key={row.movement_id}
-                                    label={[
-                                      stockPlaceLabel(row.location),
-                                      data.contacts.find(
-                                        (c) => c.id === row.supplier_id,
-                                      )?.name,
-                                      loadDate(data, row.movement_id),
-                                      row.available > 0
-                                        ? `${quantityLabel(row.available, p?.unit)} disp.`
-                                        : 'sin unidades libres',
-                                    ]
-                                      .filter(Boolean)
-                                      .join(' · ')}
-                                    checked={selected.has(row.movement_id)}
-                                    onChange={(on) =>
-                                      toggleLoad(row.movement_id, on)
-                                    }
-                                  />
-                                ))}
-                                {selected.size > 0 &&
-                                qty > 0 &&
-                                selectedAvailable < qty ? (
-                                  <p className="pending-text">
-                                    Las cargas marcadas suman{' '}
-                                    {quantityLabel(selectedAvailable, p?.unit)}{' '}
-                                    y el ítem pide{' '}
-                                    {quantityLabel(qty, p?.unit)}. Marcá más
-                                    cargas o bajá la cantidad.
-                                  </p>
-                                ) : null}
-                              </>
+                              rows.map((row) => (
+                                <Check
+                                  key={row.movement_id}
+                                  label={[
+                                    stockPlaceLabel(row.location),
+                                    data.contacts.find(
+                                      (c) => c.id === row.supplier_id,
+                                    )?.name,
+                                    loadDate(data, row.movement_id),
+                                    row.available > 0
+                                      ? `${quantityLabel(row.available, p?.unit)} disp.`
+                                      : 'sin unidades libres',
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                  checked={selected.has(row.movement_id)}
+                                  onChange={(on) =>
+                                    toggleLoad(row.movement_id, on)
+                                  }
+                                />
+                              ))
                             )}
+                            <Check
+                              label="Se mandan a hacer"
+                              checked={!!i.make_to_order}
+                              onChange={(on) =>
+                                update(i.key, {
+                                  make_to_order: on,
+                                  ...(on
+                                    ? {
+                                        stock_load_ids: undefined,
+                                        stock_load_id: undefined,
+                                        location: undefined,
+                                      }
+                                    : {}),
+                                })
+                              }
+                            />
+                            {!i.make_to_order &&
+                            selected.size > 0 &&
+                            qty > 0 &&
+                            selectedAvailable < qty ? (
+                              <p className="pending-text">
+                                Las cargas marcadas suman{' '}
+                                {quantityLabel(selectedAvailable, p?.unit)} y
+                                el ítem pide {quantityLabel(qty, p?.unit)}.
+                                Marcá más cargas, bajá la cantidad o pedilas a
+                                hacer.
+                              </p>
+                            ) : null}
                           </div>
                         );
                       })()}
@@ -4070,16 +4151,10 @@ export function OrderForm({
                           onChange={(v) => update(i.key, { price_mode: v })}
                           options={[
                             { value: 'list', label: 'Lista' },
-                            ...(p?.attributes['Precio F&F'] ===
-                            'Pendiente de definir'
-                              ? []
-                              : [
-                                  {
-                                    value: 'ff',
-                                    label: 'Friends & Family',
-                                  },
-                                ]),
-                            { value: 'promo', label: 'Promoción' },
+                            ...orderPriceLists.map((list) => ({
+                              value: list.id,
+                              label: list.name,
+                            })),
                             { value: 'manual', label: 'Manual' },
                           ]}
                         />
@@ -5374,6 +5449,183 @@ export function StockForm({
     </form>
   );
 }
+function PriceListsSettings({
+  data,
+  save,
+  busy,
+  setBusy,
+  setError,
+}: {
+  data: Data;
+  save: Save;
+  busy: boolean;
+  setBusy: (v: boolean) => void;
+  setError: (v: string) => void;
+}) {
+  const lists = data.price_lists || [];
+  const [name, setName] = useState('');
+  const [discount, setDiscount] = useState('10');
+  const [drafts, setDrafts] = useState(() =>
+    Object.fromEntries(
+      lists.map((list) => [
+        list.id,
+        { name: list.name, discount: percent(list.discount) },
+      ]),
+    ),
+  );
+  useEffect(() => {
+    setDrafts(
+      Object.fromEntries(
+        lists.map((list) => [
+          list.id,
+          { name: list.name, discount: percent(list.discount) },
+        ]),
+      ),
+    );
+  }, [data.price_lists]);
+  async function run(body: Record<string, unknown>) {
+    setBusy(true);
+    setError('');
+    try {
+      await save(body);
+      return true;
+    } catch (e) {
+      setError((e as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="form-section">
+      <h3>Listas de precios</h3>
+      <p className="hint">
+        Definí descuentos genéricos (Friends & Family, Organizaciones,
+        Promoción, etc.). Se pueden aplicar al pedido o a cada ítem; en el
+        producto podés fijar un precio exacto por lista.
+      </p>
+      {lists.length ? (
+        <ul className="settings-partners">
+          {lists.map((list) => {
+            const draft = drafts[list.id] || {
+              name: list.name,
+              discount: percent(list.discount),
+            };
+            return (
+              <li key={list.id} className="settings-price-list-row">
+                <input
+                  aria-label={`Nombre de ${list.name}`}
+                  value={draft.name}
+                  disabled={!!list.archived}
+                  onChange={(e) =>
+                    setDrafts({
+                      ...drafts,
+                      [list.id]: { ...draft, name: e.target.value },
+                    })
+                  }
+                />
+                <label className="settings-partner-share">
+                  <input
+                    inputMode="decimal"
+                    aria-label={`Descuento de ${list.name}`}
+                    value={draft.discount}
+                    disabled={!!list.archived}
+                    onChange={(e) =>
+                      setDrafts({
+                        ...drafts,
+                        [list.id]: { ...draft, discount: e.target.value },
+                      })
+                    }
+                  />
+                  <span>%</span>
+                </label>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy || !!list.archived}
+                  onClick={() => {
+                    try {
+                      void run({
+                        action: 'price_list',
+                        id: list.id,
+                        name: draft.name.trim(),
+                        discount: parsePercent(draft.discount, 'Descuento'),
+                        archived: 0,
+                      });
+                    } catch (err) {
+                      setError((err as Error).message);
+                    }
+                  }}
+                >
+                  Guardar
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    void run({
+                      action: 'price_list',
+                      id: list.id,
+                      name: list.name,
+                      discount: list.discount,
+                      archived: list.archived ? 0 : 1,
+                    })
+                  }
+                >
+                  {list.archived ? 'Restaurar' : 'Archivar'}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="hint">Todavía no hay listas.</p>
+      )}
+      <form
+        className="settings-partner-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          try {
+            void run({
+              action: 'price_list',
+              name: name.trim(),
+              discount: parsePercent(discount, 'Descuento'),
+            }).then((ok) => {
+              if (ok) {
+                setName('');
+                setDiscount('10');
+              }
+            });
+          } catch (err) {
+            setError((err as Error).message);
+          }
+        }}
+      >
+        <div className="settings-partner-fields">
+          <Field label="Nombre">
+            <input
+              value={name}
+              placeholder="Ej. Organizaciones"
+              onChange={(e) => setName(e.target.value)}
+            />
+          </Field>
+          <Field label="%">
+            <input
+              inputMode="decimal"
+              value={discount}
+              onChange={(e) => setDiscount(e.target.value)}
+            />
+          </Field>
+        </div>
+        <button className="secondary" disabled={busy || !name.trim()}>
+          {busy ? 'Guardando…' : 'Agregar lista'}
+        </button>
+      </form>
+    </section>
+  );
+}
+
 export function SettingsForm({
   data,
   save,
@@ -5500,6 +5752,7 @@ export function SettingsForm({
           Guardar moneda
         </button>
       </div>
+      <PriceListsSettings data={data} save={save} busy={busy} setBusy={B} setError={E} />
       <section className="form-section">
         <h3>Socios</h3>
         <p className="hint">

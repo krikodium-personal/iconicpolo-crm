@@ -14,7 +14,7 @@ import {
   type ConfiguredKind,
   type ConfiguredPricing,
 } from '@/lib/configure';
-import { decimal, formatMoney, parseDecimal, parsePercent, percent } from '@/lib/money';
+import { decimal, formatMoney, parseDecimal, percent } from '@/lib/money';
 import type { Data, Product } from '@/lib/types';
 import { ErrorBox, Field, Photos } from './ui';
 import type { Save } from './forms';
@@ -202,11 +202,18 @@ export function TypeConfigForm({
   const kind = configuredKindOf(record);
   const split = splitModelo(kind);
   const photoIds = kind ? referencePhotoIds(kind) : new Set<string>();
+  const priceLists = (data.price_lists || []).filter((list) => !list.archived);
   const [f, set] = useState({
     cost: record.cost ? decimal(record.cost) : '',
     price: record.price ? decimal(record.price) : '',
-    ff_discount: percent(record.ff_discount),
-    ff_price: record.ff_price == null ? '' : decimal(record.ff_price),
+    list_prices: Object.fromEntries(
+      priceLists.map((list) => [
+        list.id,
+        record.list_prices?.[list.id] != null
+          ? decimal(record.list_prices[list.id]!)
+          : '',
+      ]),
+    ) as Record<string, string>,
     photos: record.pricing?.photos || {},
     extras: Object.fromEntries(
       (kind ? PRICED_GROUPS[kind] : []).flatMap((group) =>
@@ -297,7 +304,11 @@ export function TypeConfigForm({
         try {
           let cost = f.cost.trim() ? parseDecimal(f.cost) : 0;
           let price = f.price.trim() ? parseDecimal(f.price) : 0;
-          const ffPrice = f.ff_price.trim() ? parseDecimal(f.ff_price) : null;
+          const listPrices: Record<string, number> = {};
+          for (const list of priceLists) {
+            const raw = f.list_prices[list.id]?.trim();
+            if (raw) listPrices[list.id] = parseDecimal(raw);
+          }
           const extras = Object.fromEntries(
             Object.entries(f.extras).map(([id, extra]) => [
               id,
@@ -339,10 +350,11 @@ export function TypeConfigForm({
             options: [],
             cost,
             price,
-            ff_discount: parsePercent(f.ff_discount || '0', 'F&F'),
-            ff_price: ffPrice,
-            promo_kind: record.promo_kind || 'none',
-            promo_value: record.promo_value || 0,
+            list_prices: listPrices,
+            ff_discount: 0,
+            ff_price: null,
+            promo_kind: 'none',
+            promo_value: 0,
             attributes: (() => {
               const attrs = { ...record.attributes };
               if (cost) delete attrs.Costo;
@@ -415,24 +427,33 @@ export function TypeConfigForm({
             </Field>
           </div>
         )}
-        <div className="form-grid" style={{ marginTop: 14 }}>
-          <Field label="Descuento Friends & Family (%)">
-            <input
-              required
-              inputMode="numeric"
-              value={f.ff_discount}
-              onChange={(e) => set({ ...f, ff_discount: e.target.value })}
-            />
-          </Field>
-          <Field label="Precio Friends & Family exacto">
-            <input
-              inputMode="decimal"
-              placeholder="Opcional"
-              value={f.ff_price}
-              onChange={(e) => set({ ...f, ff_price: e.target.value })}
-            />
-          </Field>
-        </div>
+        {priceLists.length ? (
+          <div className="form-grid" style={{ marginTop: 14 }}>
+            {priceLists.map((list) => (
+              <Field key={list.id} label={`Precio exacto · ${list.name}`}>
+                <input
+                  inputMode="decimal"
+                  placeholder={`Opcional · ${percent(list.discount)}% dto.`}
+                  value={f.list_prices[list.id] || ''}
+                  onChange={(e) =>
+                    set({
+                      ...f,
+                      list_prices: {
+                        ...f.list_prices,
+                        [list.id]: e.target.value,
+                      },
+                    })
+                  }
+                />
+              </Field>
+            ))}
+          </div>
+        ) : (
+          <p className="hint" style={{ marginTop: 14 }}>
+            Agregá listas de precios en Configuración para fijar precios exactos
+            por lista.
+          </p>
+        )}
       </section>
       {PRICED_GROUPS[kind]
         .filter(

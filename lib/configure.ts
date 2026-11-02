@@ -3185,12 +3185,14 @@ export function itemStockHold(
       location?: string;
       stock_load_id?: string;
       stock_load_ids?: string[];
+      make_to_order?: boolean;
     };
   },
   kind: ConfiguredKind | null,
   order: { id: string; number: string },
 ): StockHold | null {
   if (item.quantity <= 0) return null;
+  if (item.selections.make_to_order) return null;
   const cabezadaRiendas =
     !kind && item.selections.config
       ? (() => {
@@ -3254,6 +3256,7 @@ export function reservedHolds(
         location?: string;
         stock_load_id?: string;
         stock_load_ids?: string[];
+        make_to_order?: boolean;
       };
     }[];
   }[],

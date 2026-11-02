@@ -673,6 +673,32 @@ test('plain SKU orders reserve warehouse stock without from_stock', () => {
   assert.equal(rows[0]?.reservations[0]?.orderNumber, 'IC-TOMY');
 });
 
+test('make-to-order plain SKUs do not reserve warehouse stock', () => {
+  const holds = reservedHolds(
+    [
+      {
+        id: 'o1',
+        number: 'IC-MAKE',
+        archived: 0,
+        status: 'nuevo',
+        items: [
+          {
+            product_id: 'estribera',
+            quantity: 4,
+            selections: {
+              options: [],
+              attributes: {},
+              make_to_order: true,
+            },
+          },
+        ],
+      },
+    ],
+    [{ id: 'estribera', category: 'accesorios', kind: 'sku' }],
+  );
+  assert.equal(holds.length, 0);
+});
+
 test('delivered orders release the reservation and closed ones keep it', () => {
   const config = defaultMontura();
   const key = stockKey('montura', config);

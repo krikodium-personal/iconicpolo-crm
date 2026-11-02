@@ -11,8 +11,11 @@ import {
   orderDiscountPercent,
   parseDecimal,
   promoPrice,
+  parseListPrices,
   parsePercent,
   percent,
+  priceFromList,
+  resolveListBasePrice,
   ratio,
   arsFromUsd,
   usdFromArs,
@@ -116,4 +119,36 @@ test('supports percentage and manual promotional prices', () => {
     promoPrice({ price: 10_000, promo_kind: 'manual', promo_value: 7_990 }),
     7_990,
   );
+});
+
+test('parses product list prices and applies % or exact amount', () => {
+  assert.deepEqual(parseListPrices('{"a":9000,"b":-1}'), { a: 9000 });
+  assert.equal(
+    priceFromList(10_000, { id: 'a', discount: 1_000 }, {}),
+    9_000,
+  );
+  assert.equal(
+    priceFromList(10_000, { id: 'a', discount: 1_000 }, { a: 8_500 }),
+    8_500,
+  );
+});
+
+test('resolves base price from configured price lists', () => {
+  const lists = [
+    { id: 'list-ff', discount: 1_000 },
+    { id: 'list-org', discount: 2_000 },
+  ];
+  const product = {
+    price: 10_000,
+    list_prices: { 'list-org': 7_500 },
+    ff_discount: 1_500,
+    ff_price: null as number | null,
+    promo_kind: 'none',
+    promo_value: 0,
+  };
+  assert.equal(resolveListBasePrice(product, 'list', lists), 10_000);
+  assert.equal(resolveListBasePrice(product, 'list-ff', lists), 9_000);
+  assert.equal(resolveListBasePrice(product, 'list-org', lists), 7_500);
+  assert.equal(resolveListBasePrice(product, 'manual', lists, 8_000), 8_000);
+  assert.throws(() => resolveListBasePrice(product, 'missing', lists));
 });

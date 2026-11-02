@@ -1655,6 +1655,15 @@ button.dialog-kicker:hover {
 .field.wide {
   grid-column: 1/-1;
 }
+.settings-price-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 8px;
+  align-items: center;
+}
+.settings-price-list-row > input {
+  min-width: 0;
+}
 .stock-load-checks {
   display: flex;
   flex-direction: column;
