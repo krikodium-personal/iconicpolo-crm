@@ -312,20 +312,28 @@ export function OrderProductPicker({
               product.id,
             ).reduce((sum, row) => sum + row.available, 0);
             const takeFromStock = available > 0;
+            // Cabezadas separan stock por riendas: hay que elegir la carga
+            // (o las riendas) en vez de marcar from_stock a ciegas.
+            const needsLoadPick =
+              takeFromStock && isCabezadaProduct(product);
             return (
               <button
                 key={product.id}
                 type="button"
                 className="record-card clickable-row order-pick-card"
-                onClick={() =>
+                onClick={() => {
+                  if (needsLoadPick) {
+                    setStockOf(product);
+                    return;
+                  }
                   onPick(
                     product,
                     undefined,
                     product.supplier_id || undefined,
                     takeFromStock,
                     takeFromStock ? available : undefined,
-                  )
-                }
+                  );
+                }}
               >
                 <div className="record-card-top">
                   <ProductPhoto name={product.name} url={product.photos[0]} />

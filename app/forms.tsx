@@ -2914,14 +2914,17 @@ export function OrderForm({
     if (!product) return null;
     const kind = configuredKindOf(product);
     if (kind && !item.from_stock) return null;
-    let key = '';
+    // null = todavía no hay combinación (p. ej. cabezada sin riendas): mostrar todas.
+    let key: string | null = '';
     try {
       if (kind && item.config)
         key = stockKey(kind, parseConfig(kind, item.config));
-      else if (isCabezadaProduct(product) && item.config)
-        key = cabezadaStockKey(parseCabezadaConfig(item.config));
+      else if (isCabezadaProduct(product)) {
+        const riendas = tryParseCabezadaConfig(item.config);
+        key = riendas ? cabezadaStockKey(riendas) : null;
+      }
     } catch {
-      key = '';
+      key = isCabezadaProduct(product) || kind ? null : '';
     }
     return stockLoadRows(
       data.movements,
@@ -2930,7 +2933,10 @@ export function OrderForm({
         ...draftHolds(item.key),
       ],
       product.id,
-    ).filter((row) => row.movement_id && row.config_key === key);
+    ).filter(
+      (row) =>
+        row.movement_id && (key === null || row.config_key === key),
+    );
   }
   function supplierName(item: DraftItem, product?: Product) {
     if (item.supplier_id === NEW_SUPPLIER)
@@ -4008,6 +4014,17 @@ export function OrderForm({
                               (row) =>
                                 row.supplier_id === picked[0]!.supplier_id,
                             );
+                          const cabezadaFromLoad =
+                            p && isCabezadaProduct(p) && picked[0]
+                              ? tryParseCabezadaConfig(picked[0].config)
+                              : null;
+                          const sameCabezada =
+                            !cabezadaFromLoad ||
+                            picked.every(
+                              (row) =>
+                                (row.config_key || '') ===
+                                (picked[0]!.config_key || ''),
+                            );
                           update(i.key, {
                             make_to_order: false,
                             stock_load_ids: ids.length ? ids : undefined,
@@ -4021,6 +4038,9 @@ export function OrderForm({
                             new_supplier: sameSupplier
                               ? undefined
                               : i.new_supplier,
+                            ...(cabezadaFromLoad && sameCabezada
+                              ? { config: cabezadaFromLoad }
+                              : {}),
                           });
                         }
                         return (
@@ -4039,6 +4059,11 @@ export function OrderForm({
                                 <Check
                                   key={row.movement_id}
                                   label={[
+                                    p && isCabezadaProduct(p)
+                                      ? cabezadaRiendasLabel(
+                                          tryParseCabezadaConfig(row.config),
+                                        )
+                                      : '',
                                     stockPlaceLabel(row.location),
                                     data.contacts.find(
                                       (c) => c.id === row.supplier_id,
@@ -4090,20 +4115,34 @@ export function OrderForm({
                       })()}
                     </Field>
                   ) : null}
-                  {!i.snapshot &&
-                  p &&
-                  isCabezadaProduct(p) &&
-                  !i.from_stock ? (
-                    <Field label="Riendas *">
+                  {!i.snapshot && p && isCabezadaProduct(p) ? (
+                    <Field
+                      label="Riendas *"
+                      pending={!lineRiendas}
+                    >
                       <Pick
                         label="Riendas"
                         value={lineRiendas ? String(lineRiendas.riendas) : ''}
+                        disabled={
+                          !!i.from_stock &&
+                          !!(i.stock_load_ids?.length || i.stock_load_id) &&
+                          !!lineRiendas
+                        }
                         onChange={(v) =>
                           update(i.key, {
                             config:
                               v === '1' || v === '2'
                                 ? parseCabezadaConfig({ riendas: Number(v) })
                                 : undefined,
+                            // Al cambiar riendas, las cargas marcadas pueden no aplicar.
+                            ...((i.stock_load_ids?.length || i.stock_load_id) &&
+                            (!lineRiendas ||
+                              String(lineRiendas.riendas) !== v)
+                              ? {
+                                  stock_load_ids: undefined,
+                                  stock_load_id: undefined,
+                                }
+                              : {}),
                           })
                         }
                         options={[
