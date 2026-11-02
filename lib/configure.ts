@@ -646,9 +646,19 @@ function leatherProductColorEn(id: string) {
   return en[id] || id;
 }
 
-function monturaColorLabel(id: string, lang: ConfigLang = 'es') {
+/** Leather product color label (montura / rodillera / bota) for ES/EN sheets. */
+export function leatherColorLabel(id: string, lang: ConfigLang = 'es') {
   if (lang === 'en') return leatherProductColorEn(id);
-  return MONTURA_COLORS.find((color) => color.id === id)?.label || id;
+  if (id === 'marron') return 'Marrón';
+  return (
+    RODILLERA_COLORS.find((color) => color.id === id)?.label ||
+    MONTURA_COLORS.find((color) => color.id === id)?.label ||
+    id
+  );
+}
+
+function monturaColorLabel(id: string, lang: ConfigLang = 'es') {
+  return leatherColorLabel(id, lang);
 }
 
 export const RODILLERA_TIPOS = [
@@ -2416,7 +2426,7 @@ export function stockKey(kind: ConfiguredKind, raw: ProductConfig) {
   });
 }
 
-function colorName(id: string, lang: ConfigLang = 'es') {
+export function colorName(id: string, lang: ConfigLang = 'es') {
   const swatch = colorSwatch(id);
   if (!swatch) return id;
   if (lang === 'en') return swatch.nameEn || swatch.name;

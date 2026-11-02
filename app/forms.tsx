@@ -126,6 +126,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { buildFicha, buildFichaProductDetail } from '@/lib/ficha';
+import { productNameEn } from '@/lib/product-i18n';
 import type { OrderPrefill } from '@/lib/solicitud';
 import { FichaView, CotizacionFichaView, buildCotizacionData } from './ficha';
 import { whatsapp, whatsappGroup } from '@/lib/whatsapp';
@@ -1579,43 +1580,6 @@ function itemDescription(
       ? [name, riendas, ...extras].join('\n')
       : `${name} · ${riendas}`;
   return extras.length ? [name, ...extras].join('\n') : name;
-}
-
-/** Phrase-level EN for SKU / accessory names on English quotes. */
-function productNameEn(name: string, product?: Product) {
-  const category = product?.category || '';
-  const known: Record<string, string> = {
-    Casco: 'Helmet',
-    Montura: 'Saddle',
-    Rodillera: 'Knee pad',
-    Bota: 'Boot',
-    Botas: 'Boots',
-  };
-  if (known[name]) return known[name];
-  if (known[category] && name === category) return known[category];
-
-  // Longest phrases first so "sobrecincha" / "cabezada completa" win over shorter stems.
-  const phrases: [RegExp, string][] = [
-    [/cabezada completa/gi, 'Complete bridle set'],
-    [/sobrecinchas?/gi, 'Overgirth'],
-    [/sobreinchas?/gi, 'Overgirth'],
-    [/estriberas/gi, 'Stirrup leathers'],
-    [/riendillas/gi, 'Running reins'],
-    [/cabezada/gi, 'Complete bridle set'],
-    [/pechera/gi, 'Breastplate'],
-    [/pretal/gi, 'Breastplate'],
-    [/cincha/gi, 'Girth'],
-    [/estribos/gi, 'Stirrups'],
-    [/desmontable/gi, 'detachable'],
-    [/tiradores/gi, 'straps'],
-    [/\bmarr[oó]n\b/gi, 'brown'],
-    [/\bnegro\b/gi, 'black'],
-  ];
-  let next = name;
-  for (const [pattern, replacement] of phrases) {
-    next = next.replace(pattern, replacement);
-  }
-  return next;
 }
 
 function itemPhoto(

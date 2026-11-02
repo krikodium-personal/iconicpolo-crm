@@ -11,11 +11,13 @@ import {
 } from '../lib/configure.ts';
 import {
   buildFicha,
+  buildFichaProductDetail,
   fichaFileName,
   fichaShareText,
   jpegToPdf,
   shortCustomerName,
 } from '../lib/ficha.ts';
+import { productNameEn } from '../lib/product-i18n.ts';
 import type { Item, Product } from '../lib/types.ts';
 
 const JPEG_1X1 = Uint8Array.from(
@@ -382,6 +384,92 @@ test('sku ficha uses product name, extras and stored attributes', () => {
   assert.deepEqual(ficha.labels, [{ label: 'Talle', value: 'M' }]);
   assert.equal(ficha.swatches.length, 0);
   assert.equal(ficha.artwork.length, 0);
+});
+
+test('english quote translates sku titles, attributes and leather colors', () => {
+  assert.equal(
+    productNameEn('Sobrecinchas guarda pampa'),
+    'Overgirth guarda pampa',
+  );
+  assert.equal(
+    productNameEn('Cincha neoprene desmontable 2 tiradores JMG'),
+    'Detachable neoprene girth 2 straps JMG',
+  );
+  assert.equal(
+    productNameEn('Estriberas negro'),
+    'Stirrup leathers black',
+  );
+
+  const sku = buildFichaProductDetail({
+    lang: 'en',
+    product: product({
+      name: 'Riendas por par negro',
+      category: 'accesorios',
+      kind: 'sku',
+    }),
+    item: item({
+      name: 'Riendas por par negro',
+      selections: {
+        options: [],
+        attributes: { Color: 'Negro', Talle: 'Chica' },
+      },
+    }),
+  });
+  assert.equal(sku.productTitle, 'Reins per pair black');
+  assert.deepEqual(sku.labels, [
+    { label: 'Color', value: 'Black' },
+    { label: 'Size', value: 'Small' },
+  ]);
+
+  const montura = buildFicha({
+    lang: 'en',
+    order: { number: '11', date: '2026-05-06' },
+    product: product({ name: 'Montura', category: 'monturas' }),
+    item: item({
+      name: 'Montura',
+      selections: {
+        options: [],
+        attributes: {},
+        config: {
+          ...defaultMontura(),
+          color: 'marron',
+          iniciales: true,
+          inicialesTexto: 'AB',
+          inicialesColor: 'dorado',
+          inicialesTipografia: 'didot',
+          personalizacionUbicacion: 'faldon',
+        },
+      },
+    }),
+  });
+  assert.equal(montura.productTitle, 'Saddle');
+  assert.equal(montura.swatches[0]?.name, 'Brown');
+  assert.equal(montura.initials?.colorName, 'Gold');
+  assert.equal(montura.initials?.place, 'Skirt flap');
+
+  const rodillera = buildFicha({
+    lang: 'en',
+    order: { number: '12', date: '2026-05-06' },
+    product: product({ name: 'Rodillera', category: 'rodilleras' }),
+    item: item({
+      name: 'Rodillera',
+      selections: {
+        options: [],
+        attributes: {},
+        config: {
+          ...defaultRodillera(),
+          color: 'tabaco',
+          bordado: true,
+          bordadoImagen: '/api/images/bordado1',
+          bordadoTamano: 'grande',
+          bordadoUbicacion: 'derecha',
+        },
+      },
+    }),
+  });
+  assert.equal(rodillera.swatches[0]?.name, 'Tobacco');
+  assert.match(rodillera.artwork[0]?.caption || '', /Right/);
+  assert.match(rodillera.artwork[0]?.caption || '', /Large/);
 });
 
 test('jpegToPdf wraps a jpeg into a one-page PDF', () => {

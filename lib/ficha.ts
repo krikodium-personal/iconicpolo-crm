@@ -2,11 +2,12 @@ import {
   BOTA_PLACES,
   FONTS,
   LEGACY_FONTS,
+  colorName,
   colorSwatch,
   KIND_TITLES,
   LEATHER_HEX,
   LEATHER_PHOTOS,
-  RODILLERA_COLORS,
+  leatherColorLabel,
   RODILLERA_PLACES,
   RODILLERA_SIZES,
   cascoPrintNombre,
@@ -33,10 +34,36 @@ import {
   type ColorElegido,
   type TacoConfig,
 } from './configure.ts';
+import { productNameEn, translateAttributeRows } from './product-i18n.ts';
 import { TACO_ZONAS, tacoLaca, tacoPuntera } from './taco-catalog.ts';
 import { cascoChosenColorName } from './casco-catalog.ts';
 import type { Contact, Item, Product, ProductUnit } from './types';
 import { whatsapp, whatsappGroup } from './whatsapp.ts';
+
+const PLACE_EN: Record<string, string> = {
+  izquierda: 'Left',
+  derecha: 'Right',
+  centro: 'Center',
+};
+const SIZE_EN: Record<string, string> = {
+  chica: 'Small',
+  mediano: 'Medium',
+  grande: 'Large',
+};
+
+function placeLabel(
+  id: string,
+  places: readonly { id: string; label: string }[],
+  lang: ConfigLang,
+) {
+  if (lang === 'en') return PLACE_EN[id] || id;
+  return places.find((place) => place.id === id)?.label || id;
+}
+
+function sizeLabel(id: string, lang: ConfigLang) {
+  if (lang === 'en') return SIZE_EN[id] || id;
+  return RODILLERA_SIZES.find((size) => size.id === id)?.label || id;
+}
 
 const KIND_NAME: Record<ConfiguredKind, Record<ConfigLang, string>> = {
   montura: { es: 'Montura', en: 'Saddle' },
@@ -140,23 +167,26 @@ function fontLabel(id: string) {
   );
 }
 
-function leatherName(id: string) {
-  if (id === 'marron') return 'Marrón';
-  return RODILLERA_COLORS.find((color) => color.id === id)?.label || id;
-}
-
-function leatherSwatch(label: string, id: string): FichaSwatch {
+function leatherSwatch(
+  label: string,
+  id: string,
+  lang: ConfigLang = 'es',
+): FichaSwatch {
   return {
     label,
-    name: leatherName(id),
+    name: leatherColorLabel(id, lang),
     hex: LEATHER_HEX[id] || initialColor(id)?.hex || '#1c1612',
   };
 }
 
-function chartSwatch(label: string, id: string): FichaSwatch | null {
+function chartSwatch(
+  label: string,
+  id: string,
+  lang: ConfigLang = 'es',
+): FichaSwatch | null {
   const color = initialColor(id);
   if (!color) return null;
-  return { label, name: color.name, hex: color.hex };
+  return { label, name: colorName(id, lang), hex: color.hex };
 }
 
 function initialsBase(
@@ -164,6 +194,7 @@ function initialsBase(
   fontId: string,
   colorId: string,
   surfaceId?: string,
+  lang: ConfigLang = 'es',
 ): FichaInitials {
   const color = initialColor(colorId);
   const surfaceHex = surfaceId
@@ -175,7 +206,7 @@ function initialsBase(
     fontName: fontLabel(fontId),
     fontFamily: fontStack(fontId),
     fontWeight: fontWeight(fontId),
-    colorName: color?.name || colorId,
+    colorName: colorName(colorId, lang) || color?.name || colorId,
     hex: color?.hex || '#111111',
     surfaceId,
     surfaceHex,
@@ -183,9 +214,17 @@ function initialsBase(
   };
 }
 
-function skuDescription(item: Item) {
-  const extras = item.selections.options.map((option) => option.name);
-  return extras.length ? [item.name, ...extras].join('\n') : item.name;
+function skuDescription(
+  item: Item,
+  product?: Product,
+  lang: ConfigLang = 'es',
+) {
+  const extras = item.selections.options.map((option) =>
+    lang === 'en' ? productNameEn(option.name) : option.name,
+  );
+  const name =
+    lang === 'en' ? productNameEn(item.name, product) : item.name;
+  return extras.length ? [name, ...extras].join('\n') : name;
 }
 
 function configuredVisuals(
@@ -200,13 +239,17 @@ function configuredVisuals(
 
   if (kind === 'montura') {
     const c = raw as MonturaConfig;
-    swatches.push(leatherSwatch(L('Color', 'Color'), c.color));
-    const placeLabel = {
+    swatches.push(leatherSwatch(L('Color', 'Color'), c.color, lang));
+    const place = {
       tapita: L('Tapita', 'Flap tip'),
       faldon: L('Faldón', 'Skirt flap'),
     }[c.personalizacionUbicacion];
     if (c.iniciales) {
-      const color = chartSwatch(L('Color iniciales', 'Initials color'), c.inicialesColor);
+      const color = chartSwatch(
+        L('Color iniciales', 'Initials color'),
+        c.inicialesColor,
+        lang,
+      );
       if (color) swatches.push(color);
       initials = {
         ...initialsBase(
@@ -214,20 +257,22 @@ function configuredVisuals(
           c.inicialesTipografia,
           c.inicialesColor,
           c.color,
+          lang,
         ),
-        place: placeLabel,
+        place,
       };
     }
     if (c.logoPersonalizado && c.logoPersonalizadoImagen) {
       const thread = chartSwatch(
         L('Color de hilo logo', 'Logo thread color'),
         c.logoPersonalizadoColor,
+        lang,
       );
       if (thread) swatches.push(thread);
       artwork.push({
         kind: 'logo',
         url: c.logoPersonalizadoImagen,
-        caption: `${L('Logo personalizado', 'Custom logo')} · ${placeLabel} · ${thread?.name || c.logoPersonalizadoColor}`,
+        caption: `${L('Logo personalizado', 'Custom logo')} · ${place} · ${thread?.name || c.logoPersonalizadoColor}`,
       });
     }
     return { swatches, initials, artwork };
@@ -235,14 +280,22 @@ function configuredVisuals(
 
   if (kind === 'rodillera') {
     const c = raw as RodilleraConfig;
-    swatches.push(leatherSwatch(L('Color', 'Color'), c.color));
+    swatches.push(leatherSwatch(L('Color', 'Color'), c.color, lang));
     if (c.protectorCentroColor !== c.color) {
       swatches.push(
-        leatherSwatch(L('Protector centro', 'Center protector'), c.protectorCentroColor),
+        leatherSwatch(
+          L('Protector centro', 'Center protector'),
+          c.protectorCentroColor,
+          lang,
+        ),
       );
     }
     if (c.iniciales) {
-      const color = chartSwatch(L('Color iniciales', 'Initials color'), c.inicialesColor);
+      const color = chartSwatch(
+        L('Color iniciales', 'Initials color'),
+        c.inicialesColor,
+        lang,
+      );
       if (color) swatches.push(color);
       initials = {
         ...initialsBase(
@@ -250,28 +303,25 @@ function configuredVisuals(
           c.inicialesTipografia,
           c.inicialesColor,
           c.color,
+          lang,
         ),
-        place:
-          RODILLERA_PLACES.find((place) => place.id === c.inicialesUbicacion)
-            ?.label || c.inicialesUbicacion,
-        size:
-          RODILLERA_SIZES.find((size) => size.id === c.inicialesTamano)?.label ||
-          c.inicialesTamano,
+        place: placeLabel(c.inicialesUbicacion, RODILLERA_PLACES, lang),
+        size: sizeLabel(c.inicialesTamano, lang),
       };
     }
     if (c.bordado && c.bordadoImagen) {
-      const color = chartSwatch(L('Color bordado', 'Embroidery color'), c.bordadoColor);
+      const color = chartSwatch(
+        L('Color bordado', 'Embroidery color'),
+        c.bordadoColor,
+        lang,
+      );
       if (color) swatches.push(color);
-      const size =
-        RODILLERA_SIZES.find((item) => item.id === c.bordadoTamano)?.label ||
-        c.bordadoTamano;
-      const place =
-        RODILLERA_PLACES.find((item) => item.id === c.bordadoUbicacion)?.label ||
-        c.bordadoUbicacion;
+      const size = sizeLabel(c.bordadoTamano, lang);
+      const place = placeLabel(c.bordadoUbicacion, RODILLERA_PLACES, lang);
       artwork.push({
         kind: 'bordado',
         url: c.bordadoImagen,
-        caption: `${L('Bordado', 'Embroidery')} · ${size} · ${place} · ${colorSwatch(c.bordadoColor)?.name || c.bordadoColor}`,
+        caption: `${L('Bordado', 'Embroidery')} · ${size} · ${place} · ${colorName(c.bordadoColor, lang)}`,
       });
     }
     return { swatches, initials, artwork };
@@ -308,9 +358,13 @@ function configuredVisuals(
 
   if (kind === 'bota') {
     const c = raw as BotaConfig;
-    swatches.push(leatherSwatch(L('Color', 'Color'), c.color));
+    swatches.push(leatherSwatch(L('Color', 'Color'), c.color, lang));
     if (c.iniciales) {
-      const color = chartSwatch(L('Color iniciales', 'Initials color'), c.inicialesColor);
+      const color = chartSwatch(
+        L('Color iniciales', 'Initials color'),
+        c.inicialesColor,
+        lang,
+      );
       if (color) swatches.push(color);
       initials = {
         ...initialsBase(
@@ -318,22 +372,23 @@ function configuredVisuals(
           c.inicialesTipografia,
           c.inicialesColor,
           c.color,
+          lang,
         ),
-        place:
-          BOTA_PLACES.find((place) => place.id === c.inicialesUbicacion)
-            ?.label || c.inicialesUbicacion,
+        place: placeLabel(c.inicialesUbicacion, BOTA_PLACES, lang),
       };
     }
     if (c.bordado && c.bordadoImagen) {
-      const color = chartSwatch(L('Color bordado', 'Embroidery color'), c.bordadoColor);
+      const color = chartSwatch(
+        L('Color bordado', 'Embroidery color'),
+        c.bordadoColor,
+        lang,
+      );
       if (color) swatches.push(color);
-      const place =
-        BOTA_PLACES.find((item) => item.id === c.bordadoUbicacion)?.label ||
-        c.bordadoUbicacion;
+      const place = placeLabel(c.bordadoUbicacion, BOTA_PLACES, lang);
       artwork.push({
         kind: 'bordado',
         url: c.bordadoImagen,
-        caption: `${L('Bordado', 'Embroidery')} · ${place} · ${colorSwatch(c.bordadoColor)?.name || c.bordadoColor}`,
+        caption: `${L('Bordado', 'Embroidery')} · ${place} · ${colorName(c.bordadoColor, lang)}`,
       });
     }
     return { swatches, initials, artwork };
@@ -423,7 +478,7 @@ function configuredVisuals(
   if (c.iniciales)
     parts.push([L('Color iniciales', 'Initials color'), c.inicialesColor]);
   for (const [label, id] of parts) {
-    const swatch = chartSwatch(label, id);
+    const swatch = chartSwatch(label, id, lang);
     if (swatch) swatches.push(swatch);
   }
   if (c.iniciales) {
@@ -433,6 +488,7 @@ function configuredVisuals(
         c.inicialesTipografia,
         c.inicialesColor,
         c.colorCasco,
+        lang,
       ),
       place:
         c.inicialesUbicacion === 'derecha'
@@ -490,11 +546,15 @@ export function buildFichaProductDetail({
   const kind = product ? configuredKindOf(product) : null;
   const description = product
     ? describeConfigured(product, item.selections.config, lang) ||
-      skuDescription(item)
-    : skuDescription(item);
-  let labels: { label: string; value: string }[] = Object.entries(
-    item.selections.attributes,
-  ).map(([label, value]) => ({ label, value }));
+      skuDescription(item, product, lang)
+    : skuDescription(item, product, lang);
+  let labels: { label: string; value: string }[] = translateAttributeRows(
+    Object.entries(item.selections.attributes).map(([label, value]) => ({
+      label,
+      value,
+    })),
+    lang,
+  );
   let swatches: FichaSwatch[] = [];
   let initials: FichaInitials | undefined;
   let artwork: FichaArtwork[] = [];
@@ -516,9 +576,12 @@ export function buildFichaProductDetail({
       /* keep stored attributes */
     }
   }
+  const rawTitle = product?.name || item.name || KIND_TITLES.montura;
   const title = kind
     ? KIND_NAME[kind][lang]
-    : product?.name || item.name || KIND_TITLES.montura;
+    : lang === 'en'
+      ? productNameEn(rawTitle, product)
+      : rawTitle;
   return {
     productTitle: title,
     description,
