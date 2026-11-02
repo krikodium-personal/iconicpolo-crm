@@ -1,6 +1,7 @@
 import type {
   AccountEntry,
   AccountExpense,
+  Item,
   Order,
   OrderPayment,
   Partner,
@@ -8,6 +9,7 @@ import type {
 } from './types';
 import { newestFirst } from './types';
 import { formatMoney, formatRate } from './money';
+import { stockLoadIdsOf } from './configure';
 
 export const SHARE_TOTAL = 10000;
 
@@ -721,11 +723,94 @@ export function orderCostRecovered(order: Order) {
   return order.paid >= order.total ? order.cost : 0;
 }
 
+/** Ítem a medida (no sale de un ingreso de stock). */
+export function itemIsMakeToOrder(item: Pick<Item, 'selections'>) {
+  return !!item.selections.make_to_order || !item.selections.from_stock;
+}
+
+/**
+ * Costo de líneas a medida: requiere `orders.cost_partner_id`
+ * (quién paga esa producción). Pedidos sin ítems (legado) = costo total.
+ */
+export function orderMakeToOrderCost(order: Pick<Order, 'items' | 'cost'>) {
+  if (!order.items.length) return order.cost > 0 ? order.cost : 0;
+  return order.items.reduce((sum, item) => {
+    if (item.cost <= 0 || !itemIsMakeToOrder(item)) return sum;
+    return sum + item.cost;
+  }, 0);
+}
+
+type RecoveryLoad = {
+  id?: string;
+  cost_paid?: number;
+  paid_partner_id?: string;
+};
+
+/**
+ * Parte el costo del pedido entre socios según quién financió cada
+ * producción: stock → `paid_partner_id` del ingreso; a medida →
+ * `order.cost_partner_id`. No mira si el pedido está cobrado.
+ */
+export function orderCostAttributionByPartner(
+  order: Order,
+  movements: RecoveryLoad[] = [],
+): Map<string, number> {
+  const result = new Map<string, number>();
+  if (order.cost <= 0) return result;
+
+  function add(id: string, amount: number) {
+    if (!id || amount <= 0) return;
+    result.set(id, (result.get(id) || 0) + amount);
+  }
+
+  if (!order.items.length) {
+    add(order.cost_partner_id, order.cost);
+    return result;
+  }
+
+  const byId = new Map(
+    movements
+      .filter((movement): movement is RecoveryLoad & { id: string } => !!movement.id)
+      .map((movement) => [movement.id, movement]),
+  );
+
+  for (const item of order.items) {
+    if (item.cost <= 0) continue;
+    if (itemIsMakeToOrder(item)) {
+      add(order.cost_partner_id, item.cost);
+      continue;
+    }
+    const loadIds = stockLoadIdsOf(item.selections);
+    if (!loadIds.length) continue;
+    const share = Math.floor(item.cost / loadIds.length);
+    let remainder = item.cost - share * loadIds.length;
+    for (const loadId of loadIds) {
+      const amount = share + (remainder > 0 ? 1 : 0);
+      if (remainder > 0) remainder -= 1;
+      const load = byId.get(loadId);
+      if (load?.cost_paid && load.paid_partner_id) {
+        add(load.paid_partner_id, amount);
+      }
+    }
+  }
+  return result;
+}
+
+/** Igual que la atribución, pero vacío si el pedido no está cobrado completo. */
+export function orderCostRecoveryByPartner(
+  order: Order,
+  movements: RecoveryLoad[] = [],
+): Map<string, number> {
+  if (orderCostRecovered(order) <= 0) return new Map();
+  return orderCostAttributionByPartner(order, movements);
+}
+
 /**
  * Situación financiera por socio:
  * - Inversión = movimientos de cuenta que pagó (los ingresos de stock pagados
  *   generan su propio movimiento) + stock pagado viejo sin movimiento vinculado
- * - Recuperado = costos de ventas pagadas por completo asignados a ese socio
+ * - Recuperado = costos de ventas pagadas por completo, partidos por quién
+ *   financió cada producción (stock o a medida)
  * - Ganancia = % sobre la ganancia del negocio (igual que caja de socios)
  */
 export function financialSituation(
@@ -771,8 +856,12 @@ export function financialSituation(
     add(investment, entry.partner_id, amountIn(entry, currency));
   }
   for (const order of collectedOrders(orders)) {
-    if (!order.cost_partner_id) continue;
-    add(recovered, order.cost_partner_id, orderCostRecovered(order));
+    for (const [partnerId, amount] of orderCostRecoveryByPartner(
+      order,
+      movements,
+    )) {
+      add(recovered, partnerId, amount);
+    }
   }
   const assigned = allocateShares(profit, partners);
   return partners

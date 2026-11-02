@@ -15,7 +15,10 @@ import {
   cashoutsByMonth,
   financialSituation,
   monthlyResults,
+  orderCostAttributionByPartner,
   orderCostRecovered,
+  orderCostRecoveryByPartner,
+  orderMakeToOrderCost,
   partnerBalances,
   partnerRemaining,
   remainingProfit,
@@ -25,6 +28,7 @@ import {
 } from '../lib/account.ts';
 import type {
   AccountExpense,
+  Item,
   Movement,
   Order,
   Partner,
@@ -558,6 +562,144 @@ test('cost is recovered only while the order is fully paid', () => {
   assert.equal(recovered(paid), 20_000);
   assert.equal(recovered(partial), 0);
   assert.equal(recovered(unpaid), 0);
+});
+
+function line(
+  orderId: string,
+  id: string,
+  cost: number,
+  selections: Item['selections'],
+): Item {
+  return {
+    id,
+    order_id: orderId,
+    product_id: 'p1',
+    name: id,
+    sku: id,
+    selections: { options: [], attributes: {}, ...selections },
+    unit_price: cost,
+    unit_cost: cost,
+    quantity: 1,
+    discount: 0,
+    total: cost,
+    cost,
+  };
+}
+
+test('stock cost recovers to the partner who paid the inbound load', () => {
+  const sale = {
+    ...order('o-stock', '2026-04-01', 50_000, 20_000, 'entregado', 'pablo', ''),
+    items: [
+      line('o-stock', 'i1', 20_000, {
+        options: [],
+        attributes: {},
+        from_stock: true,
+        stock_load_id: 'load-1',
+      }),
+    ],
+  };
+  const movements = [
+    {
+      id: 'load-1',
+      product_id: 'p1',
+      quantity: 1,
+      cost_paid: 1,
+      paid_partner_id: 'ivan',
+    },
+  ];
+  assert.equal(orderMakeToOrderCost(sale), 0);
+  assert.deepEqual(
+    [...orderCostRecoveryByPartner(sale, movements)],
+    [['ivan', 20_000]],
+  );
+  const rows = financialSituation(0, partners, [], [sale], movements, [
+    { id: 'p1', cost: 20_000 },
+  ]);
+  assert.equal(rows.find((r) => r.partner.id === 'ivan')?.recovered, 20_000);
+  assert.equal(rows.find((r) => r.partner.id === 'pablo')?.recovered, 0);
+});
+
+test('make-to-order cost recovers to cost_partner_id', () => {
+  const sale = {
+    ...order('o-mto', '2026-04-01', 50_000, 30_000, 'entregado', 'ivan', 'pablo'),
+    items: [
+      line('o-mto', 'i1', 30_000, {
+        options: [],
+        attributes: {},
+        make_to_order: true,
+      }),
+    ],
+  };
+  assert.equal(orderMakeToOrderCost(sale), 30_000);
+  assert.deepEqual([...orderCostRecoveryByPartner(sale, [])], [['pablo', 30_000]]);
+});
+
+test('mixed order splits recovery between stock payer and make-to-order partner', () => {
+  const sale = {
+    ...order('o-mix', '2026-04-01', 100_000, 50_000, 'entregado', 'ivan', 'pablo'),
+    items: [
+      line('o-mix', 'stock', 20_000, {
+        options: [],
+        attributes: {},
+        from_stock: true,
+        stock_load_id: 'load-a',
+      }),
+      line('o-mix', 'mto', 30_000, {
+        options: [],
+        attributes: {},
+        make_to_order: true,
+      }),
+    ],
+  };
+  const movements = [
+    {
+      id: 'load-a',
+      product_id: 'p1',
+      quantity: 1,
+      cost_paid: 1,
+      paid_partner_id: 'ivan',
+    },
+  ];
+  assert.equal(orderMakeToOrderCost(sale), 30_000);
+  const attribution = orderCostAttributionByPartner(sale, movements);
+  assert.equal(attribution.get('ivan'), 20_000);
+  assert.equal(attribution.get('pablo'), 30_000);
+  const rows = financialSituation(0, partners, [], [sale], movements, [
+    { id: 'p1', cost: 20_000 },
+  ]);
+  assert.equal(rows.find((r) => r.partner.id === 'ivan')?.recovered, 20_000);
+  assert.equal(rows.find((r) => r.partner.id === 'pablo')?.recovered, 30_000);
+});
+
+test('unpaid stock load does not recover that cost portion', () => {
+  const sale = {
+    ...order('o-unpaid', '2026-04-01', 50_000, 20_000, 'entregado', 'ivan', 'pablo'),
+    items: [
+      line('o-unpaid', 'i1', 20_000, {
+        options: [],
+        attributes: {},
+        from_stock: true,
+        stock_load_id: 'load-free',
+      }),
+    ],
+  };
+  const movements = [
+    {
+      id: 'load-free',
+      product_id: 'p1',
+      quantity: 1,
+      cost_paid: 0,
+      paid_partner_id: '',
+    },
+  ];
+  assert.equal(orderMakeToOrderCost(sale), 0);
+  assert.equal(orderCostRecoveryByPartner(sale, movements).size, 0);
+  assert.equal(
+    financialSituation(0, partners, [], [sale], movements, [
+      { id: 'p1', cost: 20_000 },
+    ]).find((r) => r.partner.id === 'pablo')?.recovered,
+    0,
+  );
 });
 
 test('converts account entries to the board currency with the stored equivalents', () => {

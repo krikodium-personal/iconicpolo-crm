@@ -180,7 +180,11 @@ export type Order = {
   paid: number;
   /** Socio que recibió el cobro del cliente. Vacío si no hay cobro. */
   paid_partner_id: string;
-  /** Socio que recupera el capital (costo de proveedor). Vacío si no se eligió. */
+  /**
+   * Socio que paga la producción a medida de este pedido.
+   * El costo de ítems de stock lo recupera quien pagó el ingreso.
+   * Vacío si no hay a-medida con costo.
+   */
   cost_partner_id: string;
   invoice: number;
   notes: string;

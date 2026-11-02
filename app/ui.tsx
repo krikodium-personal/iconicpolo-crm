@@ -29,6 +29,7 @@ import {
   type Partner,
 } from '@/lib/types';
 import { decimal, parseDecimal } from '@/lib/money';
+import { orderMakeToOrderCost } from '@/lib/account';
 function selectFieldInput(e: { target: EventTarget }) {
   const input = e.target;
   if (!(input instanceof HTMLInputElement) || input.readOnly || input.disabled)
@@ -326,6 +327,7 @@ export function OrderPayMenu({
 }) {
   const value = payStatus(order);
   const activePartners = partners.filter((partner) => !partner.archived);
+  const makeToOrderCost = orderMakeToOrderCost(order);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState(value);
@@ -342,8 +344,8 @@ export function OrderPayMenu({
       setError('Elegí qué socio recibió el cobro.');
       return;
     }
-    if (option !== 'no pagado' && order.cost > 0 && !costPartnerId) {
-      setError('Elegí qué socio recupera el costo del proveedor.');
+    if (option !== 'no pagado' && makeToOrderCost > 0 && !costPartnerId) {
+      setError('Elegí qué socio paga la producción a medida.');
       return;
     }
     setBusy(true);
@@ -355,7 +357,7 @@ export function OrderPayMenu({
         option === 'no pagado' ? '' : partnerId,
         option === 'no pagado'
           ? order.cost_partner_id || ''
-          : order.cost > 0
+          : makeToOrderCost > 0
             ? costPartnerId
             : '',
       );
@@ -410,8 +412,11 @@ export function OrderPayMenu({
         <SheetHeader>
           <SheetTitle>Estado de pago</SheetTitle>
           <SheetDescription>
-            Marcá si está cobrado, quién recibió el dinero, quién recupera el
-            costo del proveedor y, si es parcial, el importe.
+            Marcá si está cobrado, quién recibió el dinero
+            {makeToOrderCost > 0
+              ? ', quién paga la producción a medida'
+              : ''}
+            y, si es parcial, el importe.
           </SheetDescription>
         </SheetHeader>
         <div className="status-sheet-options">
@@ -449,11 +454,11 @@ export function OrderPayMenu({
                 ))}
               </select>
             </label>
-            {order.cost > 0 ? (
+            {makeToOrderCost > 0 ? (
               <label className="status-sheet-amount">
-                Quién recupera el costo del proveedor
+                Quién paga la producción a medida
                 <select
-                  aria-label="Quién recupera el costo del proveedor"
+                  aria-label="Quién paga la producción a medida"
                   value={costPartnerId}
                   disabled={busy || !activePartners.length}
                   onChange={(e) => setCostPartnerId(e.target.value)}
