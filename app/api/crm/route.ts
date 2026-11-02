@@ -36,6 +36,7 @@ export async function POST(request: Request) {
         : await mutate(body, user);
     return Response.json(result);
   } catch (error) {
+    console.error('[api/crm POST]', error);
     const message =
       error instanceof Error ? error.message : 'No se pudo guardar.';
     const known = message.includes('UNIQUE constraint')

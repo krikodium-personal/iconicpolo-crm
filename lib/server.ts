@@ -2146,7 +2146,7 @@ export async function saveOrder(
   } else {
     statements.push(
       stmt(
-        "INSERT INTO orders(id,number,customer_id,date,delivery,status,paid,paid_partner_id,cost_partner_id,invoice,notes,currency,shipping_carrier,shipping_amount,price_list_id,total,cost,kind,created_by) VALUES (?,?,?,?,?,'nuevo',?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO orders(id,number,customer_id,date,delivery,status,paid,paid_partner_id,cost_partner_id,invoice,notes,currency,shipping_carrier,shipping_amount,price_list_id,total,cost,kind,created_by) VALUES (?,?,?,?,?,'nuevo',?,?,?,?,?,?,?,?,?,?,?,?,?)",
         id,
         number,
         customer,
