@@ -3103,6 +3103,7 @@ export type StockReservation = {
   orderNumber: string;
   quantity: number;
   loadId?: string;
+  loadIds?: string[];
 };
 
 export type StockHold = {
@@ -3114,7 +3115,53 @@ export type StockHold = {
   quantity: number;
   /** Carga elegida en el pedido; sin carga se reserva de la más vieja. */
   loadId?: string;
+  /** Varias cargas cuando el ítem sale de más de un ingreso. */
+  loadIds?: string[];
 };
+
+/** Normaliza la(s) carga(s) elegida(s) en un ítem (soporta el campo viejo). */
+export function stockLoadIdsOf(selections: {
+  stock_load_id?: string;
+  stock_load_ids?: string[];
+}): string[] {
+  const fromList = Array.isArray(selections.stock_load_ids)
+    ? selections.stock_load_ids.filter(
+        (id): id is string => typeof id === 'string' && !!id,
+      )
+    : [];
+  if (fromList.length) return [...new Set(fromList)];
+  if (selections.stock_load_id) return [selections.stock_load_id];
+  return [];
+}
+
+/**
+ * Reparte `quantity` entre las cargas elegidas en orden (FIFO).
+ * Si no alcanza, devuelve lo que pudo; el caller compara la suma.
+ */
+export function allocateStockLoads(
+  loadIds: string[],
+  balances: Map<string, number>,
+  quantity: number,
+): { loadId: string; quantity: number }[] {
+  if (quantity <= 0 || !loadIds.length) return [];
+  const out: { loadId: string; quantity: number }[] = [];
+  let left = quantity;
+  for (const loadId of loadIds) {
+    if (left <= 0) break;
+    const avail = Math.max(0, balances.get(loadId) ?? 0);
+    const take = Math.min(avail, left);
+    if (take <= 0) continue;
+    out.push({ loadId, quantity: take });
+    left -= take;
+  }
+  return out;
+}
+
+function holdLoadIds(hold: { loadId?: string; loadIds?: string[] }) {
+  if (hold.loadIds?.length) return hold.loadIds;
+  if (hold.loadId) return [hold.loadId];
+  return [];
+}
 
 export type StockAvailabilityRow = {
   key: string;
@@ -3137,6 +3184,7 @@ export function itemStockHold(
       config?: Record<string, unknown>;
       location?: string;
       stock_load_id?: string;
+      stock_load_ids?: string[];
     };
   },
   kind: ConfiguredKind | null,
@@ -3174,6 +3222,7 @@ export function itemStockHold(
       return null;
     }
   }
+  const loadIds = stockLoadIdsOf(item.selections);
   return {
     orderId: order.id,
     orderNumber: order.number,
@@ -3181,9 +3230,11 @@ export function itemStockHold(
     configKey,
     location: item.selections.location || '',
     quantity: item.quantity,
-    ...(item.selections.stock_load_id
-      ? { loadId: item.selections.stock_load_id }
-      : {}),
+    ...(loadIds.length === 1
+      ? { loadId: loadIds[0], loadIds }
+      : loadIds.length > 1
+        ? { loadIds }
+        : {}),
   };
 }
 
@@ -3202,6 +3253,7 @@ export function reservedHolds(
         config?: Record<string, unknown>;
         location?: string;
         stock_load_id?: string;
+        stock_load_ids?: string[];
       };
     }[];
   }[],
@@ -3259,10 +3311,11 @@ export function stockAvailability(
     const addReservation = (row: StockAvailabilityRow, quantity: number) => {
       row.reserved += quantity;
       row.available = Math.max(0, row.quantity - row.reserved);
+      const holdIds = holdLoadIds(hold);
       const existing = row.reservations.find(
         (reservation) =>
           reservation.orderId === hold.orderId &&
-          reservation.loadId === hold.loadId,
+          holdLoadIds(reservation).join('\t') === holdIds.join('\t'),
       );
       if (existing) existing.quantity += quantity;
       else
@@ -3270,7 +3323,11 @@ export function stockAvailability(
           orderId: hold.orderId,
           orderNumber: hold.orderNumber,
           quantity,
-          ...(hold.loadId ? { loadId: hold.loadId } : {}),
+          ...(holdIds.length === 1
+            ? { loadId: holdIds[0], loadIds: holdIds }
+            : holdIds.length > 1
+              ? { loadIds: holdIds }
+              : {}),
         });
     };
     for (const row of matches) {
@@ -3395,15 +3452,42 @@ export function stockLoadRows(
       row.quantity - parts.reduce((sum, part) => sum + part.quantity, 0);
     if (extra > 0) parts[parts.length - 1]!.quantity += extra;
     const live = parts.filter((part) => part.quantity > 0);
-    const pinned = (reservation: StockReservation) =>
-      live.find((part) => part.movement_id === reservation.loadId);
+    const pinnedParts = (reservation: StockReservation) => {
+      const ids = new Set(holdLoadIds(reservation));
+      if (!ids.size) return [];
+      return live.filter((part) => ids.has(part.movement_id));
+    };
     for (const reservation of [...row.reservations].sort(
-      (a, b) => Number(!!pinned(b)) - Number(!!pinned(a)),
+      (a, b) => pinnedParts(b).length - pinnedParts(a).length,
     )) {
-      const target = pinned(reservation);
-      if (target) {
-        target.reserved += reservation.quantity;
-        target.reservations.push(reservation);
+      const targets = pinnedParts(reservation);
+      if (targets.length) {
+        let remaining = reservation.quantity;
+        for (const target of targets) {
+          if (remaining <= 0) break;
+          const take = Math.min(
+            Math.max(0, target.quantity - target.reserved),
+            remaining,
+          );
+          if (take <= 0) continue;
+          target.reserved += take;
+          target.reservations.push({
+            ...reservation,
+            quantity: take,
+            loadId: target.movement_id,
+            loadIds: [target.movement_id],
+          });
+          remaining -= take;
+        }
+        if (remaining > 0 && targets[0]) {
+          targets[0].reserved += remaining;
+          targets[0].reservations.push({
+            ...reservation,
+            quantity: remaining,
+            loadId: targets[0].movement_id,
+            loadIds: [targets[0].movement_id],
+          });
+        }
         continue;
       }
       let remaining = reservation.quantity;

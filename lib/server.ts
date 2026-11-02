@@ -52,6 +52,7 @@ import {
   extraTotals,
   adjustedConfiguredPrices,
   configLabels,
+  allocateStockLoads,
   itemStockHold,
   parseConfig,
   parsePricing,
@@ -59,6 +60,7 @@ import {
   isStockLoad,
   stockAvailability,
   stockLoadBalances,
+  stockLoadIdsOf,
   stockKey,
   stockPlaceLabel,
   TEMPLATE_IDS,
@@ -827,20 +829,49 @@ async function assertFromStockAvailable(orderId: string, items: Item[]) {
     const kind = product ? configuredKindOf(product) : null;
     const hold = itemStockHold(item, kind, { id: orderId, number: '' });
     if (!hold) continue;
-    if (hold.loadId) {
-      const left =
-        (stockLoadBalances(movements, item.product_id).get(hold.loadId) ?? 0) -
-        holds
-          .filter((other) => other.loadId === hold.loadId)
-          .reduce((sum, other) => sum + other.quantity, 0) -
-        (usedFromLoad.get(hold.loadId) || 0);
-      if (item.quantity > left)
+    const loadIds = hold.loadIds?.length
+      ? hold.loadIds
+      : hold.loadId
+        ? [hold.loadId]
+        : [];
+    if (loadIds.length) {
+      const working = new Map(stockLoadBalances(movements, item.product_id));
+      for (const other of holds) {
+        const ids = other.loadIds?.length
+          ? other.loadIds
+          : other.loadId
+            ? [other.loadId]
+            : [];
+        if (!ids.length) continue;
+        for (const part of allocateStockLoads(ids, working, other.quantity)) {
+          working.set(
+            part.loadId,
+            (working.get(part.loadId) ?? 0) - part.quantity,
+          );
+        }
+      }
+      for (const loadId of loadIds) {
+        working.set(
+          loadId,
+          (working.get(loadId) ?? 0) - (usedFromLoad.get(loadId) || 0),
+        );
+      }
+      const parts = allocateStockLoads(loadIds, working, item.quantity);
+      const got = parts.reduce((sum, part) => sum + part.quantity, 0);
+      if (got < item.quantity) {
+        const left = Math.max(0, got);
         throw new Error(
           left > 0
-            ? `La carga elegida para ${item.name} tiene ${left} disponible${left === 1 ? '' : 's'}.`
-            : `La carga elegida para ${item.name} no tiene unidades disponibles.`,
+            ? `Las cargas elegidas para ${item.name} suman ${left} disponible${left === 1 ? '' : 's'}. Elegí más cargas o bajá la cantidad.`
+            : `Las cargas elegidas para ${item.name} no tienen unidades disponibles.`,
         );
-      usedFromLoad.set(hold.loadId, (usedFromLoad.get(hold.loadId) || 0) + item.quantity);
+      }
+      for (const part of parts) {
+        usedFromLoad.set(
+          part.loadId,
+          (usedFromLoad.get(part.loadId) || 0) + part.quantity,
+        );
+      }
     }
     const rows = stockAvailability(movements, holds, item.product_id);
     const onHand = rows.reduce((sum, row) => sum + row.quantity, 0);
@@ -868,6 +899,7 @@ type LoadSource = {
   product_id: string;
   quantity: number;
   order_id: string | null;
+  created_at: string;
   config_key: string;
   location: string;
   supplier_id: string;
@@ -876,32 +908,55 @@ type LoadSource = {
 async function stockLoad(id: string) {
   if (!id) return null;
   const load = await stmt(
-    "SELECT id, product_id, quantity, order_id, COALESCE(config_key,'') config_key, COALESCE(location,'') location, COALESCE(supplier_id,'') supplier_id FROM stock_movements WHERE id=?",
+    "SELECT id, product_id, quantity, order_id, COALESCE(created_at,'') created_at, COALESCE(config_key,'') config_key, COALESCE(location,'') location, COALESCE(supplier_id,'') supplier_id FROM stock_movements WHERE id=?",
     id,
   ).first<LoadSource>();
   return load && isStockLoad(load) ? load : null;
 }
 
-/** Applies the stock load picked for an order item (location + supplier follow the load). */
+/** Applies the stock load(s) picked for an order item (location + supplier follow the load). */
 async function withStockLoad(
   productId: string,
   selections: Item['selections'],
   rawLoadId: unknown,
+  rawLoadIds?: unknown,
 ): Promise<Item['selections']> {
-  const { stock_load_id: _previous, ...rest } = selections;
-  const loadId =
+  const {
+    stock_load_id: _previous,
+    stock_load_ids: _previousIds,
+    ...rest
+  } = selections;
+  const fromList = Array.isArray(rawLoadIds)
+    ? rawLoadIds
+        .filter((id): id is string => typeof id === 'string')
+        .map((id) => str(id, 'Stock de origen', false, 64))
+        .filter(Boolean)
+    : [];
+  const single =
     typeof rawLoadId === 'string'
       ? str(rawLoadId, 'Stock de origen', false, 64)
       : '';
-  if (!loadId) return rest;
-  const load = await stockLoad(loadId);
-  if (!load || load.product_id !== productId)
-    throw new Error('La carga de stock elegida no corresponde al producto.');
+  const loadIds = [...new Set(fromList.length ? fromList : single ? [single] : [])];
+  if (!loadIds.length) return rest;
+  const loads = [];
+  for (const loadId of loadIds) {
+    const load = await stockLoad(loadId);
+    if (!load || load.product_id !== productId)
+      throw new Error('La carga de stock elegida no corresponde al producto.');
+    loads.push(load);
+  }
+  const sameLocation = loads.every((load) => load.location === loads[0]!.location);
+  const sameSupplier = loads.every(
+    (load) => load.supplier_id === loads[0]!.supplier_id,
+  );
   return {
     ...rest,
-    stock_load_id: load.id,
-    location: load.location || undefined,
-    supplier_id: load.supplier_id || rest.supplier_id,
+    stock_load_id: loads[0]!.id,
+    stock_load_ids: loadIds,
+    location: sameLocation ? loads[0]!.location || undefined : undefined,
+    supplier_id: sameSupplier
+      ? loads[0]!.supplier_id || rest.supplier_id
+      : rest.supplier_id,
   };
 }
 
@@ -976,58 +1031,81 @@ async function orderWarehouseMoves(
     const product = products.get(item.product_id);
     if (!usesWarehouseStock(item, product)) continue;
     const { key, configJson } = warehouseConfig(item, product);
-    const loadId =
-      item.selections.stock_load_id ||
-      (
-        await stmt(
-          "SELECT source_movement_id FROM stock_movements WHERE order_id=? AND product_id=? AND COALESCE(config_key,'')=? AND quantity<0 AND COALESCE(source_movement_id,'')<>'' ORDER BY created_at DESC LIMIT 1",
-          order.id,
-          item.product_id,
-          key,
-        ).first<{ source_movement_id: string }>()
-      )?.source_movement_id ||
-      '';
-    const load = await stockLoad(loadId);
-    if (!loadId)
+    let loadIds = stockLoadIdsOf(item.selections);
+    if (!loadIds.length) {
+      const previous = await stmt(
+        "SELECT source_movement_id FROM stock_movements WHERE order_id=? AND product_id=? AND COALESCE(config_key,'')=? AND quantity<0 AND COALESCE(source_movement_id,'')<>'' ORDER BY created_at ASC",
+        order.id,
+        item.product_id,
+        key,
+      ).all<{ source_movement_id: string }>();
+      loadIds = [
+        ...new Set(
+          previous.results
+            .map((row) => row.source_movement_id)
+            .filter(Boolean),
+        ),
+      ];
+    }
+    if (!loadIds.length)
       throw new Error(
         `Elegí de qué stock sale ${item.name} antes de entregar el pedido.`,
       );
-    if (!load || load.product_id !== item.product_id)
-      throw new Error(
-        `La carga de stock elegida para ${item.name} ya no existe. Elegí otra.`,
-      );
-    if (load.config_key !== key)
-      throw new Error(
-        `La carga elegida para ${item.name} no coincide con la combinación del pedido. Elegí otra.`,
-      );
-    const left =
-      (stockLoadBalances(await productLoadMovements(item.product_id), item.product_id).get(load.id) ?? 0) -
-      (taken.get(load.id) || 0);
-    if (left < item.quantity)
+    const balances = new Map(
+      stockLoadBalances(await productLoadMovements(item.product_id), item.product_id),
+    );
+    for (const [loadId, used] of taken) {
+      balances.set(loadId, (balances.get(loadId) ?? 0) - used);
+    }
+    const loads = [];
+    for (const loadId of loadIds) {
+      const load = await stockLoad(loadId);
+      if (!load || load.product_id !== item.product_id)
+        throw new Error(
+          `La carga de stock elegida para ${item.name} ya no existe. Elegí otra.`,
+        );
+      if (load.config_key !== key)
+        throw new Error(
+          `La carga elegida para ${item.name} no coincide con la combinación del pedido. Elegí otra.`,
+        );
+      loads.push(load);
+    }
+    // FIFO entre las cargas elegidas (por fecha de ingreso).
+    loads.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    const orderedIds = loads.map((load) => load.id);
+    const parts = allocateStockLoads(orderedIds, balances, item.quantity);
+    const got = parts.reduce((sum, part) => sum + part.quantity, 0);
+    if (got < item.quantity) {
+      const left = Math.max(0, got);
       throw new Error(
         left > 0
-          ? `La carga elegida para ${item.name} tiene ${left}. Elegí otra carga o ajustá la cantidad.`
-          : `La carga elegida para ${item.name} ya no tiene unidades. Elegí otra.`,
+          ? `Las cargas elegidas para ${item.name} suman ${left}. Elegí más cargas o ajustá la cantidad.`
+          : `Las cargas elegidas para ${item.name} ya no tienen unidades. Elegí otras.`,
       );
-    taken.set(load.id, (taken.get(load.id) || 0) + item.quantity);
-    statements.push(
-      stmt(
-        'INSERT INTO stock_movements (id,product_id,order_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos,created_by,source_movement_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-        crypto.randomUUID(),
-        item.product_id,
-        order.id,
-        -item.quantity,
-        `${reason} ${order.number}`,
-        now,
-        configJson,
-        key,
-        load.location,
-        load.supplier_id || item.selections.supplier_id || '',
-        '[]',
-        actor.id,
-        load.id,
-      ),
-    );
+    }
+    const byId = new Map(loads.map((load) => [load.id, load]));
+    for (const part of parts) {
+      const load = byId.get(part.loadId)!;
+      taken.set(load.id, (taken.get(load.id) || 0) + part.quantity);
+      statements.push(
+        stmt(
+          'INSERT INTO stock_movements (id,product_id,order_id,quantity,reason,created_at,config,config_key,location,supplier_id,photos,created_by,source_movement_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          crypto.randomUUID(),
+          item.product_id,
+          order.id,
+          -part.quantity,
+          `${reason} ${order.number}`,
+          now,
+          configJson,
+          key,
+          load.location,
+          load.supplier_id || item.selections.supplier_id || '',
+          '[]',
+          actor.id,
+          load.id,
+        ),
+      );
+    }
   }
   return statements;
 }
@@ -1719,6 +1797,7 @@ export async function saveOrder(
         snapshot.product_id,
         snapshot.selections,
         input.stock_load_id,
+        input.stock_load_ids,
       ),
     };
     const itemId = old?.id || crypto.randomUUID();
@@ -3053,7 +3132,9 @@ export async function mutate(
         );
       if (
         (await reservedHoldsForProducts([movement.product_id], '')).some(
-          (hold) => hold.loadId === movement.id,
+          (hold) =>
+            hold.loadId === movement.id ||
+            !!hold.loadIds?.includes(movement.id),
         )
       )
         throw new Error(

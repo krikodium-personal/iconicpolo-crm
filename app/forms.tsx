@@ -69,6 +69,7 @@ import {
   reservedHolds,
   stockAvailability,
   stockLoadBalances,
+  stockLoadIdsOf,
   stockLoadRows,
   findStockLoad,
   type StockLoadRow,
@@ -1528,6 +1529,7 @@ type DraftItem = {
   stock_qty?: number;
   location?: string;
   stock_load_id?: string;
+  stock_load_ids?: string[];
   snapshot?: Item;
 };
 function productFieldValues(
@@ -1999,32 +2001,44 @@ export function OrderDetail({
                         .join(' · ')}
                     </small>
                     {(() => {
-                      const delivered = data.movements.find(
+                      const delivered = data.movements.filter(
                         (m) =>
                           m.order_id === record.id &&
                           m.product_id === item.product_id &&
                           m.quantity < 0 &&
                           m.source_movement_id,
                       );
-                      const loadId =
-                        delivered?.source_movement_id ||
-                        item.selections.stock_load_id;
-                      const load = data.movements.find((m) => m.id === loadId);
+                      const loadIds = delivered.length
+                        ? [
+                            ...new Set(
+                              delivered
+                                .map((m) => m.source_movement_id!)
+                                .filter(Boolean),
+                            ),
+                          ]
+                        : stockLoadIdsOf(item.selections);
+                      const loads = loadIds
+                        .map((id) => data.movements.find((m) => m.id === id))
+                        .filter(Boolean) as Movement[];
                       const kind = product ? configuredKindOf(product) : null;
                       const usesStock = !kind || !!item.selections.from_stock;
-                      if (load)
+                      if (loads.length)
                         return (
                           <small>
-                            {delivered ? 'Salió de' : 'Sale de'}{' '}
-                            {[
-                              stockPlaceLabel(load.location),
-                              data.contacts.find(
-                                (c) => c.id === load.supplier_id,
-                              )?.name,
-                              loadDate(data, load.id),
-                            ]
-                              .filter(Boolean)
-                              .join(' · ')}
+                            {delivered.length ? 'Salió de' : 'Sale de'}{' '}
+                            {loads
+                              .map((load) =>
+                                [
+                                  stockPlaceLabel(load.location),
+                                  data.contacts.find(
+                                    (c) => c.id === load.supplier_id,
+                                  )?.name,
+                                  loadDate(data, load.id),
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · '),
+                              )
+                              .join(' · + · ')}
                           </small>
                         );
                       return usesStock &&
@@ -2863,6 +2877,7 @@ export function OrderForm({
         stock_qty: i.selections.stock_qty,
         location: i.selections.location,
         stock_load_id: i.selections.stock_load_id,
+        stock_load_ids: stockLoadIdsOf(i.selections),
         snapshot: i,
       };
     }) || prefillDraftItems(prefill, data),
@@ -2902,6 +2917,7 @@ export function OrderForm({
             config: item.config,
             location: item.location,
             stock_load_id: item.stock_load_id,
+            stock_load_ids: item.stock_load_ids,
           },
         },
         product ? configuredKindOf(product) : null,
@@ -2970,6 +2986,7 @@ export function OrderForm({
         nextConfig = parseCabezadaConfig(config);
       }
     }
+    const loadIds = loadId ? [loadId] : undefined;
     const next = {
       product_id: product.id,
       option_ids: [] as string[],
@@ -2980,6 +2997,7 @@ export function OrderForm({
       stock_qty: available,
       location: fromStock ? location || '' : undefined,
       stock_load_id: loadId,
+      stock_load_ids: loadIds,
       ...(fromStock ? { quantity: '1' } : {}),
     };
     if (key && items.some((i) => i.key === key)) {
@@ -3264,7 +3282,12 @@ export function OrderForm({
                   from_stock: i.from_stock,
                   stock_qty: i.stock_qty,
                   location: i.location,
-                  stock_load_id: i.stock_load_id,
+                  stock_load_id: i.stock_load_ids?.[0] || i.stock_load_id,
+                  stock_load_ids: i.stock_load_ids?.length
+                    ? i.stock_load_ids
+                    : i.stock_load_id
+                      ? [i.stock_load_id]
+                      : undefined,
                 };
               }
               return {
@@ -3282,7 +3305,12 @@ export function OrderForm({
                 from_stock: i.from_stock,
                 stock_qty: i.stock_qty,
                 location: i.location,
-                stock_load_id: i.stock_load_id,
+                stock_load_id: i.stock_load_ids?.[0] || i.stock_load_id,
+                stock_load_ids: i.stock_load_ids?.length
+                  ? i.stock_load_ids
+                  : i.stock_load_id
+                    ? [i.stock_load_id]
+                    : undefined,
               };
             }),
           });
@@ -3841,7 +3869,10 @@ export function OrderForm({
                         <Pick
                           label="Proveedor"
                           value={i.supplier_id || ''}
-                          disabled={!!i.from_stock || !!i.stock_load_id}
+                          disabled={
+                            !!i.from_stock ||
+                            !!(i.stock_load_ids?.length || i.stock_load_id)
+                          }
                           onChange={(v) =>
                             update(i.key, {
                               supplier_id: v,
@@ -3880,65 +3911,128 @@ export function OrderForm({
                     <Field
                       label="Sale del stock"
                       wide
-                      pending={!i.stock_load_id && !sponsor}
+                      pending={
+                        !(i.stock_load_ids?.length || i.stock_load_id) &&
+                        !sponsor
+                      }
                     >
-                      <Pick
-                        label="Sale del stock"
-                        value={i.stock_load_id || ''}
-                        onChange={(v) => {
-                          const row = choices.find(
-                            (choice) => choice.movement_id === v,
-                          );
-                          update(i.key, {
-                            stock_load_id: v || undefined,
-                            ...(row
-                              ? {
-                                  location: row.location,
-                                  supplier_id:
-                                    row.supplier_id || i.supplier_id,
-                                  new_supplier: undefined,
-                                }
-                              : {}),
-                          });
-                        }}
-                        options={[
-                          {
-                            value: '',
-                            label: choices.length
-                              ? 'Elegí de qué carga sale (obligatorio para entregar)'
-                              : 'No hay stock cargado de este producto',
-                          },
-                          ...choices.map((row) => ({
-                            value: row.movement_id,
-                            label: [
-                              stockPlaceLabel(row.location),
-                              data.contacts.find(
-                                (c) => c.id === row.supplier_id,
-                              )?.name,
-                              loadDate(data, row.movement_id),
-                              `${quantityLabel(row.available, p?.unit)} disp.`,
-                            ]
-                              .filter(Boolean)
-                              .join(' · '),
+                      {(() => {
+                        const selected = new Set(
+                          i.stock_load_ids?.length
+                            ? i.stock_load_ids
+                            : i.stock_load_id
+                              ? [i.stock_load_id]
+                              : [],
+                        );
+                        const missing = [...selected].filter(
+                          (id) =>
+                            !choices.some((row) => row.movement_id === id),
+                        );
+                        const rows: {
+                          movement_id: string;
+                          location: string;
+                          supplier_id: string;
+                          available: number;
+                        }[] = [
+                          ...choices,
+                          ...missing.map((id) => ({
+                            movement_id: id,
+                            location: i.location || '',
+                            supplier_id: i.supplier_id || '',
+                            available: 0,
                           })),
-                          ...(i.stock_load_id &&
-                          !choices.some(
-                            (row) => row.movement_id === i.stock_load_id,
-                          )
-                            ? [
-                                {
-                                  value: i.stock_load_id,
-                                  label: `${[
-                                    stockPlaceLabel(i.location || ''),
-                                    loadDate(data, i.stock_load_id),
-                                  ]
-                                    .filter(Boolean)
-                                    .join(' · ')} · sin unidades libres`,
-                                },
-                              ]
-                            : []),
-                        ]}
-                      />
+                        ];
+                        const selectedAvailable = rows
+                          .filter((row) => selected.has(row.movement_id))
+                          .reduce((sum, row) => sum + (row.available || 0), 0);
+                        const qty = Number(i.quantity) || 0;
+                        function toggleLoad(id: string, on: boolean) {
+                          const next = new Set(selected);
+                          if (on) next.add(id);
+                          else next.delete(id);
+                          const ids = [...next];
+                          const picked = ids
+                            .map((loadId) =>
+                              choices.find(
+                                (choice) => choice.movement_id === loadId,
+                              ),
+                            )
+                            .filter(Boolean) as StockLoadRow[];
+                          const sameLocation =
+                            picked.length > 0 &&
+                            picked.every(
+                              (row) => row.location === picked[0]!.location,
+                            );
+                          const sameSupplier =
+                            picked.length > 0 &&
+                            picked.every(
+                              (row) =>
+                                row.supplier_id === picked[0]!.supplier_id,
+                            );
+                          update(i.key, {
+                            stock_load_ids: ids.length ? ids : undefined,
+                            stock_load_id: ids[0],
+                            location: sameLocation
+                              ? picked[0]!.location
+                              : undefined,
+                            supplier_id: sameSupplier
+                              ? picked[0]!.supplier_id || i.supplier_id
+                              : i.supplier_id,
+                            new_supplier: sameSupplier
+                              ? undefined
+                              : i.new_supplier,
+                          });
+                        }
+                        return (
+                          <div className="stock-load-checks">
+                            {!rows.length ? (
+                              <p className="hint">
+                                No hay stock cargado de este producto
+                              </p>
+                            ) : (
+                              <>
+                                <p className="hint">
+                                  Marcá de qué carga(s) sale (obligatorio para
+                                  entregar). Podés combinar varias si una sola
+                                  no alcanza.
+                                </p>
+                                {rows.map((row) => (
+                                  <Check
+                                    key={row.movement_id}
+                                    label={[
+                                      stockPlaceLabel(row.location),
+                                      data.contacts.find(
+                                        (c) => c.id === row.supplier_id,
+                                      )?.name,
+                                      loadDate(data, row.movement_id),
+                                      row.available > 0
+                                        ? `${quantityLabel(row.available, p?.unit)} disp.`
+                                        : 'sin unidades libres',
+                                    ]
+                                      .filter(Boolean)
+                                      .join(' · ')}
+                                    checked={selected.has(row.movement_id)}
+                                    onChange={(on) =>
+                                      toggleLoad(row.movement_id, on)
+                                    }
+                                  />
+                                ))}
+                                {selected.size > 0 &&
+                                qty > 0 &&
+                                selectedAvailable < qty ? (
+                                  <p className="pending-text">
+                                    Las cargas marcadas suman{' '}
+                                    {quantityLabel(selectedAvailable, p?.unit)}{' '}
+                                    y el ítem pide{' '}
+                                    {quantityLabel(qty, p?.unit)}. Marcá más
+                                    cargas o bajá la cantidad.
+                                  </p>
+                                ) : null}
+                              </>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </Field>
                   ) : null}
                   {!i.snapshot &&

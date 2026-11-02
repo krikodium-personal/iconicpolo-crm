@@ -1655,6 +1655,17 @@ button.dialog-kicker:hover {
 .field.wide {
   grid-column: 1/-1;
 }
+.stock-load-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stock-load-checks .hint {
+  margin: 0 0 8px;
+}
+.stock-load-checks .pending-text {
+  margin: 8px 0 0;
+}
 .field-with-action {
   display: flex;
   flex-direction: column;

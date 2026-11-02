@@ -18,7 +18,9 @@ import {
   selectedReferenceIds,
   reservedHolds,
   stockAvailability,
+  allocateStockLoads,
   stockLoadBalances,
+  stockLoadIdsOf,
   stockLoadRows,
   findStockLoad,
   stockByConfig,
@@ -468,6 +470,76 @@ test('stock lines split into loads, orders use the oldest load first', () => {
     [['a', 2, 'gabriel', 2], ['b', 1, 'martin', 1]],
   );
   assert.equal(findStockLoad(returned, `${key}\tivan\tb`)?.available, 0);
+});
+
+test('stock load ids normalize single and multi selection', () => {
+  assert.deepEqual(stockLoadIdsOf({}), []);
+  assert.deepEqual(stockLoadIdsOf({ stock_load_id: 'a' }), ['a']);
+  assert.deepEqual(stockLoadIdsOf({ stock_load_ids: ['b', 'a', 'b'] }), [
+    'b',
+    'a',
+  ]);
+  assert.deepEqual(
+    stockLoadIdsOf({ stock_load_id: 'x', stock_load_ids: ['a', 'b'] }),
+    ['a', 'b'],
+  );
+});
+
+test('allocate across selected loads in order until quantity is met', () => {
+  const balances = new Map([
+    ['old', 1],
+    ['mid', 2],
+    ['new', 1],
+  ]);
+  assert.deepEqual(allocateStockLoads(['old', 'mid', 'new'], balances, 4), [
+    { loadId: 'old', quantity: 1 },
+    { loadId: 'mid', quantity: 2 },
+    { loadId: 'new', quantity: 1 },
+  ]);
+  assert.deepEqual(allocateStockLoads(['mid', 'new'], balances, 4), [
+    { loadId: 'mid', quantity: 2 },
+    { loadId: 'new', quantity: 1 },
+  ]);
+  assert.equal(
+    allocateStockLoads(['old', 'mid'], balances, 4).reduce(
+      (sum, part) => sum + part.quantity,
+      0,
+    ),
+    3,
+  );
+});
+
+test('multi-load holds reserve across the chosen loads', () => {
+  const base = { product_id: 'e1', config_key: '', location: 'kriko', config: {} };
+  const moves = [
+    { ...base, id: 'a', quantity: 1, supplier_id: 's', created_at: '2026-09-01T10:00', location: 'ivan' },
+    { ...base, id: 'b', quantity: 2, supplier_id: 's', created_at: '2026-09-02T10:00', location: 'ivan' },
+    { ...base, id: 'c', quantity: 1, supplier_id: 's', created_at: '2026-09-03T10:00', location: 'kriko' },
+  ];
+  // Different locations → separate stock lines; pin hold to a+b on ivan.
+  const ivanMoves = moves.filter((m) => m.location === 'ivan');
+  const rows = stockLoadRows(
+    ivanMoves,
+    [
+      {
+        orderId: 'o1',
+        orderNumber: 'IC-1',
+        productId: 'e1',
+        configKey: '',
+        location: 'ivan',
+        quantity: 3,
+        loadIds: ['a', 'b'],
+      },
+    ],
+    'e1',
+  );
+  assert.deepEqual(
+    rows.map((row) => [row.movement_id, row.reserved, row.available]),
+    [
+      ['a', 1, 0],
+      ['b', 2, 0],
+    ],
+  );
 });
 
 test('deliveries linked to a load are subtracted from that load', () => {
