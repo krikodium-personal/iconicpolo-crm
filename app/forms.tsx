@@ -3355,6 +3355,65 @@ export function OrderForm({
               onChange={(e) => set({ ...f, delivery: e.target.value })}
             />
           </Field>
+          {!sponsor && !orderIsQuote(f.status) ? (
+            <>
+              <Field label="Adelanto cobrado">
+                <input
+                  inputMode="decimal"
+                  value={f.paid}
+                  onChange={(e) => set({ ...f, paid: e.target.value })}
+                />
+              </Field>
+              <Field label="Socio que recibió el cobro">
+                <select
+                  aria-label="Socio que recibió el cobro"
+                  value={f.paid_partner_id}
+                  disabled={!activePartners.length}
+                  onChange={(e) =>
+                    set({ ...f, paid_partner_id: e.target.value })
+                  }
+                >
+                  {!activePartners.length ? (
+                    <option value="">Sin socios activos</option>
+                  ) : (
+                    activePartners.map((partner) => (
+                      <option key={partner.id} value={partner.id}>
+                        {partner.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </Field>
+              <Field label="Quién recupera el costo *">
+                <select
+                  aria-label="Quién recupera el costo del proveedor"
+                  value={f.cost_partner_id}
+                  disabled={!activePartners.length}
+                  onChange={(e) =>
+                    set({ ...f, cost_partner_id: e.target.value })
+                  }
+                >
+                  {!activePartners.length ? (
+                    <option value="">Sin socios activos</option>
+                  ) : (
+                    activePartners.map((partner) => (
+                      <option key={partner.id} value={partner.id}>
+                        {partner.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </Field>
+              <div className="field">
+                <span>Facturación</span>
+                <Check
+                  label="Este pedido se factura"
+                  checked={f.invoice}
+                  onChange={(v) => set({ ...f, invoice: v })}
+                />
+              </div>
+            </>
+          ) : null}
         </div>
         {f.customer_id === NEW_CUSTOMER ? (
           <section className="form-section">
@@ -4074,65 +4133,6 @@ export function OrderForm({
           )}
         </section>
         <div className="form-grid">
-          {!sponsor && !orderIsQuote(f.status) ? (
-            <>
-              <Field label="Importe cobrado">
-                <input
-                  inputMode="decimal"
-                  value={f.paid}
-                  onChange={(e) => set({ ...f, paid: e.target.value })}
-                />
-              </Field>
-              <Field label="Socio que recibió el cobro">
-                <select
-                  aria-label="Socio que recibió el cobro"
-                  value={f.paid_partner_id}
-                  disabled={!activePartners.length}
-                  onChange={(e) =>
-                    set({ ...f, paid_partner_id: e.target.value })
-                  }
-                >
-                  {!activePartners.length ? (
-                    <option value="">Sin socios activos</option>
-                  ) : (
-                    activePartners.map((partner) => (
-                      <option key={partner.id} value={partner.id}>
-                        {partner.name}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </Field>
-              <Field label="Quién recupera el costo *">
-                <select
-                  aria-label="Quién recupera el costo del proveedor"
-                  value={f.cost_partner_id}
-                  disabled={!activePartners.length}
-                  onChange={(e) =>
-                    set({ ...f, cost_partner_id: e.target.value })
-                  }
-                >
-                  {!activePartners.length ? (
-                    <option value="">Sin socios activos</option>
-                  ) : (
-                    activePartners.map((partner) => (
-                      <option key={partner.id} value={partner.id}>
-                        {partner.name}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </Field>
-              <div className="field">
-                <span>Facturación</span>
-                <Check
-                  label="Este pedido se factura"
-                  checked={f.invoice}
-                  onChange={(v) => set({ ...f, invoice: v })}
-                />
-              </div>
-            </>
-          ) : null}
           <div className="field">
             <Check
               label="Incluir cargos de envío"
