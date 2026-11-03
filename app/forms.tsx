@@ -49,7 +49,7 @@ import {
   conceptLabel,
   entryFxNote,
   orderCostAttributionByPartner,
-  orderMakeToOrderCost,
+  orderMissingMakeToOrderPartner,
   parseShare,
   shareInput,
   shareLabel,
@@ -1535,6 +1535,8 @@ type DraftItem = {
   stock_load_id?: string;
   stock_load_ids?: string[];
   make_to_order?: boolean;
+  /** Socio que paga la producción a medida de este ítem. */
+  cost_partner_id?: string;
   snapshot?: Item;
 };
 function productFieldValues(
@@ -1728,7 +1730,7 @@ export function OrderDetail({
       return `${name} ${formatMoney(amount, data.currency)}`;
     })
     .join(' · ');
-  const makeToOrderCost = orderMakeToOrderCost(record);
+  const missingMakeToOrderPartner = orderMissingMakeToOrderPartner(record);
   if (fichaItem) {
     const product = data.products.find((p) => p.id === fichaItem.product_id);
     const supplier = data.contacts.find(
@@ -1941,7 +1943,7 @@ export function OrderDetail({
                   <dd>
                     {costRecoveryLabel ||
                       (record.cost > 0
-                        ? makeToOrderCost > 0 && !record.cost_partner_id
+                        ? missingMakeToOrderPartner
                           ? 'Falta socio a medida'
                           : 'Sin definir'
                         : '—')}
@@ -2187,7 +2189,6 @@ function OrderMovements({
     error: '',
     amount: '',
     partner_id: '',
-    cost_partner_id: '',
     date: today(),
   });
   const [removing, setRemoving] = useState('');
@@ -2199,7 +2200,6 @@ function OrderMovements({
       error: '',
       amount: decimal(due),
       partner_id: order.paid_partner_id || partners[0]?.id || '',
-      cost_partner_id: order.cost_partner_id || partners[0]?.id || '',
       date: today(),
     });
   }
@@ -2221,16 +2221,16 @@ function OrderMovements({
           `El cobro no puede superar el saldo (${formatMoney(due, data.currency)}).`,
         );
       if (!charge.partner_id) throw new Error('Elegí qué socio recibió el cobro.');
-      const makeToOrderCost = orderMakeToOrderCost(order);
-      if (makeToOrderCost > 0 && !charge.cost_partner_id)
-        throw new Error('Elegí qué socio paga la producción a medida.');
+      if (orderMissingMakeToOrderPartner(order))
+        throw new Error(
+          'Falta quién paga la producción a medida en algún producto. Editá el pedido.',
+        );
       setCharge({ ...charge, busy: true, error: '' });
       await save({
         action: 'order_payment',
         order_id: order.id,
         amount,
         partner_id: charge.partner_id,
-        cost_partner_id: makeToOrderCost > 0 ? charge.cost_partner_id : '',
         date: charge.date,
       });
       setCharge((prev) => ({ ...prev, open: false, busy: false }));
@@ -2516,12 +2516,7 @@ function OrderMovements({
                 order,
                 data.movements,
               );
-              if (!attribution.size) {
-                const mto = orderMakeToOrderCost(order);
-                if (mto > 0 && partnerName(order.cost_partner_id))
-                  return `Producción a medida ${partnerName(order.cost_partner_id)}`;
-                return '';
-              }
+              if (!attribution.size) return '';
               return `Recupera ${[...attribution.entries()]
                 .map(
                   ([id, amount]) =>
@@ -2589,21 +2584,6 @@ function OrderMovements({
                   }))}
                 />
               </Field>
-              {orderMakeToOrderCost(order) > 0 ? (
-                <Field label="Quién paga la producción a medida *" wide>
-                  <Pick
-                    label="Quién paga la producción a medida"
-                    value={charge.cost_partner_id}
-                    onChange={(value) =>
-                      setCharge({ ...charge, cost_partner_id: value })
-                    }
-                    options={partners.map((partner) => ({
-                      value: partner.id,
-                      label: partner.name,
-                    }))}
-                  />
-                </Field>
-              ) : null}
               <Field label="Fecha *" wide>
                 <DateCalendar
                   label="Fecha"
@@ -2802,6 +2782,8 @@ function prefillDraftItems(
       attributes: productFieldValues(product, fields),
       config: item.config,
       supplier_id: product.supplier_id || '',
+      cost_partner_id:
+        data.partners.find((partner) => !partner.archived)?.id || '',
     });
   }
   return lines;
@@ -2840,7 +2822,6 @@ export function OrderForm({
       record?.paid_partner_id ||
       data.partners.find((partner) => !partner.archived)?.id ||
       '',
-    cost_partner_id: record?.cost_partner_id || '',
     invoice: !!record?.invoice,
     notes: record?.notes || prefill?.notes || '',
     shipping_carrier: record?.shipping_carrier || '',
@@ -2900,6 +2881,12 @@ export function OrderForm({
         stock_load_id: i.selections.stock_load_id,
         stock_load_ids: stockLoadIdsOf(i.selections),
         make_to_order: !!i.selections.make_to_order,
+        cost_partner_id:
+          i.selections.cost_partner_id ||
+          (!i.selections.from_stock || i.selections.make_to_order
+            ? record?.cost_partner_id || ''
+            : '') ||
+          '',
         snapshot: i,
       };
     }) || prefillDraftItems(prefill, data),
@@ -3027,6 +3014,9 @@ export function OrderForm({
       location: fromStock ? location || '' : undefined,
       stock_load_id: loadId,
       stock_load_ids: loadIds,
+      cost_partner_id: fromStock
+        ? undefined
+        : activePartners[0]?.id || '',
       ...(fromStock ? { quantity: '1' } : {}),
     };
     if (key && items.some((i) => i.key === key)) {
@@ -3165,14 +3155,12 @@ export function OrderForm({
     return withSale(price, cost, { sku: product.sku });
   }
   let total = 0,
-    cost = 0,
-    makeToOrderCost = 0;
+    cost = 0;
   for (const i of items) {
     try {
       const t = itemTotals(i);
       total += t.total;
       cost += t.cost;
-      if (i.make_to_order || !i.from_stock) makeToOrderCost += t.cost;
     } catch {
       /* Draft line incomplete. */
     }
@@ -3190,10 +3178,18 @@ export function OrderForm({
           if (
             !sponsor &&
             !orderIsQuote(f.status) &&
-            makeToOrderCost > 0 &&
-            !f.cost_partner_id
+            items.some((item) => {
+              if (item.from_stock && !item.make_to_order) return false;
+              try {
+                return itemTotals(item).cost > 0 && !item.cost_partner_id;
+              } catch {
+                return false;
+              }
+            })
           )
-            throw new Error('Elegí quién paga la producción a medida.');
+            throw new Error(
+              'Elegí quién paga la producción a medida en cada producto.',
+            );
           if (
             items.some(
               (item) =>
@@ -3286,10 +3282,7 @@ export function OrderForm({
                 : parseDecimal(f.paid) > 0
                   ? f.paid_partner_id
                   : '',
-            cost_partner_id:
-              sponsor || orderIsQuote(f.status) || makeToOrderCost <= 0
-                ? ''
-                : f.cost_partner_id,
+            cost_partner_id: '',
             shipping_carrier: f.shipping_carrier,
             shipping_amount: f.shipping_carrier
               ? parseDecimal(f.shipping_amount)
@@ -3338,6 +3331,10 @@ export function OrderForm({
                         ? [i.stock_load_id]
                         : undefined,
                   make_to_order: i.make_to_order || undefined,
+                  cost_partner_id:
+                    i.make_to_order || !i.from_stock
+                      ? i.cost_partner_id || undefined
+                      : undefined,
                 };
               }
               return {
@@ -3370,6 +3367,10 @@ export function OrderForm({
                       ? [i.stock_load_id]
                       : undefined,
                 make_to_order: i.make_to_order || undefined,
+                cost_partner_id:
+                  i.make_to_order || !i.from_stock
+                    ? i.cost_partner_id || undefined
+                    : undefined,
               };
             }),
           });
@@ -3570,29 +3571,6 @@ export function OrderForm({
                   )}
                 </select>
               </Field>
-              {makeToOrderCost > 0 ? (
-                <Field label="Quién paga la producción a medida">
-                  <select
-                    aria-label="Quién paga la producción a medida"
-                    value={f.cost_partner_id}
-                    disabled={!activePartners.length}
-                    onChange={(e) =>
-                      set({ ...f, cost_partner_id: e.target.value })
-                    }
-                  >
-                    <option value="">
-                      {activePartners.length
-                        ? 'Seleccionar una opción'
-                        : 'Sin socios activos'}
-                    </option>
-                    {activePartners.map((partner) => (
-                      <option key={partner.id} value={partner.id}>
-                        {partner.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              ) : null}
               <div className="field">
                 <span>Facturación</span>
                 <Check
@@ -4081,6 +4059,7 @@ export function OrderForm({
                             );
                           update(i.key, {
                             make_to_order: false,
+                            cost_partner_id: undefined,
                             stock_load_ids: ids.length ? ids : undefined,
                             stock_load_id: ids[0],
                             location: sameLocation
@@ -4147,8 +4126,12 @@ export function OrderForm({
                                         stock_load_ids: undefined,
                                         stock_load_id: undefined,
                                         location: undefined,
+                                        cost_partner_id:
+                                          i.cost_partner_id ||
+                                          activePartners[0]?.id ||
+                                          '',
                                       }
-                                    : {}),
+                                    : { cost_partner_id: undefined }),
                                 })
                               }
                             />
@@ -4167,6 +4150,36 @@ export function OrderForm({
                           </div>
                         );
                       })()}
+                    </Field>
+                  ) : null}
+                  {(i.make_to_order || !i.from_stock) &&
+                  !sponsor &&
+                  !orderIsQuote(f.status) ? (
+                    <Field
+                      label="Quién paga la producción a medida *"
+                      pending={!i.cost_partner_id}
+                    >
+                      <select
+                        aria-label={`Quién paga la producción a medida · ítem ${index + 1}`}
+                        value={i.cost_partner_id || ''}
+                        disabled={!activePartners.length || closed}
+                        onChange={(e) =>
+                          update(i.key, {
+                            cost_partner_id: e.target.value,
+                          })
+                        }
+                      >
+                        <option value="">
+                          {activePartners.length
+                            ? 'Seleccionar una opción'
+                            : 'Sin socios activos'}
+                        </option>
+                        {activePartners.map((partner) => (
+                          <option key={partner.id} value={partner.id}>
+                            {partner.name}
+                          </option>
+                        ))}
+                      </select>
                     </Field>
                   ) : null}
                   {!i.snapshot && p && isCabezadaProduct(p) ? (
@@ -5532,6 +5545,7 @@ function PriceListsSettings({
   const lists = data.price_lists || [];
   const [name, setName] = useState('');
   const [discount, setDiscount] = useState('10');
+  const [copiedId, setCopiedId] = useState('');
   const [drafts, setDrafts] = useState(() =>
     Object.fromEntries(
       lists.map((list) => [
@@ -5569,7 +5583,8 @@ function PriceListsSettings({
       <p className="hint">
         Definí descuentos genéricos (Friends & Family, Organizaciones,
         Promoción, etc.). Se pueden aplicar al pedido o a cada ítem; en el
-        producto podés fijar un precio exacto por lista.
+        producto podés fijar un precio exacto por lista. Cada lista activa
+        tiene una página pública para compartir con organizaciones.
       </p>
       {lists.length ? (
         <ul className="settings-partners">
@@ -5642,6 +5657,43 @@ function PriceListsSettings({
                 >
                   {list.archived ? 'Restaurar' : 'Archivar'}
                 </button>
+                {!list.archived ? (
+                  <>
+                    <a
+                      className="secondary"
+                      href={`/lista/${list.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Ver pública
+                    </a>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() => {
+                        const url = `${window.location.origin}/lista/${list.id}`;
+                        void navigator.clipboard.writeText(url).then(
+                          () => {
+                            setError('');
+                            setCopiedId(list.id);
+                            window.setTimeout(() => {
+                              setCopiedId((current) =>
+                                current === list.id ? '' : current,
+                              );
+                            }, 2000);
+                          },
+                          () =>
+                            setError(
+                              'No se pudo copiar el enlace. Abrí “Ver pública” y copiá la URL.',
+                            ),
+                        );
+                      }}
+                    >
+                      {copiedId === list.id ? 'Copiado' : 'Copiar enlace'}
+                    </button>
+                  </>
+                ) : null}
               </li>
             );
           })}

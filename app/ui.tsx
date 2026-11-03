@@ -29,7 +29,7 @@ import {
   type Partner,
 } from '@/lib/types';
 import { decimal, parseDecimal } from '@/lib/money';
-import { orderMakeToOrderCost } from '@/lib/account';
+import { orderMissingMakeToOrderPartner } from '@/lib/account';
 function selectFieldInput(e: { target: EventTarget }) {
   const input = e.target;
   if (!(input instanceof HTMLInputElement) || input.readOnly || input.disabled)
@@ -327,7 +327,6 @@ export function OrderPayMenu({
 }) {
   const value = payStatus(order);
   const activePartners = partners.filter((partner) => !partner.archived);
-  const makeToOrderCost = orderMakeToOrderCost(order);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState(value);
@@ -335,17 +334,16 @@ export function OrderPayMenu({
   const [partnerId, setPartnerId] = useState(
     order.paid_partner_id || activePartners[0]?.id || '',
   );
-  const [costPartnerId, setCostPartnerId] = useState(
-    order.cost_partner_id || activePartners[0]?.id || '',
-  );
   const [error, setError] = useState('');
   async function submit(option: string, paidAmount?: number) {
     if (option !== 'no pagado' && !partnerId) {
       setError('Elegí qué socio recibió el cobro.');
       return;
     }
-    if (option !== 'no pagado' && makeToOrderCost > 0 && !costPartnerId) {
-      setError('Elegí qué socio paga la producción a medida.');
+    if (option !== 'no pagado' && orderMissingMakeToOrderPartner(order)) {
+      setError(
+        'Falta quién paga la producción a medida en algún producto. Editá el pedido.',
+      );
       return;
     }
     setBusy(true);
@@ -355,11 +353,6 @@ export function OrderPayMenu({
         option,
         paidAmount,
         option === 'no pagado' ? '' : partnerId,
-        option === 'no pagado'
-          ? order.cost_partner_id || ''
-          : makeToOrderCost > 0
-            ? costPartnerId
-            : '',
       );
       setOpen(false);
     } catch (e) {
@@ -388,9 +381,6 @@ export function OrderPayMenu({
           setPicked(value);
           setAmount(decimal(order.paid));
           setPartnerId(order.paid_partner_id || activePartners[0]?.id || '');
-          setCostPartnerId(
-            order.cost_partner_id || activePartners[0]?.id || '',
-          );
           setError('');
         }
       }}
@@ -412,11 +402,8 @@ export function OrderPayMenu({
         <SheetHeader>
           <SheetTitle>Estado de pago</SheetTitle>
           <SheetDescription>
-            Marcá si está cobrado, quién recibió el dinero
-            {makeToOrderCost > 0
-              ? ', quién paga la producción a medida'
-              : ''}
-            y, si es parcial, el importe.
+            Marcá si está cobrado, quién recibió el dinero y, si es parcial, el
+            importe.
           </SheetDescription>
         </SheetHeader>
         <div className="status-sheet-options">
@@ -435,46 +422,24 @@ export function OrderPayMenu({
           ))}
         </div>
         {picked !== 'no pagado' ? (
-          <>
-            <label className="status-sheet-amount">
-              Socio que recibió el cobro
-              <select
-                aria-label="Socio que recibió el cobro"
-                value={partnerId}
-                disabled={busy || !activePartners.length}
-                onChange={(e) => setPartnerId(e.target.value)}
-              >
-                {!activePartners.length ? (
-                  <option value="">Sin socios activos</option>
-                ) : null}
-                {activePartners.map((partner) => (
-                  <option key={partner.id} value={partner.id}>
-                    {partner.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {makeToOrderCost > 0 ? (
-              <label className="status-sheet-amount">
-                Quién paga la producción a medida
-                <select
-                  aria-label="Quién paga la producción a medida"
-                  value={costPartnerId}
-                  disabled={busy || !activePartners.length}
-                  onChange={(e) => setCostPartnerId(e.target.value)}
-                >
-                  {!activePartners.length ? (
-                    <option value="">Sin socios activos</option>
-                  ) : null}
-                  {activePartners.map((partner) => (
-                    <option key={partner.id} value={partner.id}>
-                      {partner.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-          </>
+          <label className="status-sheet-amount">
+            Socio que recibió el cobro
+            <select
+              aria-label="Socio que recibió el cobro"
+              value={partnerId}
+              disabled={busy || !activePartners.length}
+              onChange={(e) => setPartnerId(e.target.value)}
+            >
+              {!activePartners.length ? (
+                <option value="">Sin socios activos</option>
+              ) : null}
+              {activePartners.map((partner) => (
+                <option key={partner.id} value={partner.id}>
+                  {partner.name}
+                </option>
+              ))}
+            </select>
+          </label>
         ) : null}
         {picked === 'pago parcial' ? (
           <>

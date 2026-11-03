@@ -619,14 +619,15 @@ test('stock cost recovers to the partner who paid the inbound load', () => {
   assert.equal(rows.find((r) => r.partner.id === 'pablo')?.recovered, 0);
 });
 
-test('make-to-order cost recovers to cost_partner_id', () => {
+test('make-to-order cost recovers to item cost_partner_id', () => {
   const sale = {
-    ...order('o-mto', '2026-04-01', 50_000, 30_000, 'entregado', 'ivan', 'pablo'),
+    ...order('o-mto', '2026-04-01', 50_000, 30_000, 'entregado', 'ivan', ''),
     items: [
       line('o-mto', 'i1', 30_000, {
         options: [],
         attributes: {},
         make_to_order: true,
+        cost_partner_id: 'pablo',
       }),
     ],
   };
@@ -634,9 +635,9 @@ test('make-to-order cost recovers to cost_partner_id', () => {
   assert.deepEqual([...orderCostRecoveryByPartner(sale, [])], [['pablo', 30_000]]);
 });
 
-test('mixed order splits recovery between stock payer and make-to-order partner', () => {
+test('mixed order splits recovery between stock payer and per-item make-to-order partners', () => {
   const sale = {
-    ...order('o-mix', '2026-04-01', 100_000, 50_000, 'entregado', 'ivan', 'pablo'),
+    ...order('o-mix', '2026-04-01', 100_000, 50_000, 'entregado', 'ivan', ''),
     items: [
       line('o-mix', 'stock', 20_000, {
         options: [],
@@ -648,6 +649,7 @@ test('mixed order splits recovery between stock payer and make-to-order partner'
         options: [],
         attributes: {},
         make_to_order: true,
+        cost_partner_id: 'pablo',
       }),
     ],
   };
@@ -669,6 +671,20 @@ test('mixed order splits recovery between stock payer and make-to-order partner'
   ]);
   assert.equal(rows.find((r) => r.partner.id === 'ivan')?.recovered, 20_000);
   assert.equal(rows.find((r) => r.partner.id === 'pablo')?.recovered, 30_000);
+});
+
+test('legacy order.cost_partner_id still recovers make-to-order lines without item partner', () => {
+  const sale = {
+    ...order('o-legacy', '2026-04-01', 50_000, 30_000, 'entregado', 'ivan', 'pablo'),
+    items: [
+      line('o-legacy', 'i1', 30_000, {
+        options: [],
+        attributes: {},
+        make_to_order: true,
+      }),
+    ],
+  };
+  assert.deepEqual([...orderCostRecoveryByPartner(sale, [])], [['pablo', 30_000]]);
 });
 
 test('unpaid stock load does not recover that cost portion', () => {

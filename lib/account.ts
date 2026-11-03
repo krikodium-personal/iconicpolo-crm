@@ -729,8 +729,7 @@ export function itemIsMakeToOrder(item: Pick<Item, 'selections'>) {
 }
 
 /**
- * Costo de líneas a medida: requiere `orders.cost_partner_id`
- * (quién paga esa producción). Pedidos sin ítems (legado) = costo total.
+ * Costo de líneas a medida. Pedidos sin ítems (legado) = costo total.
  */
 export function orderMakeToOrderCost(order: Pick<Order, 'items' | 'cost'>) {
   if (!order.items.length) return order.cost > 0 ? order.cost : 0;
@@ -738,6 +737,35 @@ export function orderMakeToOrderCost(order: Pick<Order, 'items' | 'cost'>) {
     if (item.cost <= 0 || !itemIsMakeToOrder(item)) return sum;
     return sum + item.cost;
   }, 0);
+}
+
+/** Socio que paga la producción de un ítem a medida (con fallback de pedido viejo). */
+export function itemMakeToOrderPartnerId(
+  item: Pick<Item, 'selections'>,
+  order?: Pick<Order, 'cost_partner_id'>,
+) {
+  if (!itemIsMakeToOrder(item)) return '';
+  return (
+    (typeof item.selections.cost_partner_id === 'string'
+      ? item.selections.cost_partner_id
+      : '') ||
+    order?.cost_partner_id ||
+    ''
+  );
+}
+
+/** True si alguna línea a medida con costo no tiene socio de producción. */
+export function orderMissingMakeToOrderPartner(
+  order: Pick<Order, 'items' | 'cost' | 'cost_partner_id'>,
+) {
+  if (!order.items.length)
+    return order.cost > 0 && !order.cost_partner_id;
+  return order.items.some(
+    (item) =>
+      item.cost > 0 &&
+      itemIsMakeToOrder(item) &&
+      !itemMakeToOrderPartnerId(item, order),
+  );
 }
 
 type RecoveryLoad = {
@@ -749,7 +777,7 @@ type RecoveryLoad = {
 /**
  * Parte el costo del pedido entre socios según quién financió cada
  * producción: stock → `paid_partner_id` del ingreso; a medida →
- * `order.cost_partner_id`. No mira si el pedido está cobrado.
+ * `item.selections.cost_partner_id` (fallback `order.cost_partner_id`).
  */
 export function orderCostAttributionByPartner(
   order: Order,
@@ -777,7 +805,7 @@ export function orderCostAttributionByPartner(
   for (const item of order.items) {
     if (item.cost <= 0) continue;
     if (itemIsMakeToOrder(item)) {
-      add(order.cost_partner_id, item.cost);
+      add(itemMakeToOrderPartnerId(item, order), item.cost);
       continue;
     }
     const loadIds = stockLoadIdsOf(item.selections);

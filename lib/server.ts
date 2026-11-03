@@ -34,8 +34,9 @@ import {
 import {
   assertSharesComplete,
   cashoutLimit,
+  itemIsMakeToOrder,
   monthlyResults,
-  orderMakeToOrderCost,
+  orderMissingMakeToOrderPartner,
   sharesAreComplete,
   totalsOf,
 } from './account';
@@ -162,17 +163,20 @@ async function supplierIdForOrderItem(
     throw new Error('Completá los datos del proveedor nuevo.');
   return requireSupplier(input.supplier_id, keep);
 }
-/** Socio que paga la producción a medida. Vacío si no hay costo a medida. */
-async function requireCostPartner(id: unknown, makeToOrderCost: number) {
-  if (makeToOrderCost <= 0) return '';
-  const partnerId = str(id ?? '', 'Socio que paga la producción a medida', true);
+/** Socio activo que paga la producción a medida de un ítem. */
+async function requireItemCostPartner(id: unknown, productName: string) {
+  const partnerId = str(
+    id ?? '',
+    `Quién paga la producción de ${productName}`,
+    true,
+  );
   const partner = await stmt(
     'SELECT id FROM partners WHERE id=? AND archived=0',
     partnerId,
   ).first();
   if (!partner)
     throw new Error(
-      'Elegí un socio activo que paga la producción a medida.',
+      `Elegí un socio activo que paga la producción a medida de ${productName}.`,
     );
   return partnerId;
 }
@@ -1742,6 +1746,11 @@ export async function saveOrder(
     'Tipo de pedido',
   );
   const sponsor = kind === 'sponsoreo';
+  const status = choice(
+    b.status || existing?.status || 'nuevo',
+    [...ORDER_STATUSES],
+    'Estado',
+  );
   const customer = await customerIdForOrder(b);
   const previous = existing
     ? (
@@ -2039,7 +2048,7 @@ export async function saveOrder(
         discount,
       );
     }
-    items.push({
+    const draftItem: Item = {
       ...snapshot,
       unit_price: unitPrice,
       selections: {
@@ -2053,7 +2062,28 @@ export async function saveOrder(
       discount,
       total: sponsor ? 0 : totals.total,
       cost: totals.cost,
-    });
+    };
+    const needsCostPartner =
+      !sponsor &&
+      !orderIsQuote(status) &&
+      draftItem.cost > 0 &&
+      itemIsMakeToOrder(draftItem);
+    if (needsCostPartner) {
+      const partnerId = await requireItemCostPartner(
+        input.cost_partner_id ??
+          snapshot.selections.cost_partner_id ??
+          old?.selections.cost_partner_id,
+        snapshot.name,
+      );
+      draftItem.selections = {
+        ...draftItem.selections,
+        cost_partner_id: partnerId,
+      };
+    } else {
+      const { cost_partner_id: _drop, ...rest } = draftItem.selections;
+      draftItem.selections = rest;
+    }
+    items.push(draftItem);
   }
   await assertFromStockAvailable(id, items);
   const total = integer(items.reduce((s, i) => s + i.total, 0));
@@ -2075,15 +2105,8 @@ export async function saveOrder(
   const delivery = date(b.delivery);
   if (delivery && delivery < orderDate)
     throw new Error('La entrega no puede ser anterior al pedido.');
-  const status = choice(b.status, [...ORDER_STATUSES], 'Estado');
-  const makeToOrderCost = orderMakeToOrderCost({ items, cost });
-  const costPartnerId =
-    sponsor || orderIsQuote(status)
-      ? ''
-      : await requireCostPartner(
-          b.cost_partner_id ?? existing?.cost_partner_id,
-          makeToOrderCost,
-        );
+  // Socio de producción a medida vive en cada ítem.
+  const costPartnerId = '';
   const invoice = integer(b.invoice, 'Facturación', 1);
   const notes = str(b.notes, 'Notas', false, 2000);
   let shippingCarrier = existing?.shipping_carrier || '';
@@ -2336,25 +2359,25 @@ export async function patchOrder(
   const existingItems = (
     await stmt('SELECT * FROM order_items WHERE order_id=?', id).all()
   ).results.map((r) => decode<Item>(r, ['selections']));
-  const makeToOrderCost = orderMakeToOrderCost({
-    items: existingItems,
-    cost: Number(existing.cost) || 0,
-  });
-  const costPartnerId =
-    paid > 0
-      ? await requireCostPartner(
-          b.cost_partner_id ?? existing.cost_partner_id,
-          makeToOrderCost,
-        )
-      : makeToOrderCost > 0 && typeof existing.cost_partner_id === 'string'
-        ? existing.cost_partner_id
-        : '';
+  if (
+    paid > 0 &&
+    orderMissingMakeToOrderPartner({
+      items: existingItems,
+      cost: Number(existing.cost) || 0,
+      cost_partner_id:
+        typeof existing.cost_partner_id === 'string'
+          ? existing.cost_partner_id
+          : '',
+    })
+  )
+    throw new Error(
+      'Falta quién paga la producción a medida en algún producto. Editá el pedido.',
+    );
   const [result] = await db().batch([
     stmt(
-      'UPDATE orders SET paid=?,paid_partner_id=?,cost_partner_id=?,version=? WHERE id=?',
+      'UPDATE orders SET paid=?,paid_partner_id=?,version=? WHERE id=?',
       paid,
       paidPartnerId,
-      costPartnerId,
       version,
       id,
     ),
@@ -3067,20 +3090,24 @@ export async function mutate(
       const paymentItems = (
         await stmt('SELECT * FROM order_items WHERE order_id=?', orderId).all()
       ).results.map((r) => decode<Item>(r, ['selections']));
-      const makeToOrderCost = orderMakeToOrderCost({
-        items: paymentItems,
-        cost: Number(order.cost) || 0,
-      });
-      const costPartnerId = await requireCostPartner(
-        b.cost_partner_id ?? order.cost_partner_id,
-        makeToOrderCost,
-      );
+      if (
+        orderMissingMakeToOrderPartner({
+          items: paymentItems,
+          cost: Number(order.cost) || 0,
+          cost_partner_id:
+            typeof order.cost_partner_id === 'string'
+              ? order.cost_partner_id
+              : '',
+        })
+      )
+        throw new Error(
+          'Falta quién paga la producción a medida en algún producto. Editá el pedido.',
+        );
       const [update] = await db().batch([
         stmt(
-          'UPDATE orders SET paid=?,paid_partner_id=?,cost_partner_id=?,version=version+1 WHERE id=? AND paid=?',
+          'UPDATE orders SET paid=?,paid_partner_id=?,version=version+1 WHERE id=? AND paid=?',
           paid,
           partnerId,
-          costPartnerId,
           orderId,
           Number(order.paid),
         ),
