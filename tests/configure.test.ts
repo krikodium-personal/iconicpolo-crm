@@ -809,7 +809,7 @@ test('montura stock summary hides default faldin and porta estribera', () => {
   });
   assert.equal(
     text,
-    'Montura Bauti cuero forrado negro 19\nAsiento: liso, descarne gamusado\nCorte: tapita',
+    'Montura Bauti cuero forrado negro 19 · asiento liso, descarne gamusado\nCorte: tapita',
   );
 });
 

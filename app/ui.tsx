@@ -36,11 +36,12 @@ import {
   orderIsLocked,
   orderIsQuote,
   todayInBuenosAires,
+  type Item,
   type Order,
   type Partner,
 } from '@/lib/types';
-import { decimal, parseDecimal } from '@/lib/money';
-import { orderMissingMakeToOrderPartner } from '@/lib/account';
+import { decimal, formatMoney, parseDecimal } from '@/lib/money';
+import { orderProductionItems } from '@/lib/account';
 function selectFieldInput(e: { target: EventTarget }) {
   const input = e.target;
   if (!(input instanceof HTMLInputElement) || input.readOnly || input.disabled)
@@ -322,6 +323,58 @@ function payStatus(order: Order) {
       ? 'pago parcial'
       : 'pagado';
 }
+export function OrderProductionItemPicker({
+  order,
+  selectedIds,
+  onChange,
+  currency,
+}: {
+  order: Order;
+  selectedIds: string[];
+  onChange: (ids: string[], selectedCost: number) => void;
+  currency?: string;
+}) {
+  const items = orderProductionItems(order);
+  if (!items.length) {
+    return (
+      <p className="hint">
+        Este pedido no tiene productos a medida con costo para asociar.
+      </p>
+    );
+  }
+  const selected = new Set(selectedIds);
+  function toggle(item: Item, on: boolean) {
+    const next = on
+      ? [...selectedIds, item.id]
+      : selectedIds.filter((id) => id !== item.id);
+    const cost = items
+      .filter((row) => next.includes(row.id))
+      .reduce((sum, row) => sum + row.cost, 0);
+    onChange(next, cost);
+  }
+  return (
+    <div className="order-payment-items">
+      {items.map((item) => (
+        <label className="check" key={item.id}>
+          <Checkbox
+            checked={selected.has(item.id)}
+            onCheckedChange={(value) => toggle(item, value === true)}
+          />
+          <span>
+            <b>{item.name}</b>
+            <small>
+              {item.quantity} ud.
+              {item.cost > 0
+                ? ` · ${formatMoney(item.cost, currency || order.currency)}`
+                : ''}
+            </small>
+          </span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 export function OrderPayMenu({
   order,
   partners,
@@ -349,12 +402,6 @@ export function OrderPayMenu({
   async function submit(option: string, paidAmount?: number) {
     if (option !== 'no pagado' && !partnerId) {
       setError('Elegí qué socio recibió el cobro.');
-      return;
-    }
-    if (option !== 'no pagado' && orderMissingMakeToOrderPartner(order)) {
-      setError(
-        'Falta quién paga la producción a medida en algún producto. Editá el pedido.',
-      );
       return;
     }
     setBusy(true);

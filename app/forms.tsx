@@ -49,7 +49,7 @@ import {
   conceptLabel,
   entryFxNote,
   orderCostAttributionByPartner,
-  orderMissingMakeToOrderPartner,
+  orderProductionItems,
   parseShare,
   shareInput,
   shareLabel,
@@ -109,6 +109,7 @@ import {
   StatusMenu,
   OrderPayMenu,
   OrderDeliveryMenu,
+  OrderProductionItemPicker,
   ProductPhoto,
   DateCalendar,
 } from './ui';
@@ -177,19 +178,33 @@ function Footer({
   busy,
   label = 'Guardar cambios',
   error = '',
+  onCancel,
 }: {
   busy: boolean;
   label?: string;
   error?: string;
+  onCancel?: () => void;
 }) {
   return (
     <div className="form-footer">
       <ErrorBox message={error} />
       <div className="form-footer-bar">
         <span>Los campos con * son obligatorios.</span>
-        <button className="primary" disabled={busy}>
-          {busy ? 'Guardando…' : label}
-        </button>
+        <div className="form-footer-actions">
+          {onCancel ? (
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={onCancel}
+            >
+              Cancelar
+            </button>
+          ) : null}
+          <button className="primary" disabled={busy}>
+            {busy ? 'Guardando…' : label}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1535,8 +1550,6 @@ type DraftItem = {
   stock_load_id?: string;
   stock_load_ids?: string[];
   make_to_order?: boolean;
-  /** Socio que paga la producción a medida de este ítem. */
-  cost_partner_id?: string;
   snapshot?: Item;
 };
 function productFieldValues(
@@ -1723,6 +1736,8 @@ export function OrderDetail({
   const costAttribution = orderCostAttributionByPartner(
     record,
     data.movements,
+    data.entries || [],
+    data.currency,
   );
   const costRecoveryLabel = [...costAttribution.entries()]
     .map(([partnerId, amount]) => {
@@ -1730,7 +1745,14 @@ export function OrderDetail({
       return `${name} ${formatMoney(amount, data.currency)}`;
     })
     .join(' · ');
-  const missingMakeToOrderPartner = orderMissingMakeToOrderPartner(record);
+  const missingProductionPayment =
+    orderProductionItems(record).length > 0 &&
+    !(data.entries || []).some(
+      (entry) =>
+        entry.concept === 'pago_proveedor' &&
+        entry.order_id === record.id &&
+        !entry.stock_movement_id,
+    );
   if (fichaItem) {
     const product = data.products.find((p) => p.id === fichaItem.product_id);
     const supplier = data.contacts.find(
@@ -1943,8 +1965,8 @@ export function OrderDetail({
                   <dd>
                     {costRecoveryLabel ||
                       (record.cost > 0
-                        ? missingMakeToOrderPartner
-                          ? 'Falta socio a medida'
+                        ? missingProductionPayment
+                          ? 'Falta pago a proveedor'
                           : 'Sin definir'
                         : '—')}
                   </dd>
@@ -2221,10 +2243,6 @@ function OrderMovements({
           `El cobro no puede superar el saldo (${formatMoney(due, data.currency)}).`,
         );
       if (!charge.partner_id) throw new Error('Elegí qué socio recibió el cobro.');
-      if (orderMissingMakeToOrderPartner(order))
-        throw new Error(
-          'Falta quién paga la producción a medida en algún producto. Editá el pedido.',
-        );
       setCharge({ ...charge, busy: true, error: '' });
       await save({
         action: 'order_payment',
@@ -2245,6 +2263,7 @@ function OrderMovements({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const productionItems = orderProductionItems(order);
   const [form, setForm] = useState({
     partner_id: partners[0]?.id || '',
     supplier_id: supplierChoices[0]?.id || '',
@@ -2254,19 +2273,28 @@ function OrderMovements({
     currency: data.currency === 'ARS' ? 'ARS' : 'USD',
     fx_rate: '',
     date: today(),
+    order_item_ids: [] as string[],
   });
   const fxPreview = previewFx(form.currency, form.amount, form.fx_rate);
   function openForm() {
     setError('');
+    const defaultIds = productionItems.map((item) => item.id);
+    const defaultCost = productionItems.reduce((sum, item) => sum + item.cost, 0);
     setForm({
       partner_id: partners[0]?.id || '',
       supplier_id: supplierChoices[0]?.id || '',
-      detail: '',
+      detail: productionItems.map((item) => item.name).join(' · '),
       receipt: '',
-      amount: '',
-      currency: data.currency === 'ARS' ? 'ARS' : 'USD',
+      amount: defaultCost ? decimal(defaultCost) : '',
+      currency:
+        order.currency === 'ARS' || order.currency === 'USD'
+          ? order.currency
+          : data.currency === 'ARS'
+            ? 'ARS'
+            : 'USD',
       fx_rate: '',
       date: today(),
+      order_item_ids: defaultIds,
     });
     setOpen(true);
   }
@@ -2491,6 +2519,14 @@ function OrderMovements({
                   {partnerName(entry.partner_id)
                     ? ` · Pagó ${partnerName(entry.partner_id)}`
                     : ''}
+                  {(entry.order_item_ids || []).length
+                    ? ` · ${order.items
+                        .filter((item) =>
+                          (entry.order_item_ids || []).includes(item.id),
+                        )
+                        .map((item) => item.name)
+                        .join(' · ')}`
+                    : ''}
                   {entryFxNote(entry) ? ` · ${entryFxNote(entry)}` : ''}
                   {entry.receipt ? ' · factura' : ''}
                 </small>
@@ -2515,6 +2551,8 @@ function OrderMovements({
               const attribution = orderCostAttributionByPartner(
                 order,
                 data.movements,
+                data.entries || [],
+                data.currency,
               );
               if (!attribution.size) return '';
               return `Recupera ${[...attribution.entries()]
@@ -2623,6 +2661,13 @@ function OrderMovements({
                   throw new Error('Elegí el proveedor.');
                 if (!form.partner_id)
                   throw new Error('Elegí quién pagó.');
+                if (
+                  productionItems.length &&
+                  !form.order_item_ids.length
+                )
+                  throw new Error(
+                    'Elegí qué productos a medida del pedido estás pagando.',
+                  );
                 const amount = parseDecimal(form.amount);
                 const fxRate = parseDecimal(form.fx_rate);
                 if (!fxRate)
@@ -2636,6 +2681,7 @@ function OrderMovements({
                   partner_id: form.partner_id,
                   supplier_id: form.supplier_id,
                   order_id: order.id,
+                  order_item_ids: form.order_item_ids,
                   receipt: form.receipt,
                   amount,
                   currency: form.currency,
@@ -2673,6 +2719,26 @@ function OrderMovements({
                     value: supplier.id,
                     label: supplier.name,
                   }))}
+                />
+              </Field>
+              <Field label="Productos a medida *" wide>
+                <OrderProductionItemPicker
+                  order={order}
+                  selectedIds={form.order_item_ids}
+                  currency={form.currency}
+                  onChange={(ids, selectedCost) => {
+                    const names = productionItems
+                      .filter((item) => ids.includes(item.id))
+                      .map((item) => item.name);
+                    setForm({
+                      ...form,
+                      order_item_ids: ids,
+                      amount: selectedCost ? decimal(selectedCost) : form.amount,
+                      detail: names.length
+                        ? names.join(' · ')
+                        : form.detail,
+                    });
+                  }}
                 />
               </Field>
               <Field label="Concepto del gasto" wide>
@@ -2782,8 +2848,6 @@ function prefillDraftItems(
       attributes: productFieldValues(product, fields),
       config: item.config,
       supplier_id: product.supplier_id || '',
-      cost_partner_id:
-        data.partners.find((partner) => !partner.archived)?.id || '',
     });
   }
   return lines;
@@ -2818,10 +2882,7 @@ export function OrderForm({
     delivery: record?.delivery || '',
     status: record?.status || 'nuevo',
     paid: decimal(record?.paid || 0),
-    paid_partner_id:
-      record?.paid_partner_id ||
-      data.partners.find((partner) => !partner.archived)?.id ||
-      '',
+    paid_partner_id: record?.paid_partner_id || '',
     invoice: !!record?.invoice,
     notes: record?.notes || prefill?.notes || '',
     shipping_carrier: record?.shipping_carrier || '',
@@ -2881,12 +2942,6 @@ export function OrderForm({
         stock_load_id: i.selections.stock_load_id,
         stock_load_ids: stockLoadIdsOf(i.selections),
         make_to_order: !!i.selections.make_to_order,
-        cost_partner_id:
-          i.selections.cost_partner_id ||
-          (!i.selections.from_stock || i.selections.make_to_order
-            ? record?.cost_partner_id || ''
-            : '') ||
-          '',
         snapshot: i,
       };
     }) || prefillDraftItems(prefill, data),
@@ -3014,9 +3069,6 @@ export function OrderForm({
       location: fromStock ? location || '' : undefined,
       stock_load_id: loadId,
       stock_load_ids: loadIds,
-      cost_partner_id: fromStock
-        ? undefined
-        : activePartners[0]?.id || '',
       ...(fromStock ? { quantity: '1' } : {}),
     };
     if (key && items.some((i) => i.key === key)) {
@@ -3176,21 +3228,6 @@ export function OrderForm({
           if (creatingCustomer && !newCustomer.name.trim())
             throw new Error('Escribí el nombre del cliente.');
           if (
-            !sponsor &&
-            !orderIsQuote(f.status) &&
-            items.some((item) => {
-              if (item.from_stock && !item.make_to_order) return false;
-              try {
-                return itemTotals(item).cost > 0 && !item.cost_partner_id;
-              } catch {
-                return false;
-              }
-            })
-          )
-            throw new Error(
-              'Elegí quién paga la producción a medida en cada producto.',
-            );
-          if (
             items.some(
               (item) =>
                 !item.supplier_id ||
@@ -3268,20 +3305,20 @@ export function OrderForm({
               );
             used.set(key, taken + hold.quantity);
           }
+          const paidAmount =
+            sponsor || orderIsQuote(f.status) ? 0 : parseDecimal(f.paid);
+          if (paidAmount > 0 && !f.paid_partner_id)
+            throw new Error(
+              'Elegí qué socio recibió el adelanto cobrado.',
+            );
           await save({
             action: 'order',
             ...f,
             customer_id: creatingCustomer ? undefined : f.customer_id,
             customer: creatingCustomer ? newCustomer : undefined,
             invoice: sponsor ? 0 : Number(f.invoice),
-            paid:
-              sponsor || orderIsQuote(f.status) ? 0 : parseDecimal(f.paid),
-            paid_partner_id:
-              sponsor || orderIsQuote(f.status)
-                ? ''
-                : parseDecimal(f.paid) > 0
-                  ? f.paid_partner_id
-                  : '',
+            paid: paidAmount,
+            paid_partner_id: paidAmount > 0 ? f.paid_partner_id : '',
             cost_partner_id: '',
             shipping_carrier: f.shipping_carrier,
             shipping_amount: f.shipping_carrier
@@ -3331,10 +3368,6 @@ export function OrderForm({
                         ? [i.stock_load_id]
                         : undefined,
                   make_to_order: i.make_to_order || undefined,
-                  cost_partner_id:
-                    i.make_to_order || !i.from_stock
-                      ? i.cost_partner_id || undefined
-                      : undefined,
                 };
               }
               return {
@@ -3367,10 +3400,6 @@ export function OrderForm({
                       ? [i.stock_load_id]
                       : undefined,
                 make_to_order: i.make_to_order || undefined,
-                cost_partner_id:
-                  i.make_to_order || !i.from_stock
-                    ? i.cost_partner_id || undefined
-                    : undefined,
               };
             }),
           });
@@ -3508,7 +3537,7 @@ export function OrderForm({
             />
           </Field>
           {!sponsor ? (
-            <Field label="Lista de precios">
+            <Field label="Lista de precios" wide>
               <Pick
                 disabled={closed}
                 label="Lista de precios"
@@ -3551,7 +3580,10 @@ export function OrderForm({
                   onChange={(e) => set({ ...f, paid: e.target.value })}
                 />
               </Field>
-              <Field label="Socio que recibió el adelanto">
+              <Field
+                label="Socio que recibió el adelanto"
+                pending={parseDecimal(f.paid) > 0 && !f.paid_partner_id}
+              >
                 <select
                   aria-label="Socio que recibió el adelanto"
                   value={f.paid_partner_id}
@@ -3560,15 +3592,16 @@ export function OrderForm({
                     set({ ...f, paid_partner_id: e.target.value })
                   }
                 >
-                  {!activePartners.length ? (
-                    <option value="">Sin socios activos</option>
-                  ) : (
-                    activePartners.map((partner) => (
-                      <option key={partner.id} value={partner.id}>
-                        {partner.name}
-                      </option>
-                    ))
-                  )}
+                  <option value="">
+                    {activePartners.length
+                      ? 'Seleccionar una opción'
+                      : 'Sin socios activos'}
+                  </option>
+                  {activePartners.map((partner) => (
+                    <option key={partner.id} value={partner.id}>
+                      {partner.name}
+                    </option>
+                  ))}
                 </select>
               </Field>
               <div className="field">
@@ -4059,7 +4092,6 @@ export function OrderForm({
                             );
                           update(i.key, {
                             make_to_order: false,
-                            cost_partner_id: undefined,
                             stock_load_ids: ids.length ? ids : undefined,
                             stock_load_id: ids[0],
                             location: sameLocation
@@ -4126,12 +4158,8 @@ export function OrderForm({
                                         stock_load_ids: undefined,
                                         stock_load_id: undefined,
                                         location: undefined,
-                                        cost_partner_id:
-                                          i.cost_partner_id ||
-                                          activePartners[0]?.id ||
-                                          '',
                                       }
-                                    : { cost_partner_id: undefined }),
+                                    : {}),
                                 })
                               }
                             />
@@ -4150,36 +4178,6 @@ export function OrderForm({
                           </div>
                         );
                       })()}
-                    </Field>
-                  ) : null}
-                  {(i.make_to_order || !i.from_stock) &&
-                  !sponsor &&
-                  !orderIsQuote(f.status) ? (
-                    <Field
-                      label="Quién paga la producción a medida *"
-                      pending={!i.cost_partner_id}
-                    >
-                      <select
-                        aria-label={`Quién paga la producción a medida · ítem ${index + 1}`}
-                        value={i.cost_partner_id || ''}
-                        disabled={!activePartners.length || closed}
-                        onChange={(e) =>
-                          update(i.key, {
-                            cost_partner_id: e.target.value,
-                          })
-                        }
-                      >
-                        <option value="">
-                          {activePartners.length
-                            ? 'Seleccionar una opción'
-                            : 'Sin socios activos'}
-                        </option>
-                        {activePartners.map((partner) => (
-                          <option key={partner.id} value={partner.id}>
-                            {partner.name}
-                          </option>
-                        ))}
-                      </select>
                     </Field>
                   ) : null}
                   {!i.snapshot && p && isCabezadaProduct(p) ? (
@@ -5145,6 +5143,7 @@ export function StockForm({
   movement,
   onConfigDirtyChange,
   onCancel,
+  onRequestClose,
   onEditMovement,
 }: {
   record: Product;
@@ -5153,6 +5152,7 @@ export function StockForm({
   movement?: Movement;
   onConfigDirtyChange?: (dirty: boolean) => void;
   onCancel?: () => void;
+  onRequestClose?: () => void;
   onEditMovement?: (movement: Movement) => void;
 }) {
   const configured = configuredKindOf(record);
@@ -5525,6 +5525,7 @@ export function StockForm({
         busy={busy || uploading}
         label={editing ? 'Guardar cambios' : 'Registrar movimiento'}
         error={error}
+        onCancel={onRequestClose}
       />
     </form>
   );

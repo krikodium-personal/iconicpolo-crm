@@ -178,6 +178,7 @@ export const accountEntries = sqliteTable(
       .references(() => partners.id),
     supplierId: text('supplier_id').notNull().default(''),
     orderId: text('order_id').notNull().default(''),
+    orderItemIds: text('order_item_ids').notNull().default('[]'),
     receipt: text('receipt').notNull().default(''),
     amount: integer('amount').notNull(),
     currency: text('currency').notNull(),

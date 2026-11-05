@@ -619,7 +619,7 @@ test('stock cost recovers to the partner who paid the inbound load', () => {
   assert.equal(rows.find((r) => r.partner.id === 'pablo')?.recovered, 0);
 });
 
-test('make-to-order cost recovers to item cost_partner_id', () => {
+test('make-to-order cost recovers to item cost_partner_id when there is no supplier payment', () => {
   const sale = {
     ...order('o-mto', '2026-04-01', 50_000, 30_000, 'entregado', 'ivan', ''),
     items: [
@@ -635,7 +635,42 @@ test('make-to-order cost recovers to item cost_partner_id', () => {
   assert.deepEqual([...orderCostRecoveryByPartner(sale, [])], [['pablo', 30_000]]);
 });
 
-test('mixed order splits recovery between stock payer and per-item make-to-order partners', () => {
+test('make-to-order recovery uses order supplier payments over cost_partner_id', () => {
+  const sale = {
+    ...order('o-mto-pay', '2026-04-01', 50_000, 30_000, 'entregado', 'ivan', ''),
+    items: [
+      line('o-mto-pay', 'i1', 30_000, {
+        options: [],
+        attributes: {},
+        make_to_order: true,
+        cost_partner_id: 'pablo',
+      }),
+    ],
+  };
+  const entries = [
+    {
+      id: 'pay-1',
+      concept: 'pago_proveedor' as const,
+      detail: '4 monturas',
+      partner_id: 'ivan',
+      order_id: 'o-mto-pay',
+      amount: 30_000,
+      currency: 'USD' as const,
+      date: '2026-04-01',
+      created_at: '',
+    },
+  ];
+  assert.deepEqual(
+    [...orderCostAttributionByPartner(sale, [], entries, 'USD')],
+    [['ivan', 30_000]],
+  );
+  assert.deepEqual(
+    [...orderCostRecoveryByPartner(sale, [], entries, 'USD')],
+    [['ivan', 30_000]],
+  );
+});
+
+test('mixed order adds stock load recovery plus production supplier payments', () => {
   const sale = {
     ...order('o-mix', '2026-04-01', 100_000, 50_000, 'entregado', 'ivan', ''),
     items: [
@@ -649,7 +684,6 @@ test('mixed order splits recovery between stock payer and per-item make-to-order
         options: [],
         attributes: {},
         make_to_order: true,
-        cost_partner_id: 'pablo',
       }),
     ],
   };
@@ -662,13 +696,38 @@ test('mixed order splits recovery between stock payer and per-item make-to-order
       paid_partner_id: 'ivan',
     },
   ];
+  const entries = [
+    {
+      id: 'pay-mto',
+      concept: 'pago_proveedor' as const,
+      detail: 'Producción',
+      partner_id: 'pablo',
+      order_id: 'o-mix',
+      amount: 30_000,
+      currency: 'USD' as const,
+      date: '2026-04-01',
+      created_at: '',
+    },
+  ];
   assert.equal(orderMakeToOrderCost(sale), 30_000);
-  const attribution = orderCostAttributionByPartner(sale, movements);
+  const attribution = orderCostAttributionByPartner(
+    sale,
+    movements,
+    entries,
+    'USD',
+  );
   assert.equal(attribution.get('ivan'), 20_000);
   assert.equal(attribution.get('pablo'), 30_000);
-  const rows = financialSituation(0, partners, [], [sale], movements, [
-    { id: 'p1', cost: 20_000 },
-  ]);
+  const rows = financialSituation(
+    0,
+    partners,
+    [],
+    [sale],
+    movements,
+    [{ id: 'p1', cost: 20_000 }],
+    entries,
+    'USD',
+  );
   assert.equal(rows.find((r) => r.partner.id === 'ivan')?.recovered, 20_000);
   assert.equal(rows.find((r) => r.partner.id === 'pablo')?.recovered, 30_000);
 });
@@ -685,6 +744,47 @@ test('legacy order.cost_partner_id still recovers make-to-order lines without it
     ],
   };
   assert.deepEqual([...orderCostRecoveryByPartner(sale, [])], [['pablo', 30_000]]);
+});
+
+test('stock-linked supplier payments are not counted as make-to-order recovery', () => {
+  const sale = {
+    ...order('o-stock-pay', '2026-04-01', 50_000, 20_000, 'entregado', 'ivan', ''),
+    items: [
+      line('o-stock-pay', 'i1', 20_000, {
+        options: [],
+        attributes: {},
+        from_stock: true,
+        stock_load_id: 'load-1',
+      }),
+    ],
+  };
+  const movements = [
+    {
+      id: 'load-1',
+      product_id: 'p1',
+      quantity: 1,
+      cost_paid: 1,
+      paid_partner_id: 'ivan',
+    },
+  ];
+  const entries = [
+    {
+      id: 'pay-stock',
+      concept: 'pago_proveedor' as const,
+      detail: 'Carga stock',
+      partner_id: 'pablo',
+      order_id: 'o-stock-pay',
+      stock_movement_id: 'load-1',
+      amount: 20_000,
+      currency: 'USD' as const,
+      date: '2026-04-01',
+      created_at: '',
+    },
+  ];
+  assert.deepEqual(
+    [...orderCostAttributionByPartner(sale, movements, entries, 'USD')],
+    [['ivan', 20_000]],
+  );
 });
 
 test('unpaid stock load does not recover that cost portion', () => {

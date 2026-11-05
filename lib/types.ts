@@ -157,8 +157,8 @@ export type Item = {
     /** No sale del depósito: se manda a producir para este pedido. */
     make_to_order?: boolean;
     /**
-     * Socio que paga la producción a medida de este ítem.
-     * Vacío en líneas de stock (ahí recupera quien pagó el ingreso).
+     * Legado: socio previsto para la producción a medida.
+     * La recuperación usa pagos a proveedor del pedido.
      */
     cost_partner_id?: string;
     /** Lista especial elegida (id de price_lists). Vacío = precio de lista. */
@@ -185,10 +185,7 @@ export type Order = {
   paid: number;
   /** Socio que recibió el cobro del cliente. Vacío si no hay cobro. */
   paid_partner_id: string;
-  /**
-   * Legado: socio a nivel pedido. Preferir `items[].selections.cost_partner_id`.
-   * Se mantiene como fallback al atribuir costos de pedidos viejos.
-   */
+  /** Legado: socio a nivel pedido (fallback si no hay pagos a proveedor). */
   cost_partner_id: string;
   invoice: number;
   notes: string;
@@ -284,6 +281,8 @@ export type AccountEntry = {
   partner_id: string;
   supplier_id?: string;
   order_id?: string;
+  /** Ítems a medida del pedido cubiertos por este pago. */
+  order_item_ids?: string[];
   /** Ingreso de stock que originó este pago a proveedor. */
   stock_movement_id?: string;
   receipt?: string;

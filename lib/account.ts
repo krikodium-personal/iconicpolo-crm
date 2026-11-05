@@ -6,10 +6,10 @@ import type {
   OrderPayment,
   Partner,
   PartnerCashout,
-} from './types';
-import { newestFirst } from './types';
-import { formatMoney, formatRate } from './money';
-import { stockLoadIdsOf } from './configure';
+} from './types.ts';
+import { newestFirst } from './types.ts';
+import { formatMoney, formatRate } from './money.ts';
+import { stockLoadIdsOf } from './configure.ts';
 
 export const SHARE_TOTAL = 10000;
 
@@ -728,6 +728,32 @@ export function itemIsMakeToOrder(item: Pick<Item, 'selections'>) {
   return !!item.selections.make_to_order || !item.selections.from_stock;
 }
 
+/** Líneas a medida con costo: las que se cubren con pagos a proveedor. */
+export function orderProductionItems(order: Pick<Order, 'items'>) {
+  return order.items.filter(
+    (item) => item.cost > 0 && itemIsMakeToOrder(item),
+  );
+}
+
+/** Parsea `order_item_ids` guardado como JSON o lista. */
+export function parseOrderItemIds(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw
+      .map((id) => (typeof id === 'string' ? id.trim() : ''))
+      .filter(Boolean);
+  }
+  if (typeof raw !== 'string' || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((id) => (typeof id === 'string' ? id.trim() : ''))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Costo de líneas a medida. Pedidos sin ítems (legado) = costo total.
  */
@@ -774,25 +800,60 @@ type RecoveryLoad = {
   paid_partner_id?: string;
 };
 
+type RecoveryEntry = Pick<
+  AccountEntry,
+  | 'concept'
+  | 'partner_id'
+  | 'order_id'
+  | 'stock_movement_id'
+  | 'amount'
+  | 'currency'
+  | 'amount_ars'
+  | 'amount_usd'
+>;
+
+/** Pagos a proveedor del pedido (producción a medida), no los de cargas de stock. */
+export function orderProductionPayments(
+  orderId: string,
+  entries: RecoveryEntry[] = [],
+) {
+  return entries.filter(
+    (entry) =>
+      entry.concept === 'pago_proveedor' &&
+      entry.order_id === orderId &&
+      !entry.stock_movement_id,
+  );
+}
+
 /**
  * Parte el costo del pedido entre socios según quién financió cada
- * producción: stock → `paid_partner_id` del ingreso; a medida →
- * `item.selections.cost_partner_id` (fallback `order.cost_partner_id`).
+ * producción:
+ * - stock → `paid_partner_id` del ingreso
+ * - a medida → pagos a proveedor asociados al pedido; si no hay, legado
+ *   `item.selections.cost_partner_id` / `order.cost_partner_id`
  */
 export function orderCostAttributionByPartner(
   order: Order,
   movements: RecoveryLoad[] = [],
+  entries: RecoveryEntry[] = [],
+  currency?: string,
 ): Map<string, number> {
   const result = new Map<string, number>();
   if (order.cost <= 0) return result;
+  const boardCurrency = currency || order.currency;
 
   function add(id: string, amount: number) {
     if (!id || amount <= 0) return;
     result.set(id, (result.get(id) || 0) + amount);
   }
 
+  const productionPayments = orderProductionPayments(order.id, entries);
+  for (const entry of productionPayments) {
+    add(entry.partner_id, amountIn(entry, boardCurrency));
+  }
+
   if (!order.items.length) {
-    add(order.cost_partner_id, order.cost);
+    if (!productionPayments.length) add(order.cost_partner_id, order.cost);
     return result;
   }
 
@@ -805,6 +866,8 @@ export function orderCostAttributionByPartner(
   for (const item of order.items) {
     if (item.cost <= 0) continue;
     if (itemIsMakeToOrder(item)) {
+      // Con pagos reales del pedido, esos montos ya se sumaron arriba.
+      if (productionPayments.length) continue;
       add(itemMakeToOrderPartnerId(item, order), item.cost);
       continue;
     }
@@ -828,9 +891,11 @@ export function orderCostAttributionByPartner(
 export function orderCostRecoveryByPartner(
   order: Order,
   movements: RecoveryLoad[] = [],
+  entries: RecoveryEntry[] = [],
+  currency?: string,
 ): Map<string, number> {
   if (orderCostRecovered(order) <= 0) return new Map();
-  return orderCostAttributionByPartner(order, movements);
+  return orderCostAttributionByPartner(order, movements, entries, currency);
 }
 
 /**
@@ -838,7 +903,7 @@ export function orderCostRecoveryByPartner(
  * - Inversión = movimientos de cuenta que pagó (los ingresos de stock pagados
  *   generan su propio movimiento) + stock pagado viejo sin movimiento vinculado
  * - Recuperado = costos de ventas pagadas por completo, partidos por quién
- *   financió cada producción (stock o a medida)
+ *   financió cada producción (stock o pagos a proveedor del pedido)
  * - Ganancia = % sobre la ganancia del negocio (igual que caja de socios)
  */
 export function financialSituation(
@@ -887,6 +952,8 @@ export function financialSituation(
     for (const [partnerId, amount] of orderCostRecoveryByPartner(
       order,
       movements,
+      entries,
+      currency,
     )) {
       add(recovered, partnerId, amount);
     }

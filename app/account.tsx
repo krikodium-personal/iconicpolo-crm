@@ -17,7 +17,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Field, Pick, ErrorBox, DateCalendar, Photos } from './ui';
+import {
+  Field,
+  Pick,
+  ErrorBox,
+  DateCalendar,
+  Photos,
+  OrderProductionItemPicker,
+} from './ui';
 import {
   ACCOUNT_CONCEPTS,
   MONTHS,
@@ -26,6 +33,7 @@ import {
   cashoutLimit,
   financialSituation,
   monthlyResults,
+  orderProductionItems,
   partnerBalances,
   remainingProfit,
   shareLabel,
@@ -233,12 +241,16 @@ export function AccountBoard({
     partner_id: data.partners.find((partner) => !partner.archived)?.id || '',
     supplier_id: '',
     order_id: '',
+    order_item_ids: [] as string[],
     receipt: '',
     amount: '',
     currency: data.currency === 'ARS' ? 'ARS' : 'USD',
     fx_rate: '',
     date: today(),
   });
+  const entryOrder = entry.order_id
+    ? data.orders.find((order) => order.id === entry.order_id)
+    : undefined;
   const yearRows = yearSheet(year, results);
   const previewRow: MonthlyResult =
     monthIndex === ALL_MONTHS
@@ -1244,6 +1256,17 @@ export function AccountBoard({
                 ) {
                   throw new Error('Elegí el proveedor.');
                 }
+                if (
+                  entry.concept === 'pago_proveedor' &&
+                  entry.order_id &&
+                  entryOrder &&
+                  orderProductionItems(entryOrder).length > 0 &&
+                  !entry.order_item_ids.length
+                ) {
+                  throw new Error(
+                    'Elegí qué productos a medida del pedido estás pagando.',
+                  );
+                }
                 const amount = parseDecimal(entry.amount);
                 const fxRate = parseDecimal(entry.fx_rate);
                 if (!fxRate) {
@@ -1265,6 +1288,10 @@ export function AccountBoard({
                       entry.concept === 'pago_proveedor'
                         ? entry.order_id
                         : '',
+                    order_item_ids:
+                      entry.concept === 'pago_proveedor' && entry.order_id
+                        ? entry.order_item_ids
+                        : [],
                     receipt: entry.receipt,
                     amount,
                     currency: entry.currency,
@@ -1276,6 +1303,7 @@ export function AccountBoard({
                       ...entry,
                       detail: '',
                       order_id: '',
+                      order_item_ids: [],
                       receipt: '',
                       amount: '',
                       fx_rate: '',
@@ -1304,6 +1332,8 @@ export function AccountBoard({
                       supplier_id:
                         value === 'pago_proveedor' ? entry.supplier_id : '',
                       order_id: value === 'pago_proveedor' ? entry.order_id : '',
+                      order_item_ids:
+                        value === 'pago_proveedor' ? entry.order_item_ids : [],
                       receipt: value === 'pago_proveedor' ? entry.receipt : '',
                     })
                   }
@@ -1338,6 +1368,7 @@ export function AccountBoard({
                             ...entry,
                             supplier_id: value,
                             order_id: '',
+                            order_item_ids: [],
                           })
                         }
                         options={suppliers.map((supplier) => ({
@@ -1356,18 +1387,66 @@ export function AccountBoard({
                     <Pick
                       label="Pedido asociado"
                       value={entry.order_id || '__none__'}
-                      onChange={(value) =>
+                      onChange={(value) => {
+                        const orderId = value === '__none__' ? '' : value;
+                        const nextOrder = orderId
+                          ? data.orders.find((order) => order.id === orderId)
+                          : undefined;
+                        const payable = nextOrder
+                          ? orderProductionItems(nextOrder)
+                          : [];
                         setEntry({
                           ...entry,
-                          order_id: value === '__none__' ? '' : value,
-                        })
-                      }
+                          order_id: orderId,
+                          order_item_ids: payable.map((item) => item.id),
+                          amount: payable.length
+                            ? decimal(
+                                payable.reduce(
+                                  (sum, item) => sum + item.cost,
+                                  0,
+                                ),
+                              )
+                            : entry.amount,
+                          detail: payable.length
+                            ? payable.map((item) => item.name).join(' · ')
+                            : entry.detail,
+                          currency:
+                            nextOrder?.currency === 'ARS' ||
+                            nextOrder?.currency === 'USD'
+                              ? nextOrder.currency
+                              : entry.currency,
+                        });
+                      }}
                       options={[
                         { value: '__none__', label: 'Sin pedido' },
                         ...orderOptions,
                       ]}
                     />
                   </Field>
+                  {entry.order_id && entryOrder ? (
+                    <Field label="Productos a medida *" wide>
+                      <OrderProductionItemPicker
+                        order={entryOrder}
+                        selectedIds={entry.order_item_ids}
+                        currency={entry.currency}
+                        onChange={(ids, selectedCost) => {
+                          const names = orderProductionItems(entryOrder)
+                            .filter((item) => ids.includes(item.id))
+                            .map((item) => item.name);
+                          setEntry({
+                            ...entry,
+                            order_item_ids: ids,
+                            amount: selectedCost
+                              ? decimal(selectedCost)
+                              : entry.amount,
+                            detail: names.length
+                              ? names.join(' · ')
+                              : entry.detail,
+                          });
+                        }}
+                      />
+                    </Field>
+                  ) : null}
                   <Field label="Concepto del gasto" wide>
                     <input
                       value={entry.detail}
@@ -1633,19 +1712,33 @@ export function MovementForm({
     partner_id: payment?.partner_id || partners[0]?.id || '',
     date: payment?.date || today(),
   });
-  const [entryForm, setEntryForm] = useState({
-    concept: (entry?.concept || 'pago_proveedor') as AccountEntry['concept'],
-    detail: entry?.detail || '',
-    partner_id: entry?.partner_id || partners[0]?.id || '',
-    supplier_id: entry?.supplier_id || suppliers[0]?.id || '',
-    order_id: entry?.order_id || '',
-    receipt: entry?.receipt || '',
-    amount: decimal(entry?.amount || 0),
-    currency: (entry?.currency ||
-      (data.currency === 'ARS' ? 'ARS' : 'USD')) as 'ARS' | 'USD',
-    fx_rate: decimal(entry?.fx_rate || 0),
-    date: entry?.date || today(),
+  const [entryForm, setEntryForm] = useState(() => {
+    const linkedOrder = entry?.order_id
+      ? data.orders.find((row) => row.id === entry.order_id)
+      : undefined;
+    const savedIds = entry?.order_item_ids || [];
+    const fallbackIds =
+      linkedOrder && !savedIds.length
+        ? orderProductionItems(linkedOrder).map((item) => item.id)
+        : savedIds;
+    return {
+      concept: (entry?.concept || 'pago_proveedor') as AccountEntry['concept'],
+      detail: entry?.detail || '',
+      partner_id: entry?.partner_id || partners[0]?.id || '',
+      supplier_id: entry?.supplier_id || suppliers[0]?.id || '',
+      order_id: entry?.order_id || '',
+      order_item_ids: fallbackIds,
+      receipt: entry?.receipt || '',
+      amount: decimal(entry?.amount || 0),
+      currency: (entry?.currency ||
+        (data.currency === 'ARS' ? 'ARS' : 'USD')) as 'ARS' | 'USD',
+      fx_rate: decimal(entry?.fx_rate || 0),
+      date: entry?.date || today(),
+    };
   });
+  const entryFormOrder = entryForm.order_id
+    ? data.orders.find((row) => row.id === entryForm.order_id)
+    : undefined;
   const fxPreview = previewFx(
     entryForm.currency,
     entryForm.amount,
@@ -1716,6 +1809,16 @@ export function MovementForm({
                 !entryForm.supplier_id
               )
                 throw new Error('Elegí el proveedor.');
+              if (
+                entryForm.concept === 'pago_proveedor' &&
+                entryForm.order_id &&
+                entryFormOrder &&
+                orderProductionItems(entryFormOrder).length > 0 &&
+                !entryForm.order_item_ids.length
+              )
+                throw new Error(
+                  'Elegí qué productos a medida del pedido estás pagando.',
+                );
               const amount = parseDecimal(entryForm.amount);
               const fxRate = parseDecimal(entryForm.fx_rate);
               if (!fxRate)
@@ -1735,6 +1838,10 @@ export function MovementForm({
                   entryForm.concept === 'pago_proveedor'
                     ? entryForm.order_id
                     : '',
+                order_item_ids:
+                  entryForm.concept === 'pago_proveedor' && entryForm.order_id
+                    ? entryForm.order_item_ids
+                    : [],
                 receipt: entryForm.receipt,
                 amount,
                 currency: entryForm.currency,
@@ -1828,6 +1935,7 @@ export function MovementForm({
                       ...entryForm,
                       supplier_id: value,
                       order_id: '',
+                      order_item_ids: [],
                     })
                   }
                   options={suppliers.map((supplier) => ({
@@ -1840,18 +1948,63 @@ export function MovementForm({
                 <Pick
                   label="Pedido asociado"
                   value={entryForm.order_id || '__none__'}
-                  onChange={(value) =>
+                  onChange={(value) => {
+                    const orderId = value === '__none__' ? '' : value;
+                    const nextOrder = orderId
+                      ? data.orders.find((row) => row.id === orderId)
+                      : undefined;
+                    const payable = nextOrder
+                      ? orderProductionItems(nextOrder)
+                      : [];
                     setEntryForm({
                       ...entryForm,
-                      order_id: value === '__none__' ? '' : value,
-                    })
-                  }
+                      order_id: orderId,
+                      order_item_ids: payable.map((item) => item.id),
+                      amount: payable.length
+                        ? decimal(
+                            payable.reduce((sum, item) => sum + item.cost, 0),
+                          )
+                        : entryForm.amount,
+                      detail: payable.length
+                        ? payable.map((item) => item.name).join(' · ')
+                        : entryForm.detail,
+                      currency:
+                        nextOrder?.currency === 'ARS' ||
+                        nextOrder?.currency === 'USD'
+                          ? nextOrder.currency
+                          : entryForm.currency,
+                    });
+                  }}
                   options={[
                     { value: '__none__', label: 'Sin pedido' },
                     ...orderOptions,
                   ]}
                 />
               </Field>
+              {entryForm.order_id && entryFormOrder ? (
+                <Field label="Productos a medida *" wide>
+                  <OrderProductionItemPicker
+                    order={entryFormOrder}
+                    selectedIds={entryForm.order_item_ids}
+                    currency={entryForm.currency}
+                    onChange={(ids, selectedCost) => {
+                      const names = orderProductionItems(entryFormOrder)
+                        .filter((item) => ids.includes(item.id))
+                        .map((item) => item.name);
+                      setEntryForm({
+                        ...entryForm,
+                        order_item_ids: ids,
+                        amount: selectedCost
+                          ? decimal(selectedCost)
+                          : entryForm.amount,
+                        detail: names.length
+                          ? names.join(' · ')
+                          : entryForm.detail,
+                      });
+                    }}
+                  />
+                </Field>
+              ) : null}
               <Field label="Concepto del gasto" wide>
                 <input
                   value={entryForm.detail}

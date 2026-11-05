@@ -1015,6 +1015,21 @@ export default function CRM({
     setConfigDirty(false);
     P(null);
   }
+  function requestClosePanel(details?: { cancel: () => void }) {
+    if (configDirty) {
+      details?.cancel();
+      setDiscardOpen(true);
+      return;
+    }
+    if (panel?.type === 'inventory' && panel.itemKey) {
+      details?.cancel();
+      const record =
+        data?.products.find((p) => p.id === panel.record.id) ?? panel.record;
+      P({ type: 'inventory', record });
+      return;
+    }
+    closePanel();
+  }
   async function patchOrder(order: Order, body: Record<string, unknown>) {
     try {
       await post({
@@ -2392,20 +2407,7 @@ export default function CRM({
           open={!!panel}
           onOpenChange={(open, details) => {
             if (open) return;
-            if (configDirty) {
-              details.cancel();
-              setDiscardOpen(true);
-              return;
-            }
-            if (panel?.type === 'inventory' && panel.itemKey) {
-              details.cancel();
-              const record =
-                data?.products.find((p) => p.id === panel.record.id) ??
-                panel.record;
-              P({ type: 'inventory', record });
-              return;
-            }
-            closePanel();
+            requestClosePanel(details);
           }}
         >
           <DialogContent
@@ -2861,6 +2863,7 @@ export default function CRM({
                   save={save}
                   movement={panel.movement}
                   onConfigDirtyChange={setConfigDirty}
+                  onRequestClose={() => requestClosePanel()}
                   onEditMovement={
                     panel.movement
                       ? undefined

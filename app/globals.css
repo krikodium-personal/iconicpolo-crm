@@ -1842,6 +1842,30 @@ button.dialog-kicker:hover {
   align-items: center;
   gap: 16px;
 }
+.form-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.order-payment-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.order-payment-items .check {
+  align-items: flex-start;
+}
+.order-payment-items .check span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.order-payment-items .check small {
+  color: #798677;
+  font-weight: 400;
+}
 .form-footer-bar > span,
 .form-footer > span {
   font-size: 12px;

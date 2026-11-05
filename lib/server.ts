@@ -34,9 +34,9 @@ import {
 import {
   assertSharesComplete,
   cashoutLimit,
-  itemIsMakeToOrder,
   monthlyResults,
-  orderMissingMakeToOrderPartner,
+  orderProductionItems,
+  parseOrderItemIds,
   sharesAreComplete,
   totalsOf,
 } from './account';
@@ -162,23 +162,6 @@ async function supplierIdForOrderItem(
   if (input.supplier_id === '__new_supplier__' || input.supplier_id === '__new__')
     throw new Error('Completá los datos del proveedor nuevo.');
   return requireSupplier(input.supplier_id, keep);
-}
-/** Socio activo que paga la producción a medida de un ítem. */
-async function requireItemCostPartner(id: unknown, productName: string) {
-  const partnerId = str(
-    id ?? '',
-    `Quién paga la producción de ${productName}`,
-    true,
-  );
-  const partner = await stmt(
-    'SELECT id FROM partners WHERE id=? AND archived=0',
-    partnerId,
-  ).first();
-  if (!partner)
-    throw new Error(
-      `Elegí un socio activo que paga la producción a medida de ${productName}.`,
-    );
-  return partnerId;
 }
 /** For inbound stock: whether cost was paid to supplier, and by which partner. */
 async function stockCostPayment(b: Record<string, unknown>, inbound: boolean) {
@@ -517,6 +500,12 @@ export async function ensureAccountTables() {
       entryNames,
       'stock_movement_id',
       "stock_movement_id text NOT NULL DEFAULT ''",
+    ),
+    await addColumn(
+      'account_entries',
+      entryNames,
+      'order_item_ids',
+      "order_item_ids text NOT NULL DEFAULT '[]'",
     ),
   ].filter(Boolean);
   if (entryAlters.length)
@@ -1420,6 +1409,9 @@ export async function allData() {
       ...row,
       supplier_id: typeof row.supplier_id === 'string' ? row.supplier_id : '',
       order_id: typeof row.order_id === 'string' ? row.order_id : '',
+      order_item_ids: parseOrderItemIds(
+        (row as { order_item_ids?: unknown }).order_item_ids,
+      ),
       stock_movement_id:
         typeof row.stock_movement_id === 'string' ? row.stock_movement_id : '',
       receipt: typeof row.receipt === 'string' ? row.receipt : '',
@@ -2063,26 +2055,8 @@ export async function saveOrder(
       total: sponsor ? 0 : totals.total,
       cost: totals.cost,
     };
-    const needsCostPartner =
-      !sponsor &&
-      !orderIsQuote(status) &&
-      draftItem.cost > 0 &&
-      itemIsMakeToOrder(draftItem);
-    if (needsCostPartner) {
-      const partnerId = await requireItemCostPartner(
-        input.cost_partner_id ??
-          snapshot.selections.cost_partner_id ??
-          old?.selections.cost_partner_id,
-        snapshot.name,
-      );
-      draftItem.selections = {
-        ...draftItem.selections,
-        cost_partner_id: partnerId,
-      };
-    } else {
-      const { cost_partner_id: _drop, ...rest } = draftItem.selections;
-      draftItem.selections = rest;
-    }
+    const { cost_partner_id: _drop, ...restSelections } = draftItem.selections;
+    draftItem.selections = restSelections;
     items.push(draftItem);
   }
   await assertFromStockAvailable(id, items);
@@ -2356,23 +2330,6 @@ export async function patchOrder(
     ).first();
     if (!partner) throw new Error('Elegí un socio activo que recibió el cobro.');
   }
-  const existingItems = (
-    await stmt('SELECT * FROM order_items WHERE order_id=?', id).all()
-  ).results.map((r) => decode<Item>(r, ['selections']));
-  if (
-    paid > 0 &&
-    orderMissingMakeToOrderPartner({
-      items: existingItems,
-      cost: Number(existing.cost) || 0,
-      cost_partner_id:
-        typeof existing.cost_partner_id === 'string'
-          ? existing.cost_partner_id
-          : '',
-    })
-  )
-    throw new Error(
-      'Falta quién paga la producción a medida en algún producto. Editá el pedido.',
-    );
   const [result] = await db().batch([
     stmt(
       'UPDATE orders SET paid=?,paid_partner_id=?,version=? WHERE id=?',
@@ -3087,22 +3044,6 @@ export async function mutate(
         ).first())
       )
         throw new Error('Elegí un socio activo que recibió el cobro.');
-      const paymentItems = (
-        await stmt('SELECT * FROM order_items WHERE order_id=?', orderId).all()
-      ).results.map((r) => decode<Item>(r, ['selections']));
-      if (
-        orderMissingMakeToOrderPartner({
-          items: paymentItems,
-          cost: Number(order.cost) || 0,
-          cost_partner_id:
-            typeof order.cost_partner_id === 'string'
-              ? order.cost_partner_id
-              : '',
-        })
-      )
-        throw new Error(
-          'Falta quién paga la producción a medida en algún producto. Editá el pedido.',
-        );
       const [update] = await db().batch([
         stmt(
           'UPDATE orders SET paid=?,paid_partner_id=?,version=version+1 WHERE id=? AND paid=?',
@@ -3183,6 +3124,7 @@ export async function mutate(
       const supplierId =
         concept === 'pago_proveedor' ? await requireSupplier(b.supplier_id) : '';
       let orderId = '';
+      let orderItemIds: string[] = [];
       if (concept === 'pago_proveedor' && b.order_id) {
         orderId = str(b.order_id, 'Pedido', true);
         const order = await stmt(
@@ -3190,7 +3132,25 @@ export async function mutate(
           orderId,
         ).first();
         if (!order) throw new Error('Pedido no disponible.');
+        const orderItems = (
+          await stmt('SELECT * FROM order_items WHERE order_id=?', orderId).all()
+        ).results.map((r) => decode<Item>(r, ['selections']));
+        const payable = new Set(
+          orderProductionItems({ items: orderItems }).map((item) => item.id),
+        );
+        orderItemIds = parseOrderItemIds(b.order_item_ids).filter((id) =>
+          payable.has(id),
+        );
+        if (payable.size && !orderItemIds.length)
+          throw new Error(
+            'Elegí qué productos a medida del pedido estás pagando.',
+          );
+        if (parseOrderItemIds(b.order_item_ids).some((id) => !payable.has(id)))
+          throw new Error(
+            'Alguno de los productos elegidos no es producción a medida de este pedido.',
+          );
       }
+      const orderItemIdsJson = JSON.stringify(orderItemIds);
       const amount = integer(b.amount, 'Monto');
       if (!amount) throw new Error('Monto: debe ser mayor a cero.');
       const currency = choice(b.currency, ['ARS', 'USD'], 'Moneda');
@@ -3203,12 +3163,13 @@ export async function mutate(
       );
       if (existing) {
         await stmt(
-          'UPDATE account_entries SET concept=?,detail=?,partner_id=?,supplier_id=?,order_id=?,receipt=?,amount=?,currency=?,fx_rate=?,amount_ars=?,amount_usd=?,date=? WHERE id=?',
+          'UPDATE account_entries SET concept=?,detail=?,partner_id=?,supplier_id=?,order_id=?,order_item_ids=?,receipt=?,amount=?,currency=?,fx_rate=?,amount_ars=?,amount_usd=?,date=? WHERE id=?',
           concept,
           detail,
           partnerId,
           supplierId,
           orderId,
+          orderItemIdsJson,
           receipt,
           amount,
           currency,
@@ -3221,13 +3182,14 @@ export async function mutate(
         return { ok: true };
       }
       await stmt(
-        'INSERT INTO account_entries(id,concept,detail,partner_id,supplier_id,order_id,receipt,amount,currency,fx_rate,amount_ars,amount_usd,date,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO account_entries(id,concept,detail,partner_id,supplier_id,order_id,order_item_ids,receipt,amount,currency,fx_rate,amount_ars,amount_usd,date,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         crypto.randomUUID(),
         concept,
         detail,
         partnerId,
         supplierId,
         orderId,
+        orderItemIdsJson,
         receipt,
         amount,
         currency,

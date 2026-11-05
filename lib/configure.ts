@@ -3566,13 +3566,11 @@ function summarizeMontura(raw: MonturaConfig, lang: ConfigLang = 'es') {
   const lines =
     lang === 'en'
       ? [
-          `Saddle ${tipo} ${lower(material)} ${lower(color)} ${raw.tamano}`,
-          `Seat: ${lower(asiento)}, ${lower(asientoMaterial)}`,
+          `Saddle ${tipo} ${lower(material)} ${lower(color)} ${raw.tamano} · seat ${lower(asiento)}, ${lower(asientoMaterial)}`,
           `Cut: ${lower(corte)}`,
         ]
       : [
-          `Montura ${tipo} ${lower(material)} ${lower(color)} ${raw.tamano}`,
-          `Asiento: ${lower(asiento)}, ${lower(asientoMaterial)}`,
+          `Montura ${tipo} ${lower(material)} ${lower(color)} ${raw.tamano} · asiento ${lower(asiento)}, ${lower(asientoMaterial)}`,
           `Corte: ${lower(corte)}`,
         ];
   if (!raw.faldin)
