@@ -1912,7 +1912,18 @@ button.dialog-kicker:hover {
 .photo-wrap {
   position: relative;
 }
-.photo-wrap img {
+.photo-open {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+  border-radius: 7px;
+  overflow: hidden;
+  line-height: 0;
+}
+.photo-wrap img,
+.photo-open img {
   width: 110px;
   height: 110px;
   object-fit: cover;
@@ -1922,9 +1933,54 @@ button.dialog-kicker:hover {
   position: absolute;
   top: 4px;
   right: 4px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: white;
+  border: 1px solid #d7e0db;
   border-radius: 50%;
-  padding: 4px;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(16, 45, 41, 0.12);
+}
+.photo-lightbox {
+  position: fixed;
+  inset: 0;
+  /* Above Dialog (z-50) so zoom stays in the visible viewport, not the scrolled modal. */
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(16, 45, 41, 0.82);
+  cursor: zoom-out;
+}
+.photo-lightbox-image {
+  width: min(92vw, 920px);
+  height: min(82dvh, 920px);
+  max-width: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+  background: #0b1c19;
+  cursor: default;
+}
+.photo-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  color: #102d29;
+  cursor: pointer;
 }
 .upload {
   width: 180px;

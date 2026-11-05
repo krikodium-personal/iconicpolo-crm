@@ -1,6 +1,7 @@
 'use client';
 import Image from 'next/image';
 import { useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Select,
   SelectContent,
@@ -16,6 +17,16 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Camera, Package, Upload, X } from 'lucide-react';
 import { DayPicker } from 'react-day-picker';
 import { es } from 'react-day-picker/locale';
@@ -608,6 +619,8 @@ export function Photos({
   max?: number;
   camera?: boolean;
 }) {
+  const [preview, setPreview] = useState<string | null>(null);
+  const [removeAt, setRemoveAt] = useState<number | null>(null);
   async function upload(files: FileList | null) {
     if (!files) return;
     onBusy(true);
@@ -647,23 +660,63 @@ export function Photos({
     <div className="photos">
       {value.map((url, i) => (
         <div className="photo-wrap" key={url}>
-          <Image
-            unoptimized
-            width={110}
-            height={110}
-            src={url}
-            alt={`Foto ${i + 1}`}
-          />
+          {/* Botón (no img suelta) para que el <label> del Field no active la cruz. */}
+          <button
+            type="button"
+            className="photo-open"
+            aria-label={`Ver foto ${i + 1}`}
+            onClick={() => setPreview(url)}
+          >
+            <Image
+              unoptimized
+              width={110}
+              height={110}
+              src={url}
+              alt={`Foto ${i + 1}`}
+            />
+          </button>
           <button
             type="button"
             className="photo-remove"
             aria-label={`Quitar foto ${i + 1}`}
-            onClick={() => onChange(value.filter((_, n) => n !== i))}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setRemoveAt(i);
+            }}
           >
             <X size={15} />
           </button>
         </div>
       ))}
+      <AlertDialog
+        open={removeAt !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveAt(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Quitar foto</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Querés quitar esta foto? Esta acción no se puede deshacer desde
+              acá.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (removeAt === null) return;
+                onChange(value.filter((_, n) => n !== removeAt));
+                setRemoveAt(null);
+              }}
+            >
+              Quitar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {value.length < max && camera ? (
         <>
           <label className="upload">
@@ -687,6 +740,39 @@ export function Photos({
           {pick(max > 1)}
         </label>
       ) : null}
+      {preview && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              className="photo-lightbox"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Foto ampliada"
+              onClick={() => setPreview(null)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setPreview(null);
+              }}
+            >
+              <button
+                type="button"
+                className="photo-lightbox-close"
+                aria-label="Cerrar foto"
+                onClick={() => setPreview(null)}
+              >
+                <X size={20} />
+              </button>
+              <Image
+                unoptimized
+                width={960}
+                height={960}
+                src={preview}
+                alt="Foto ampliada"
+                className="photo-lightbox-image"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
