@@ -348,6 +348,7 @@ test('ledger includes partner-paid account movements', () => {
   assert.equal(ledger[0]?.amount, 100_000);
   assert.equal(ledger[1]?.kind, 'movimiento');
   assert.equal(ledger[1]?.label, 'Pago proveedor · Talabarteria · Cuero crupon');
+  assert.equal(ledger[1]?.concept, 'pago_proveedor');
   assert.equal(ledger[1]?.amount, -10_000);
   assert.equal(ledger[1]?.partner, 'Ivan');
   assert.equal(ledger[1]?.order_id, 'o1');

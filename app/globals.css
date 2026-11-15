@@ -858,6 +858,10 @@ h3 {
   gap: 12px;
   flex-shrink: 0;
 }
+.account-board .ledger-heading-actions > span {
+  font-size: 12px;
+  color: #718278;
+}
 .account-board .ledger-heading-saldo {
   font-size: 14px;
   font-weight: 650;

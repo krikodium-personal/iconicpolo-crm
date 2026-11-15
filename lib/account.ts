@@ -1,5 +1,6 @@
 import type {
   AccountEntry,
+  AccountEntryConcept,
   AccountExpense,
   Item,
   Order,
@@ -78,6 +79,8 @@ export type LedgerEntry = {
   order_id?: string;
   id?: string;
   source?: MovementSource;
+  /** Concepto de un movimiento creado desde Cuenta (filtro Detalle). */
+  concept?: AccountEntryConcept;
   balance: number;
 };
 export function movementRefOf(entry: LedgerEntry): MovementRef | null {
@@ -218,12 +221,9 @@ export function conceptLabel(
   if (concept === 'pago_proveedor') {
     return ['Pago proveedor', supplier.trim(), extra].filter(Boolean).join(' · ');
   }
-  if (concept === 'otros') {
-    return extra ? `Otros · ${extra}` : 'Otros';
-  }
-  return (
-    ACCOUNT_CONCEPTS.find((item) => item.id === concept)?.label || concept
-  );
+  const base =
+    ACCOUNT_CONCEPTS.find((item) => item.id === concept)?.label || concept;
+  return extra ? `${base} · ${extra}` : base;
 }
 
 export function entryTotal(
@@ -580,6 +580,7 @@ export function accountLedger(
         kind: 'movimiento' as const,
         source: 'entry' as const,
         id: entry.id,
+        concept: entry.concept,
         amount: -entry.amount,
         currency: entry.currency,
         partner: names.get(entry.partner_id),

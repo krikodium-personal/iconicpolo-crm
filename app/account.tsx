@@ -177,7 +177,7 @@ function ResultMonth({
           </dd>
         </div>
         <div>
-          <dt>MKT</dt>
+          <dt>Gastos publicitarios</dt>
           <dd className="amount">
             {sheetValue(marketingOnly ? -marketingOnly : 0, money)}
           </dd>
@@ -264,6 +264,7 @@ export function AccountBoard({
   const [monthIndex, setMonthIndex] = useState(ALL_MONTHS);
   const [ledgerMonth, setLedgerMonth] = useState('all');
   const [ledgerFocus, setLedgerFocus] = useState<LedgerFocus | null>(null);
+  const [ledgerConcept, setLedgerConcept] = useState('all');
   useEffect(() => {
     if (view !== 'movimientos') return;
     const params = new URLSearchParams(window.location.search);
@@ -426,9 +427,13 @@ export function AccountBoard({
             String(Number(ledgerMonth) + 1).padStart(2, '0'),
         );
   const monthSummary = ledgerSummary(monthLedger, data.currency);
-  const detailLedger = ledgerFocus
+  const focusedLedger = ledgerFocus
     ? ledgerFilter(monthLedger, data.currency, ledgerFocus)
     : monthLedger;
+  const detailLedger =
+    ledgerConcept === 'all'
+      ? focusedLedger
+      : focusedLedger.filter((entry) => entry.concept === ledgerConcept);
   const focusHref = (focus: LedgerFocus | null) => {
     const params = new URLSearchParams({
       vista: 'movimientos',
@@ -870,26 +875,45 @@ export function AccountBoard({
                   </span>
                 ) : null}
               </h2>
-              {ledgerFocus ? (
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => pickFocus(null)}
-                >
-                  Ver todos
-                </button>
-              ) : (
-                <span>
-                  {monthLedger.length} movimiento
-                  {monthLedger.length === 1 ? '' : 's'}
-                </span>
-              )}
+              <div className="ledger-heading-actions">
+                <Pick
+                  label="Filtrar"
+                  value={ledgerConcept}
+                  onChange={setLedgerConcept}
+                  options={[
+                    { value: 'all', label: 'Todos' },
+                    ...ACCOUNT_CONCEPTS.map((item) => ({
+                      value: item.id,
+                      label: item.label,
+                    })),
+                  ]}
+                />
+                {ledgerFocus ? (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => pickFocus(null)}
+                  >
+                    Ver todos
+                  </button>
+                ) : (
+                  <span>
+                    {detailLedger.length} movimiento
+                    {detailLedger.length === 1 ? '' : 's'}
+                  </span>
+                )}
+              </div>
             </div>
             {ledgerList(
               detailLedger,
-              ledgerMonth === 'all'
-                ? `No hay movimientos en ${year}.`
-                : `No hay movimientos en ${MONTHS[Number(ledgerMonth)]} ${year}.`,
+              ledgerConcept !== 'all'
+                ? `No hay ${
+                    ACCOUNT_CONCEPTS.find((item) => item.id === ledgerConcept)
+                      ?.label || 'movimientos'
+                  }.`
+                : ledgerMonth === 'all'
+                  ? `No hay movimientos en ${year}.`
+                  : `No hay movimientos en ${MONTHS[Number(ledgerMonth)]} ${year}.`,
             )}
           </section>
         </>
@@ -1293,9 +1317,6 @@ export function AccountBoard({
             onSubmit={(e) => {
               e.preventDefault();
               try {
-                if (entry.concept === 'otros' && !entry.detail.trim()) {
-                  throw new Error('Especificá el concepto.');
-                }
                 if (
                   entry.concept === 'pago_proveedor' &&
                   !(entry.supplier_id || suppliers[0]?.id)
@@ -1371,10 +1392,6 @@ export function AccountBoard({
                     setEntry({
                       ...entry,
                       concept: value,
-                      detail:
-                        value === 'otros' || value === 'pago_proveedor'
-                          ? entry.detail
-                          : '',
                       supplier_id:
                         value === 'pago_proveedor' ? entry.supplier_id : '',
                       order_id: value === 'pago_proveedor' ? entry.order_id : '',
@@ -1493,36 +1510,27 @@ export function AccountBoard({
                       />
                     </Field>
                   ) : null}
-                  <Field label="Concepto del gasto" wide>
-                    <input
-                      value={entry.detail}
-                      onChange={(e) =>
-                        setEntry({ ...entry, detail: e.target.value })
-                      }
-                    />
-                  </Field>
-                  <Field label="Factura o recibo" wide>
-                    <Photos
-                      value={entry.receipt ? [entry.receipt] : []}
-                      onChange={(urls) =>
-                        setEntry({ ...entry, receipt: urls[0] || '' })
-                      }
-                      onError={E}
-                      onBusy={B}
-                      max={1}
-                      camera
-                    />
-                  </Field>
                 </>
               ) : null}
-              {entry.concept === 'otros' ? (
-                <Field label="Especificar *" wide>
-                  <input
-                    required
-                    value={entry.detail}
-                    onChange={(e) =>
-                      setEntry({ ...entry, detail: e.target.value })
+              <Field label="Concepto del gasto" wide>
+                <input
+                  value={entry.detail}
+                  onChange={(e) =>
+                    setEntry({ ...entry, detail: e.target.value })
+                  }
+                />
+              </Field>
+              {entry.concept === 'pago_proveedor' ? (
+                <Field label="Factura o recibo" wide>
+                  <Photos
+                    value={entry.receipt ? [entry.receipt] : []}
+                    onChange={(urls) =>
+                      setEntry({ ...entry, receipt: urls[0] || '' })
                     }
+                    onError={E}
+                    onBusy={B}
+                    max={1}
+                    camera
                   />
                 </Field>
               ) : null}
@@ -1848,8 +1856,6 @@ export function MovementForm({
               return;
             }
             if (source === 'entry' && entry) {
-              if (entryForm.concept === 'otros' && !entryForm.detail.trim())
-                throw new Error('Especificá el concepto.');
               if (
                 entryForm.concept === 'pago_proveedor' &&
                 !entryForm.supplier_id
@@ -2051,39 +2057,30 @@ export function MovementForm({
                   />
                 </Field>
               ) : null}
-              <Field label="Concepto del gasto" wide>
-                <input
-                  value={entryForm.detail}
-                  onChange={(e) =>
-                    setEntryForm({ ...entryForm, detail: e.target.value })
-                  }
-                />
-              </Field>
-              <Field label="Factura o recibo" wide>
-                <Photos
-                  value={entryForm.receipt ? [entryForm.receipt] : []}
-                  onChange={(urls) =>
-                    setEntryForm({
-                      ...entryForm,
-                      receipt: urls[0] || '',
-                    })
-                  }
-                  onError={setError}
-                  onBusy={setBusy}
-                  max={1}
-                  camera
-                />
-              </Field>
             </>
           ) : null}
-          {entryForm.concept === 'otros' ? (
-            <Field label="Especificar *" wide>
-              <input
-                required
-                value={entryForm.detail}
-                onChange={(e) =>
-                  setEntryForm({ ...entryForm, detail: e.target.value })
+          <Field label="Concepto del gasto" wide>
+            <input
+              value={entryForm.detail}
+              onChange={(e) =>
+                setEntryForm({ ...entryForm, detail: e.target.value })
+              }
+            />
+          </Field>
+          {entryForm.concept === 'pago_proveedor' ? (
+            <Field label="Factura o recibo" wide>
+              <Photos
+                value={entryForm.receipt ? [entryForm.receipt] : []}
+                onChange={(urls) =>
+                  setEntryForm({
+                    ...entryForm,
+                    receipt: urls[0] || '',
+                  })
                 }
+                onError={setError}
+                onBusy={setBusy}
+                max={1}
+                camera
               />
             </Field>
           ) : null}

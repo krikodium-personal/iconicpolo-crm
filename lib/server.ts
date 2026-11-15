@@ -3112,12 +3112,7 @@ export async function mutate(
         ['pago_proveedor', 'gasto_publicitario', 'gastos_extras', 'otros'],
         'Concepto',
       );
-      const detail = str(
-        b.detail || '',
-        'Concepto',
-        concept === 'otros',
-        160,
-      );
+      const detail = str(b.detail || '', 'Concepto del gasto', false, 160);
       const partnerId = str(b.partner_id, 'Pagado por', true);
       if (
         !(await stmt(
