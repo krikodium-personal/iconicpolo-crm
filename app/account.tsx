@@ -312,12 +312,13 @@ export function AccountBoard({
   const boardTotals = totalsOf(results);
   const allProfit = boardTotals.profit;
   // En cuenta = cobros − MKT − comisiones − cashouts − movimientos.
-  // No resta order.cost: el egreso del proveedor solo cuenta como movimiento.
+  // MKT ya incluye sponsoreo; los pagos a proveedor de esos pedidos no se restan.
   const leftover = remainingProfit(
     accountInflow(boardTotals),
     data.cashouts,
     data.entries || [],
     data.currency,
+    data.orders,
   );
   const yearCashouts = data.cashouts
     .filter((row) => row.date.startsWith(String(year)))

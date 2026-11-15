@@ -185,6 +185,86 @@ test('sponsorship orders count as marketing and debit the account', () => {
   assert.equal(ledger.at(-1)?.balance, 70_000);
 });
 
+test('supplier payments on sponsored orders do not double the sponsoreo outflow', () => {
+  const sponsor: Order = {
+    ...order('fundacion', '2026-11-05', 0, 12_000, 'entregado'),
+    kind: 'sponsoreo',
+    paid: 0,
+    paid_partner_id: '',
+  };
+  const sale = order('o1', '2026-11-06', 100_000, 40_000);
+  const payment = {
+    id: 'pay-sponsor',
+    concept: 'pago_proveedor' as const,
+    detail: 'Casco',
+    partner_id: 'ivan',
+    supplier_id: 'sup1',
+    order_id: 'fundacion',
+    amount: 12_000,
+    currency: 'USD',
+    date: '2026-11-13',
+    created_at: '',
+  };
+  const stockPayment = {
+    id: 'pay-stock',
+    concept: 'pago_proveedor' as const,
+    detail: 'Stock cascos',
+    partner_id: 'ivan',
+    supplier_id: 'sup1',
+    amount: 5_000,
+    currency: 'USD',
+    date: '2026-11-01',
+    created_at: '',
+  };
+  const rows = monthlyResults([sponsor, sale], [], [], 'USD');
+  assert.equal(rows[0]?.sponsorship, 12_000);
+  assert.equal(rows[0]?.cost, 40_000);
+  assert.equal(rows[0]?.mkt, 12_000);
+  const ledger = accountLedger(
+    rows,
+    [],
+    partners,
+    [payment, stockPayment],
+    'USD',
+    new Map([['sup1', 'Martin']]),
+    [sponsor, sale],
+  );
+  const sponsorRows = ledger.filter((entry) => entry.order_id === 'fundacion');
+  assert.equal(sponsorRows.length, 1);
+  assert.equal(sponsorRows[0]?.source, 'sponsoreo');
+  assert.equal(sponsorRows[0]?.amount, -12_000);
+  assert.equal(
+    ledger.some((entry) => entry.id === 'pay-sponsor'),
+    false,
+  );
+  assert.equal(
+    ledger.some((entry) => entry.id === 'pay-stock'),
+    true,
+  );
+  // Cobro 100k − sponsoreo 12k − stock 5k = 83k (sin restar otra vez el pago del sponsoreo).
+  assert.equal(ledger.at(-1)?.balance, 83_000);
+  const leftover = remainingProfit(
+    accountInflow(totalsOf(rows)),
+    [],
+    [payment, stockPayment],
+    'USD',
+    [sponsor, sale],
+  );
+  // En cuenta: 100k − mkt/sponsoreo 12k − stock 5k = 83k.
+  assert.equal(leftover, 83_000);
+  const situation = financialSituation(
+    totalsOf(rows).profit,
+    partners,
+    [],
+    [sponsor, sale],
+    [],
+    [],
+    [payment, stockPayment],
+    'USD',
+  );
+  assert.equal(situation[0]?.investment, 5_000);
+});
+
 test('ledger lists each customer payment with its own date and partner', () => {
   const paidOrder = order('o1', '2026-01-05', 100_000, 40_000);
   const ledger = accountLedger(

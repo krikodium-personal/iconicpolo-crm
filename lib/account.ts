@@ -233,14 +233,36 @@ export function entryTotal(
   return entries.reduce((sum, row) => sum + amountIn(row, currency), 0);
 }
 
+/**
+ * Pago a proveedor ligado a un pedido sponsoreo: el egreso ya figura como
+ * Sponsoreo (`order.cost`). Contarlo otra vez duplicaría la salida.
+ */
+export function isSponsoredOrderPayment(
+  entry: Pick<AccountEntry, 'concept' | 'order_id'>,
+  orders: Pick<Order, 'id' | 'kind'>[],
+) {
+  if (entry.concept !== 'pago_proveedor' || !entry.order_id) return false;
+  return orders.some(
+    (order) => order.id === entry.order_id && order.kind === 'sponsoreo',
+  );
+}
+
+/** Movimientos de cuenta que sí mueven caja / En cuenta. */
+export function cashAccountEntries(
+  entries: AccountEntry[],
+  orders: Pick<Order, 'id' | 'kind'>[],
+) {
+  return entries.filter((entry) => !isSponsoredOrderPayment(entry, orders));
+}
+
 export function cashoutTotal(cashouts: PartnerCashout[]) {
   return cashouts.reduce((sum, row) => sum + row.amount, 0);
 }
 
 /**
  * Cobros que alimentan “En cuenta”: facturado − MKT − comisiones.
- * No resta el costo del pedido; ese egreso solo cuenta si hay un movimiento
- * (pago proveedor / etc.) en `account_entries`.
+ * MKT ya incluye el costo de pedidos sponsoreo. El costo de ventas cobradas
+ * no se resta acá: ese egreso cuenta como movimiento (pago proveedor, etc.).
  */
 export function accountInflow(totals: {
   billed: number;
@@ -250,14 +272,19 @@ export function accountInflow(totals: {
   return totals.billed - totals.mkt - totals.commissions;
 }
 
-/** Dinero en cuenta = cobros netos − cashouts − movimientos. */
+/** Dinero en cuenta = cobros netos − cashouts − movimientos (sin pagos de sponsoreo). */
 export function remainingProfit(
   inflow: number,
   cashouts: PartnerCashout[],
   entries: AccountEntry[] = [],
   currency?: string,
+  orders: Pick<Order, 'id' | 'kind'>[] = [],
 ) {
-  return inflow - cashoutTotal(cashouts) - entryTotal(entries, currency);
+  return (
+    inflow -
+    cashoutTotal(cashouts) -
+    entryTotal(cashAccountEntries(entries, orders), currency)
+  );
 }
 
 export function assertCashoutFits(remaining: number, amount: number) {
@@ -565,7 +592,7 @@ export function accountLedger(
       actor: names.get(cashout.created_by || '') || undefined,
       notes: cashout.notes,
     })),
-    ...entries.map((entry) => {
+    ...cashAccountEntries(entries, orders).map((entry) => {
       const orderNumber = entry.order_id
         ? orderNumbers.get(entry.order_id)
         : '';
@@ -982,7 +1009,7 @@ export function financialSituation(
     const unit = movement.unit_cost || productCost.get(movement.product_id) || 0;
     add(investment, movement.paid_partner_id, unit * movement.quantity);
   }
-  for (const entry of entries) {
+  for (const entry of cashAccountEntries(entries, orders)) {
     if (!entry.partner_id) continue;
     add(investment, entry.partner_id, amountIn(entry, currency));
   }
