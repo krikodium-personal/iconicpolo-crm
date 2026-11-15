@@ -590,6 +590,12 @@ function openOrderClass(order: Order) {
   if (delivery === today) return 'order-open order-due-today';
   return 'order-open';
 }
+/** Clases de fila en listados: abiertos + cotizaciones en gris clarito. */
+function orderListClass(order: Order) {
+  const open = openOrderClass(order);
+  if (!orderIsQuote(order.status)) return open;
+  return [open, 'order-quote'].filter(Boolean).join(' ');
+}
 function OrderCard({
   order,
   customerName,
@@ -627,7 +633,7 @@ function OrderCard({
   const sponsor = orderIsSponsor(order);
   return (
     <article
-      className={`record-card clickable-row ${compact ? '' : openOrderClass(order)}`}
+      className={`record-card clickable-row ${compact ? '' : orderListClass(order)}`}
     >
       <button
         type="button"
@@ -1401,7 +1407,7 @@ export default function CRM({
               {rows.map((o) => (
                 <TableRow
                   key={o.id}
-                  className={openOrderClass(o) || undefined}
+                  className={orderListClass(o) || undefined}
                 >
                   <TableCell>
                     <button

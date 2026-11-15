@@ -75,6 +75,13 @@ function sheetValue(cents: number, money: (n: number) => React.ReactNode) {
   return cents ? money(cents) : '—';
 }
 
+/** % sobre facturación, o vacío si no hay base. */
+function ofBilled(amount: number, billed: number) {
+  if (!billed) return '';
+  const pct = Math.round((amount / billed) * 10000) / 100;
+  return `${pct.toLocaleString('es-AR')}%`;
+}
+
 function MonthAmount({
   cents,
   disabled,
@@ -128,7 +135,16 @@ function ResultMonth({
   /** Sin onSave (vista anual) las comisiones son de solo lectura. */
   onSave?: (kind: 'mkt' | 'comisiones', amount: number) => Promise<void>;
 }) {
-  const hasResult = !!(row.billed || row.cost || row.mkt || row.commissions);
+  const hasResult = !!(
+    row.billed ||
+    row.cost ||
+    row.grossProfit ||
+    row.mkt ||
+    row.commissions
+  );
+  const marketingOnly = row.mkt - row.sponsorship;
+  const grossPct = ofBilled(row.grossProfit, row.billed);
+  const netPct = ofBilled(row.profit, row.billed);
   return (
     <article className="result-month">
       <h3>
@@ -140,12 +156,31 @@ function ResultMonth({
           <dd className="amount">{sheetValue(row.billed, money)}</dd>
         </div>
         <div>
+          <dt>
+            Ganancia bruta
+            {grossPct ? <span className="result-pct">{grossPct}</span> : null}
+          </dt>
+          <dd className="amount">
+            {hasResult ? money(row.grossProfit) : '—'}
+          </dd>
+        </div>
+        <div>
+          <dt>Sponsoreo</dt>
+          <dd className="amount">
+            {sheetValue(row.sponsorship ? -row.sponsorship : 0, money)}
+          </dd>
+        </div>
+        <div>
           <dt>Costo</dt>
-          <dd className="amount">{sheetValue(row.cost, money)}</dd>
+          <dd className="amount">
+            {sheetValue(row.cost ? -row.cost : 0, money)}
+          </dd>
         </div>
         <div>
           <dt>MKT</dt>
-          <dd className="amount">{sheetValue(row.mkt, money)}</dd>
+          <dd className="amount">
+            {sheetValue(marketingOnly ? -marketingOnly : 0, money)}
+          </dd>
         </div>
         <div>
           <dt>Comisiones</dt>
@@ -159,11 +194,16 @@ function ResultMonth({
               />
             </dd>
           ) : (
-            <dd className="amount">{sheetValue(row.commissions, money)}</dd>
+            <dd className="amount">
+              {sheetValue(row.commissions ? -row.commissions : 0, money)}
+            </dd>
           )}
         </div>
         <div className="result-profit-row">
-          <dt>Ganancia</dt>
+          <dt>
+            Ganancia neta
+            {netPct ? <span className="result-pct">{netPct}</span> : null}
+          </dt>
           <dd
             className={`sheet-profit${row.profit < 0 ? ' money-neg' : ''}`}
           >
@@ -189,8 +229,14 @@ export function AccountBoard({
   onOpenMovement?: (ref: MovementRef) => void;
 }) {
   const results = useMemo(
-    () => monthlyResults(data.orders, data.expenses),
-    [data.orders, data.expenses],
+    () =>
+      monthlyResults(
+        data.orders,
+        data.expenses,
+        data.entries || [],
+        data.currency,
+      ),
+    [data.orders, data.expenses, data.entries, data.currency],
   );
   const years = useMemo(() => {
     const set = new Set<number>([

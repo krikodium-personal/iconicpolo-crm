@@ -2936,7 +2936,12 @@ export async function mutate(
       if (!amount) throw new Error('Importe: debe ser mayor a cero.');
       const snapshot = await allData();
       const profit = totalsOf(
-        monthlyResults(snapshot.orders as Order[], snapshot.expenses),
+        monthlyResults(
+          snapshot.orders as Order[],
+          snapshot.expenses,
+          snapshot.entries || [],
+          snapshot.currency,
+        ),
       ).profit;
       if (!sharesAreComplete(snapshot.partners))
         throw new Error(

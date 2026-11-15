@@ -37,7 +37,15 @@ export type MonthlyResult = {
   label: string;
   billed: number;
   cost: number;
-  /** MKT total: gasto cargado a mano + costo de pedidos de sponsoreo. */
+  /**
+   * Suma de ganancias positivas de pedidos de venta (total − costo del
+   * pedido, solo si da > 0). Incluye pedidos aún no cobrados.
+   */
+  grossProfit: number;
+  /**
+   * MKT total: gastos publicitarios (`account_entries`) + costos de
+   * sponsoreo. La fila MKT de la UI muestra solo la parte publicitaria.
+   */
   mkt: number;
   /** Parte de `mkt` que viene de pedidos de sponsoreo (no editable). */
   sponsorship: number;
@@ -149,6 +157,17 @@ export function collectedOrders(orders: Order[]) {
   );
 }
 
+/** Pedidos de venta (no cotización): base para ganancia bruta por margen del pedido. */
+export function saleOrders(orders: Order[]) {
+  return orders.filter(
+    (order) =>
+      !order.archived &&
+      !order.deleted &&
+      order.kind !== 'sponsoreo' &&
+      order.status !== 'cotización',
+  );
+}
+
 /** Pedidos entregados sin cobro: su costo es gasto de MKT y salida de caja. */
 export function sponsoredOrders(orders: Order[]) {
   return orders.filter(
@@ -171,6 +190,7 @@ export function yearSheet(year: number, results: MonthlyResult[]) {
         label,
         billed: 0,
         cost: 0,
+        grossProfit: 0,
         mkt: 0,
         sponsorship: 0,
         commissions: 0,
@@ -372,12 +392,15 @@ export function cashoutLimit(
 export function monthlyResults(
   orders: Order[],
   expenses: AccountExpense[],
+  entries: AccountEntry[] = [],
+  currency?: string,
 ): MonthlyResult[] {
   const buckets = new Map<
     MonthKey,
     {
       billed: number;
       cost: number;
+      grossProfit: number;
       mkt: number;
       sponsorship: number;
       commissions: number;
@@ -388,6 +411,7 @@ export function monthlyResults(
     const current = buckets.get(key) || {
       billed: 0,
       cost: 0,
+      grossProfit: 0,
       mkt: 0,
       sponsorship: 0,
       commissions: 0,
@@ -402,11 +426,21 @@ export function monthlyResults(
     row.cost += order.cost;
     row.orders += 1;
   }
+  for (const order of saleOrders(orders)) {
+    const row = bucket(monthKey(order.date));
+    const orderProfit = order.total - order.cost;
+    if (orderProfit > 0) row.grossProfit += orderProfit;
+  }
   for (const order of sponsoredOrders(orders)) {
     const row = bucket(monthKey(order.date));
     row.mkt += order.cost;
     row.sponsorship += order.cost;
     row.orders += 1;
+  }
+  for (const entry of entries) {
+    if (entry.concept !== 'gasto_publicitario') continue;
+    const row = bucket(monthKey(entry.date));
+    row.mkt += amountIn(entry, currency);
   }
   for (const expense of expenses) {
     const row = bucket(monthKey(expense.date));
@@ -424,6 +458,7 @@ export function monthlyResults(
         label: monthLabel(month),
         billed: row.billed,
         cost: row.cost,
+        grossProfit: row.grossProfit,
         mkt: row.mkt,
         sponsorship: row.sponsorship,
         commissions: row.commissions,
@@ -441,6 +476,7 @@ export function totalsOf(
 ): Omit<MonthlyResult, 'month' | 'year' | 'monthIndex' | 'label'> {
   const billed = rows.reduce((sum, row) => sum + row.billed, 0);
   const cost = rows.reduce((sum, row) => sum + row.cost, 0);
+  const grossProfit = rows.reduce((sum, row) => sum + row.grossProfit, 0);
   const mkt = rows.reduce((sum, row) => sum + row.mkt, 0);
   const sponsorship = rows.reduce((sum, row) => sum + row.sponsorship, 0);
   const commissions = rows.reduce((sum, row) => sum + row.commissions, 0);
@@ -448,6 +484,7 @@ export function totalsOf(
   return {
     billed,
     cost,
+    grossProfit,
     mkt,
     sponsorship,
     commissions,

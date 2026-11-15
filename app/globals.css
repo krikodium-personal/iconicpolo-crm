@@ -748,11 +748,20 @@ h3 {
 }
 .result-month dt {
   flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 12px;
   font-weight: 550;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #6a7e72;
+}
+.result-month .result-pct {
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 500;
+  color: #93a39a;
 }
 .result-month dd {
   margin: 0;
@@ -1198,6 +1207,20 @@ h3 {
   border-color: var(--open-border);
   background: var(--open-bg);
   box-shadow: inset 4px 0 0 var(--open-bar);
+}
+/* Cotización: gris más claro que `.money-tentativo` (#8a9794). */
+[data-slot='table-row'].order-quote,
+[data-slot='table-row'].order-open.order-quote {
+  background: #f4f5f5;
+}
+[data-slot='table-row'].order-quote:hover,
+[data-slot='table-row'].order-open.order-quote:hover {
+  background: #eceeee;
+}
+.record-card.order-quote,
+.record-card.order-open.order-quote {
+  background: #f4f5f5;
+  border-color: #e3e6e5;
 }
 .amount {
   font-variant-numeric: tabular-nums;

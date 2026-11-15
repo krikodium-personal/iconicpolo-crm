@@ -104,10 +104,32 @@ test('monthly result subtracts product cost, marketing and commissions', () => {
   assert.equal(rows[0]?.label, 'Enero');
   assert.equal(rows[0]?.billed, 828_185);
   assert.equal(rows[0]?.cost, 453_900);
+  assert.equal(rows[0]?.grossProfit, 828_185 - 453_900);
   assert.equal(rows[0]?.mkt, 82_000);
   assert.equal(rows[0]?.commissions, 9_500);
   assert.equal(rows[0]?.profit, 282_785);
   assert.equal(rows[0]?.margin, 34.15);
+});
+
+test('gross profit only sums positive sale order profits on total', () => {
+  const unpaidWin: Order = {
+    ...order('open', '2026-03-03', 80_000, 30_000, 'abierto'),
+    paid: 0,
+    paid_partner_id: '',
+  };
+  const rows = monthlyResults(
+    [
+      order('win', '2026-03-01', 100_000, 40_000),
+      order('loss', '2026-03-02', 20_000, 50_000),
+      unpaidWin,
+    ],
+    [],
+  );
+  assert.equal(rows[0]?.billed, 120_000);
+  assert.equal(rows[0]?.cost, 90_000);
+  // 60k (win) + 50k (unpaid win); loss ignored
+  assert.equal(rows[0]?.grossProfit, 110_000);
+  assert.equal(rows[0]?.profit, 30_000);
 });
 
 test('sponsorship orders count as marketing and debit the account', () => {
@@ -123,14 +145,29 @@ test('sponsorship orders count as marketing and debit the account', () => {
   const rows = monthlyResults(
     [sponsor, quote, sale],
     [{ id: 'm1', kind: 'mkt', amount: 5_000, date: '2026-02-10', notes: '', created_at: '' }],
+    [
+      {
+        id: 'ad1',
+        concept: 'gasto_publicitario',
+        detail: 'Ads',
+        partner_id: 'ivan',
+        amount: 8_000,
+        currency: 'USD',
+        date: '2026-02-12',
+        created_at: '',
+      },
+    ],
+    'USD',
   );
   assert.equal(rows[0]?.billed, 100_000);
   assert.equal(rows[0]?.cost, 40_000);
-  assert.equal(rows[0]?.mkt, 35_000);
+  assert.equal(rows[0]?.grossProfit, 60_000);
+  assert.equal(rows[0]?.mkt, 43_000);
   assert.equal(rows[0]?.sponsorship, 30_000);
-  assert.equal(rows[0]?.profit, 25_000);
+  assert.equal(rows[0]?.profit, 17_000);
   assert.equal(rows[0]?.orders, 2);
   assert.equal(totalsOf(rows).sponsorship, 30_000);
+  assert.equal(totalsOf(rows).grossProfit, 60_000);
   const ledger = accountLedger(rows, [], partners, [], 'USD', new Map(), [
     sponsor,
     quote,
