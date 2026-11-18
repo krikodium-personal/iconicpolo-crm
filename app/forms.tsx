@@ -389,6 +389,23 @@ export function ContactForm({
   const bought = new Set(
     purchased.flatMap((o) => o.items.map((i) => i.product_id)),
   );
+  const boughtCategories = new Set(
+    purchased.flatMap((o) =>
+      o.items.map((item) => {
+        const product = data.products.find((p) => p.id === item.product_id);
+        return product?.category || '';
+      }),
+    ),
+  );
+  const missingCustomizable = (
+    [
+      { category: 'cascos', label: 'Cascos' },
+      { category: 'monturas', label: 'Monturas' },
+      { category: 'botas', label: 'Botas' },
+      { category: 'tacos', label: 'Tacos' },
+      { category: 'rodilleras', label: 'Rodilleras' },
+    ] as const
+  ).filter((item) => !boughtCategories.has(item.category));
   const supplied = data.products.filter(
     (p) => p.supplier_id === record?.id && !p.archived,
   );
@@ -575,16 +592,13 @@ export function ContactForm({
                   {purchased.length
                     ? 'Consultar estado del equipo y próximas necesidades.'
                     : 'Conocer disciplina, talles y preferencias del cliente.'}{' '}
-                  {data.products
-                    .filter((p) => !p.archived && !bought.has(p.id))
-                    .slice(0, 2)
-                    .map((p) => p.name).length
-                    ? `Productos aún no comprados: ${data.products
-                        .filter((p) => !p.archived && !bought.has(p.id))
-                        .slice(0, 2)
-                        .map((p) => p.name)
+                  {missingCustomizable.length
+                    ? `Personalizables aún no comprados: ${missingCustomizable
+                        .map((item) => item.label)
                         .join(', ')}.`
-                    : ''}
+                    : purchased.length
+                      ? 'Ya compró cascos, monturas, botas, tacos y rodilleras.'
+                      : ''}
                 </p>
               </div>
               {record.phone && (

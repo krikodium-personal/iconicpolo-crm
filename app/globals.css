@@ -1498,6 +1498,7 @@ button.status-pick {
   width: calc(100% - 32px);
   max-width: 950px;
   max-height: 90dvh;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 28px !important;
   gap: 24px !important;
@@ -2331,6 +2332,7 @@ button.dialog-kicker:hover {
   color: #6e8064;
   font-size: 13px;
   margin-top: 5px;
+  overflow-wrap: anywhere;
 }
 .config-summary,
 .snapshot-copy {
@@ -2340,10 +2342,16 @@ button.dialog-kicker:hover {
   display: block;
   overflow-wrap: anywhere;
 }
-.history-line > span {
+.history-line > div {
   flex: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+.history-line > span {
+  flex: 0 0 auto;
+  min-width: 0;
   color: #6e8064;
+  text-align: right;
 }
 .history-line > .product-photo + div {
   flex: 1;
