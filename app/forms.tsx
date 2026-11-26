@@ -57,6 +57,7 @@ import {
   type MovementRef,
 } from '@/lib/account';
 import { closedFields, findVariantProduct, skuFields } from '@/lib/variants';
+import { direccionLista } from '@/lib/lista-direccion';
 import {
   configuredKindOf,
   defaultConfig,
@@ -5682,7 +5683,7 @@ function PriceListsSettings({
                   <>
                     <a
                       className="secondary"
-                      href={`${SITIO_LISTAS}/lista/${list.id}`}
+                      href={`${SITIO_LISTAS}/lista/${direccionLista(list)}`}
                       target="_blank"
                       rel="noreferrer"
                     >
@@ -5693,7 +5694,7 @@ function PriceListsSettings({
                       className="secondary"
                       disabled={busy}
                       onClick={() => {
-                        const url = `${SITIO_LISTAS}/lista/${list.id}`;
+                        const url = `${SITIO_LISTAS}/lista/${direccionLista(list)}`;
                         void navigator.clipboard.writeText(url).then(
                           () => {
                             setError('');

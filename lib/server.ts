@@ -50,6 +50,7 @@ import {
 } from './cabezada';
 import { whatsappGroup } from './whatsapp';
 import { setPartnerAccess } from './auth';
+import { nuevoCodigoLista } from './lista-direccion';
 import {
   configuredKindOf,
   extraTotals,
@@ -283,7 +284,7 @@ export function stmt(sql: string, ...args: (string | number | null)[]) {
     .prepare(sql)
     .bind(...args);
 }
-async function ensurePriceLists() {
+export async function ensurePriceLists() {
   const d = db();
   await d
     .prepare(
@@ -306,10 +307,23 @@ async function ensurePriceLists() {
     "price_list_id text NOT NULL DEFAULT ''",
   );
   if (orderAlter) await orderAlter.run();
+  const listAlter = await addColumn(
+    'price_lists',
+    await columnNames('price_lists'),
+    'code',
+    "code text NOT NULL DEFAULT ''",
+  );
+  if (listAlter) await listAlter.run();
+  await stmt(
+    "CREATE UNIQUE INDEX IF NOT EXISTS price_lists_code ON price_lists(code) WHERE code <> ''",
+  ).run();
   const existing = await stmt(
     'SELECT COUNT(*) n FROM price_lists',
   ).first<{ n: number }>();
-  if ((existing?.n || 0) > 0) return;
+  if ((existing?.n || 0) > 0) {
+    await assignPriceListCodes();
+    return;
+  }
   const products = await stmt(
     'SELECT id, ff_discount, ff_price, promo_kind, promo_value, list_prices FROM products',
   ).all<{
@@ -376,6 +390,7 @@ async function ensurePriceLists() {
       row.id,
     ).run();
   }
+  await assignPriceListCodes();
 }
 
 export async function ensureAccountTables() {
@@ -544,6 +559,20 @@ export async function ensureTasksTable() {
   ].filter(Boolean);
   if (taskAlters.length)
     await d.batch(taskAlters as ReturnType<typeof stmt>[]);
+}
+
+/** Le da su código de dirección pública a cada lista que no lo tenga. */
+async function assignPriceListCodes() {
+  const sinCodigo = await stmt(
+    "SELECT id FROM price_lists WHERE code = ''",
+  ).all<{ id: string }>();
+  for (const { id } of sinCodigo.results) {
+    await stmt(
+      "UPDATE price_lists SET code=? WHERE id=? AND code=''",
+      nuevoCodigoLista(),
+      id,
+    ).run();
+  }
 }
 
 async function addColumn(
@@ -1353,6 +1382,7 @@ export async function allData() {
         archived: Number(list.archived) ? 1 : 0,
         version: Number(list.version) || 1,
         sort: Number(list.sort) || 0,
+        code: typeof list.code === 'string' ? list.code : '',
       } as PriceList;
     }),
     movements: m.results.map((r) => {
@@ -2811,11 +2841,12 @@ export async function mutate(
       ).first<{ n: number }>();
       const id = crypto.randomUUID();
       await stmt(
-        'INSERT INTO price_lists(id,name,discount,archived,version,sort) VALUES(?,?,?,0,1,?)',
+        'INSERT INTO price_lists(id,name,discount,archived,version,sort,code) VALUES(?,?,?,0,1,?,?)',
         id,
         name,
         discount,
         (maxSort?.n ?? -1) + 1,
+        nuevoCodigoLista(),
       ).run();
       return { id };
     }

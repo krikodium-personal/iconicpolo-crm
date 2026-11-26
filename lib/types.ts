@@ -105,6 +105,8 @@ export type PriceList = {
   archived: number;
   version: number;
   sort: number;
+  /** Código de la dirección pública (/lista/<nombre>-<código>). */
+  code: string;
 };
 export type Product = {
   id: string;

@@ -2,7 +2,8 @@
  * Carga en D1 el catálogo público de una lista de precios.
  */
 
-import { stmt } from '@/lib/server';
+import { ensurePriceLists, stmt } from '@/lib/server';
+import { codigoDeDireccion, direccionLista } from '@/lib/lista-direccion';
 import { formatMoney, percent } from '@/lib/money';
 import { configuredKindOf } from '@/lib/configure';
 import {
@@ -22,7 +23,6 @@ export type {
 
 export { expandConfiguredPublicItems } from '@/lib/public-price-catalog';
 
-/** Carga una lista activa y los productos con precio ya descontado. */
 /**
  * Orden de las categorías en la lista pública, por nombre. Las que no están
  * acá van al final, por orden alfabético.
@@ -47,24 +47,33 @@ function rangoCategoria(nombre: string) {
   return rango === -1 ? ORDEN_CATEGORIAS.length : rango;
 }
 
+/**
+ * Carga una lista activa y los productos con precio ya descontado.
+ *
+ * `direccion` es lo que viene después de /lista/: la dirección con nombre y
+ * código, o el id de las direcciones viejas. La lista se encuentra por el
+ * id o por el código; `address` dice cuál es su dirección de hoy, para
+ * redirigir si se llegó por otra.
+ */
 export async function loadPublicPriceList(
-  listId: string,
-): Promise<PublicPriceList | null> {
-  const id = listId.trim();
+  direccion: string,
+): Promise<(PublicPriceList & { address: string }) | null> {
+  const id = direccion.trim();
   if (!id) return null;
 
-  await stmt(
-    "CREATE TABLE IF NOT EXISTS price_lists (id text PRIMARY KEY NOT NULL, name text NOT NULL, discount integer NOT NULL DEFAULT 0, archived integer NOT NULL DEFAULT 0, version integer NOT NULL DEFAULT 1, sort integer NOT NULL DEFAULT 0)",
-  ).run();
+  await ensurePriceLists();
 
   const list = await stmt(
-    'SELECT id, name, discount, archived FROM price_lists WHERE id=?',
+    "SELECT id, name, discount, archived, code FROM price_lists WHERE id=? OR (code<>'' AND code=?) ORDER BY id=? DESC LIMIT 1",
+    id,
+    codigoDeDireccion(id),
     id,
   ).first<{
     id: string;
     name: string;
     discount: number;
     archived: number;
+    code: string;
   }>();
   if (!list || list.archived) return null;
 
@@ -154,6 +163,7 @@ export async function loadPublicPriceList(
 
   return {
     id: list.id,
+    address: direccionLista(list),
     name: list.name,
     discount: listRef.discount,
     discountLabel: percent(listRef.discount),

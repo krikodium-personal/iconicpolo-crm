@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import {
   formatPublicPrice,
   loadPublicPriceList,
@@ -18,8 +18,10 @@ export default async function PublicListaPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const lista = await loadPublicPriceList(id);
+  const lista = await loadPublicPriceList(decodeURIComponent(id));
   if (!lista) notFound();
+  // Por el id viejo o un nombre anterior: a la dirección de hoy.
+  if (lista.address !== id) redirect(`/lista/${lista.address}`);
 
   return (
     <PublicListaView
