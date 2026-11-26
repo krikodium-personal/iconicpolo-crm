@@ -4595,11 +4595,11 @@ button.order-stock-pick strong,
 }
 .public-lista-group h2 {
   margin: 0 0 12px;
-  font-size: 13px;
+  font-size: 16px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--lista-muted);
-  font-weight: 700;
+  color: var(--lista-ink);
+  font-weight: 800;
 }
 .public-lista-rows {
   list-style: none;
@@ -4620,6 +4620,22 @@ button.order-stock-pick strong,
 }
 .public-lista-row:first-child {
   border-top: 0;
+}
+.public-lista-subhead {
+  padding: 14px 14px 10px;
+  border-top: 1px solid var(--lista-line);
+  background: rgba(231, 239, 236, 0.55);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lista-muted);
+  font-weight: 700;
+}
+.public-lista-subhead:first-child {
+  border-top: 0;
+}
+.public-lista-subhead + .public-lista-row {
+  border-top: 1px solid var(--lista-line);
 }
 .public-lista-photo {
   width: 56px;

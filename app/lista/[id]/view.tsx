@@ -64,46 +64,20 @@ export function PublicListaView({ lista }: { lista: PublicListaViewModel }) {
           <section key={group.categoryId} className="public-lista-group">
             <h2>{group.categoryName}</h2>
             <ul className="public-lista-rows">
-              {group.items.map((item) => (
-                <li
-                  key={item.id}
-                  className={`public-lista-row${item.addon ? ' is-addon' : ''}`}
-                >
-                  <div className="public-lista-photo">
-                    {item.photo ? (
-                      <Image
-                        unoptimized
-                        src={item.photo}
-                        alt=""
-                        width={72}
-                        height={72}
-                      />
-                    ) : (
-                      <span aria-hidden />
-                    )}
-                  </div>
-                  <div className="public-lista-copy">
-                    <b>
-                      {item.addon ? `+ ${item.name}` : item.name}
-                    </b>
-                    <small>
-                      {[item.detail, item.sku].filter(Boolean).join(' · ')}
-                    </small>
-                  </div>
-                  <div className="public-lista-prices">
-                    {item.price !== item.listPrice ? (
-                      <small className="public-lista-list">
-                        {item.addon ? '+' : ''}
-                        {item.listPriceLabel}
-                      </small>
-                    ) : null}
-                    <strong>
-                      {item.addon ? '+' : ''}
-                      {item.priceLabel}
-                    </strong>
-                  </div>
-                </li>
-              ))}
+              {group.items
+                .filter((item) => !item.addon)
+                .map((item) => (
+                  <ListaFila key={item.id} item={item} />
+                ))}
+              {/* Los extras van al final de la misma caja, bajo su título. */}
+              {group.items.some((item) => item.addon) ? (
+                <li className="public-lista-subhead">Extras:</li>
+              ) : null}
+              {group.items
+                .filter((item) => item.addon)
+                .map((item) => (
+                  <ListaFila key={item.id} item={item} />
+                ))}
             </ul>
           </section>
         ))
@@ -117,5 +91,47 @@ export function PublicListaView({ lista }: { lista: PublicListaViewModel }) {
         Iconic Polo Equipment · Lista {lista.name}
       </footer>
     </main>
+  );
+}
+
+function ListaFila({ item }: { item: PublicItem }) {
+  return (
+    <li
+      className={`public-lista-row${item.addon ? ' is-addon' : ''}`}
+    >
+      <div className="public-lista-photo">
+        {item.photo ? (
+          <Image
+            unoptimized
+            src={item.photo}
+            alt=""
+            width={72}
+            height={72}
+          />
+        ) : (
+          <span aria-hidden />
+        )}
+      </div>
+      <div className="public-lista-copy">
+        <b>
+          {item.addon ? `+ ${item.name}` : item.name}
+        </b>
+        <small>
+          {[item.detail, item.sku].filter(Boolean).join(' · ')}
+        </small>
+      </div>
+      <div className="public-lista-prices">
+        {item.price !== item.listPrice ? (
+          <small className="public-lista-list">
+            {item.addon ? '+' : ''}
+            {item.listPriceLabel}
+          </small>
+        ) : null}
+        <strong>
+          {item.addon ? '+' : ''}
+          {item.priceLabel}
+        </strong>
+      </div>
+    </li>
   );
 }
