@@ -4541,17 +4541,39 @@ button.order-stock-pick strong,
   color: var(--lista-ink);
   padding: 28px 18px 56px;
 }
+.public-lista-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 8px auto 36px;
+  color: #1a1a1a;
+}
+.public-lista-logo img {
+  height: 56px;
+  width: auto;
+}
+.public-lista-logo div {
+  display: flex;
+  flex-direction: column;
+}
+.public-lista-logo-name {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+.public-lista-logo-sub {
+  margin-top: 5px;
+  font-size: 12px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: #6c6863;
+}
 .public-lista-hero {
   max-width: 920px;
   margin: 0 auto 28px;
-}
-.public-lista-brand {
-  margin: 0 0 10px;
-  font-size: 12px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--lista-accent);
-  font-weight: 700;
 }
 .public-lista-hero h1 {
   margin: 0;

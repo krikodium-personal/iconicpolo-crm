@@ -1581,6 +1581,12 @@ function formatOrderDate(value: string) {
   return value ? formatDate(value) : 'Sin definir';
 }
 
+/**
+ * Las listas de precios se comparten desde el sitio: www.iconicpolo.com/lista/<id>
+ * trae la misma página del CRM (ver worker/index.ts del sitio).
+ */
+const SITIO_LISTAS = 'https://www.iconicpolo.com';
+
 function itemDescription(
   item: Item,
   product?: Product,
@@ -5676,7 +5682,7 @@ function PriceListsSettings({
                   <>
                     <a
                       className="secondary"
-                      href={`/lista/${list.id}`}
+                      href={`${SITIO_LISTAS}/lista/${list.id}`}
                       target="_blank"
                       rel="noreferrer"
                     >
@@ -5687,7 +5693,7 @@ function PriceListsSettings({
                       className="secondary"
                       disabled={busy}
                       onClick={() => {
-                        const url = `${window.location.origin}/lista/${list.id}`;
+                        const url = `${SITIO_LISTAS}/lista/${list.id}`;
                         void navigator.clipboard.writeText(url).then(
                           () => {
                             setError('');

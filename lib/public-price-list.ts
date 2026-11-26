@@ -23,6 +23,30 @@ export type {
 export { expandConfiguredPublicItems } from '@/lib/public-price-catalog';
 
 /** Carga una lista activa y los productos con precio ya descontado. */
+/**
+ * Orden de las categorías en la lista pública, por nombre. Las que no están
+ * acá van al final, por orden alfabético.
+ */
+const ORDEN_CATEGORIAS = [
+  'cascos',
+  'monturas',
+  'botas',
+  'rodilleras',
+  'tacos',
+  'cabezadas',
+  'accesorios',
+];
+
+function rangoCategoria(nombre: string) {
+  const clave = nombre
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+  const rango = ORDEN_CATEGORIAS.indexOf(clave);
+  return rango === -1 ? ORDEN_CATEGORIAS.length : rango;
+}
+
 export async function loadPublicPriceList(
   listId: string,
 ): Promise<PublicPriceList | null> {
@@ -105,9 +129,11 @@ export async function loadPublicPriceList(
     if (sku) items.push(sku);
   }
 
-  // Modelos/opciones base primero; adicionales (+) al final de cada producto.
+  // Categorías en el orden de ORDEN_CATEGORIAS; modelos/opciones base
+  // primero y adicionales (+) al final de cada producto.
   items.sort(
     (a, b) =>
+      rangoCategoria(a.categoryName) - rangoCategoria(b.categoryName) ||
       a.categoryName.localeCompare(b.categoryName, 'es') ||
       a.sku.localeCompare(b.sku, 'es') ||
       Number(a.addon) - Number(b.addon) ||

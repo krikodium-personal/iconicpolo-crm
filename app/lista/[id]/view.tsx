@@ -35,8 +35,20 @@ export type PublicListaViewModel = {
 export function PublicListaView({ lista }: { lista: PublicListaViewModel }) {
   return (
     <main className="public-lista">
+      {/*
+        Mismo logo y misma ruta que el encabezado de iconicpolo.com: la lista
+        también se abre desde www.iconicpolo.com/lista/<id>, y ahí la imagen la
+        sirve el sitio.
+      */}
+      <div className="public-lista-logo">
+        <img src="/images/logo.png" alt="" width={133} height={150} />
+        <div>
+          <span className="public-lista-logo-name">ICONIC</span>
+          <span className="public-lista-logo-sub">Polo Equipment</span>
+        </div>
+      </div>
+
       <header className="public-lista-hero">
-        <p className="public-lista-brand">Iconic Polo</p>
         <h1>{lista.name}</h1>
         <p className="public-lista-lead">
           {lista.discount > 0
